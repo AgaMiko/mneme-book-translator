@@ -1,0 +1,117 @@
+# ---- Secrets / env ----
+.env
+.env.*
+!.env.example
+.envrc
+.direnv/
+
+# Common secret/key files
+*.pem
+*.key
+*.p12
+*.pfx
+*.crt
+*.cer
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+.Python
+
+# Virtual envs
+.venv/
+venv/
+ENV/
+env/
+
+# Packaging / build
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+
+# Type checker / language server
+.pyright/
+
+# ---- FastAPI/uvicorn/gunicorn logs ----
+*.log
+
+# ---- Node / frontend ----
+node_modules/
+.pnpm-store/
+.pnp.*
+
+# Build outputs (common)
+dist/
+build/
+.next/
+.nuxt/
+.svelte-kit/
+out/
+
+# tsc -b emit next to vite.config.ts (tsconfig.node.json composite)
+frontend/vite.config.js
+frontend/vite.config.d.ts
+
+# Vite / CRA / misc caches
+.vite/
+.turbo/
+.cache/
+.eslintcache
+*.tsbuildinfo
+.parcel-cache/
+.rollup.cache/
+
+# ---- OS / editor ----
+.DS_Store
+Thumbs.db
+.idea/
+.idea/*.iml
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+*.swp
+*.swo
+*~
+.history/
+
+# ---- Cursor/Claude/agent artifacts (local) ----
+.cursor/
+agent-transcripts/
+.agents/
+skills-lock.json
+
+# ---- Docker ----
+**/.docker/
+docker-compose.override.yml
+
+# Docker / Compose env files (often local)
+.env.docker
+.env.compose
+
+# ---- Local overrides ----
+*.local
+*.local.*
+
+# ---- Local data / runtime ----
+.cache/
+tmp/
+*.sqlite
+*.sqlite3
+
+# Bind-mounted upload storage (see docker-compose.yml, README)
+data/uploads/*
+!data/uploads/.gitkeep

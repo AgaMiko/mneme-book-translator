@@ -1,0 +1,215 @@
+import { z } from "zod";
+
+const API_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
+
+// ─── Schemas ────────────────────────────────────────────
+// Mirror Pydantic on the backend. If the backend shape changes,
+// these schemas catch the drift at runtime instead of letting
+// a stale type slip through.
+
+export const MetadataStatusSchema = z.enum(["pending", "ready", "failed"]);
+export type MetadataStatus = z.infer<typeof MetadataStatusSchema>;
+
+export const GlossaryExtractionStatusSchema = z.enum([
+  "idle",
+  "running",
+  "completed",
+  "failed",
+  "cancelled",
+]);
+export type GlossaryExtractionStatus = z.infer<typeof GlossaryExtractionStatusSchema>;
+
+export const ParagraphSchema = z.object({
+  id: z.string().uuid(),
+  position: z.number().int(),
+  text: z.string(),
+  style: z.string().nullable(),
+});
+export type Paragraph = z.infer<typeof ParagraphSchema>;
+
+export const ChapterDetailSchema = z.object({
+  id: z.string().uuid(),
+  position: z.number().int(),
+  title: z.string().nullable(),
+  paragraphs: z.array(ParagraphSchema),
+});
+export type ChapterDetail = z.infer<typeof ChapterDetailSchema>;
+
+export const BookSummarySchema = z.object({
+  id: z.string().uuid(),
+  title: z.string(),
+  author: z.string().nullable(),
+  source_language: z.string(),
+  target_language: z.string(),
+  manuscript_language: z.string().nullable(),
+  language_style_note: z.string().nullable(),
+  metadata_model: z.string().nullable(),
+  metadata_status: MetadataStatusSchema,
+  glossary_extraction_status: GlossaryExtractionStatusSchema,
+  glossary_extraction_windows_total: z.number().int().nullable().optional(),
+  glossary_extraction_windows_completed: z.number().int().nullable().optional(),
+  original_filename: z.string(),
+  word_count: z.number().int(),
+  created_at: z.string(),
+});
+export type BookSummary = z.infer<typeof BookSummarySchema>;
+
+export const BookDetailSchema = BookSummarySchema.extend({
+  chapters: z.array(ChapterDetailSchema),
+});
+export type BookDetail = z.infer<typeof BookDetailSchema>;
+
+export const UploadBookResponseSchema = z.object({
+  book: BookSummarySchema,
+  chapter_count: z.number().int(),
+  paragraph_count: z.number().int(),
+});
+export type UploadBookResponse = z.infer<typeof UploadBookResponseSchema>;
+
+export const GlossaryExtractionEstimateSchema = z.object({
+  model: z.string(),
+  window_count: z.number().int(),
+  window_words: z.number().int(),
+  overlap_words: z.number().int(),
+  estimated_input_tokens: z.number().int(),
+  estimated_output_tokens: z.number().int(),
+  estimated_total_tokens: z.number().int(),
+  estimated_cost_usd: z.number(),
+  pricing_input_usd_per_mtok: z.number(),
+  pricing_output_usd_per_mtok: z.number(),
+});
+export type GlossaryExtractionEstimate = z.infer<typeof GlossaryExtractionEstimateSchema>;
+
+export const GlossaryExtractionStartResponseSchema = z.object({
+  status: z.literal("accepted"),
+  book_id: z.string().uuid(),
+});
+export type GlossaryExtractionStartResponse = z.infer<typeof GlossaryExtractionStartResponseSchema>;
+
+export const GlossaryExtractionStopResponseSchema = z.object({
+  status: z.literal("accepted"),
+  book_id: z.string().uuid(),
+});
+export type GlossaryExtractionStopResponse = z.infer<typeof GlossaryExtractionStopResponseSchema>;
+
+export const GlossaryWorkingEntrySchema = z.object({
+  id: z.string().uuid(),
+  canonical_form: z.string(),
+  term_type: z.string(),
+  meaning: z.string(),
+  translation_recommendation: z.record(z.string(), z.unknown()),
+  variants: z.array(z.string()),
+  status: z.string(),
+  first_seen_window: z.number().int(),
+  occurrence_count: z.number().int(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type GlossaryWorkingEntry = z.infer<typeof GlossaryWorkingEntrySchema>;
+
+export const GlossaryRunMetaSchema = z.object({
+  id: z.string().uuid(),
+  status: z.string(),
+  started_at: z.string(),
+  completed_at: z.string().nullable(),
+  model: z.string().nullable(),
+  entry_count: z.number().int(),
+});
+export type GlossaryRunMeta = z.infer<typeof GlossaryRunMetaSchema>;
+
+export const GlossarySelectOptionSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+});
+export type GlossarySelectOption = z.infer<typeof GlossarySelectOptionSchema>;
+
+export const WorkingGlossaryResponseSchema = z.object({
+  run: GlossaryRunMetaSchema.nullable(),
+  entries: z.array(GlossaryWorkingEntrySchema),
+  term_type_options: z.array(GlossarySelectOptionSchema),
+  translation_suggestion_options: z.array(GlossarySelectOptionSchema),
+});
+export type WorkingGlossaryResponse = z.infer<typeof WorkingGlossaryResponseSchema>;
+
+// ─── Errors ─────────────────────────────────────────────
+
+export class ApiError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly detail: string,
+  ) {
+    super(detail);
+    this.name = "ApiError";
+  }
+}
+
+async function handleResponse<T>(res: Response, schema: z.ZodType<T>): Promise<T> {
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`;
+    try {
+      const body = await res.json();
+      if (body?.detail) detail = String(body.detail);
+    } catch {
+      // leave default detail
+    }
+    throw new ApiError(res.status, detail);
+  }
+  const json = await res.json();
+  return schema.parse(json);
+}
+
+// ─── Endpoints ──────────────────────────────────────────
+
+export const api = {
+  listBooks: async (): Promise<BookSummary[]> =>
+    handleResponse(await fetch(`${API_URL}/books`), z.array(BookSummarySchema)),
+
+  getBook: async (id: string): Promise<BookDetail> =>
+    handleResponse(await fetch(`${API_URL}/books/${id}`), BookDetailSchema),
+
+  getGlossaryExtractionEstimate: async (id: string): Promise<GlossaryExtractionEstimate> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/glossary-extraction-estimate`),
+      GlossaryExtractionEstimateSchema,
+    ),
+
+  getWorkingGlossary: async (id: string): Promise<WorkingGlossaryResponse> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/glossary-working`),
+      WorkingGlossaryResponseSchema,
+    ),
+
+  startGlossaryExtraction: async (id: string): Promise<GlossaryExtractionStartResponse> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/glossary-extraction/run`, { method: "POST" }),
+      GlossaryExtractionStartResponseSchema,
+    ),
+
+  continueGlossaryExtraction: async (id: string): Promise<GlossaryExtractionStartResponse> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/glossary-extraction/continue`, { method: "POST" }),
+      GlossaryExtractionStartResponseSchema,
+    ),
+
+  stopGlossaryExtraction: async (id: string): Promise<GlossaryExtractionStopResponse> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/glossary-extraction/stop`, { method: "POST" }),
+      GlossaryExtractionStopResponseSchema,
+    ),
+
+  uploadBook: async (file: File): Promise<UploadBookResponse> => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return handleResponse(
+      await fetch(`${API_URL}/books`, { method: "POST", body: fd }),
+      UploadBookResponseSchema,
+    );
+  },
+
+  deleteBook: async (id: string): Promise<void> => {
+    const res = await fetch(`${API_URL}/books/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      throw new ApiError(res.status, `${res.status} ${res.statusText}`);
+    }
+  },
+};

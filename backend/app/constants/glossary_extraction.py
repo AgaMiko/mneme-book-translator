@@ -1,0 +1,11 @@
+"""Glossary extraction manuscript windowing — single source of truth.
+
+Used by ``make_windows``, window-count helpers, and cost estimates so the
+API, background job, and tests stay aligned.
+
+Frontend mirror (keep values identical):
+``frontend/src/constants/glossaryExtraction.ts``.
+"""
+
+GLOSSARY_EXTRACTION_WINDOW_WORDS = 500
+GLOSSARY_EXTRACTION_OVERLAP_WORDS = 100

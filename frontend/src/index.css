@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  body {
+    font-feature-settings: "ss01", "cv01", "cv11";
+  }
+
+  /* Subtle paper texture for the manuscript reader area */
+  .reader-surface {
+    background-image:
+      radial-gradient(circle at 1px 1px, rgba(255,255,255,0.015) 1px, transparent 0);
+    background-size: 4px 4px;
+  }
+
+  /* Drop-cap on the very first paragraph of each chapter */
+  .chapter-body > p:first-of-type::first-letter {
+    @apply font-serif text-5xl float-left mr-2 leading-none;
+    line-height: 0.85;
+    color: theme('colors.accent.DEFAULT');
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2
+           text-sm font-medium transition-colors
+           focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent
+           disabled:pointer-events-none disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply bg-accent text-ink-900 hover:bg-accent-pink hover:text-ink-50;
+  }
+  .btn-ghost {
+    @apply text-ink-100 hover:bg-ink-700;
+  }
+  .card {
+    @apply rounded-lg border border-ink-700 bg-ink-800/50 p-5;
+  }
+}

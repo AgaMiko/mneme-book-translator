@@ -17,8 +17,7 @@ interface Props {
  * a marketing nudge — italics, ink-400, no shouty styling.
  *
  * Returns `null` when the user is already where they should be (e.g.
- * on the Glossary tab during extraction). Silence is a feature; the
- * hint should not be a permanent fixture.
+ * on the Glossary tab during extraction). Silence is a feature.
  */
 export function WorkflowHint({ book, activeTab, onSelectTab }: Props) {
   const message = computeHint(book, activeTab);
@@ -27,7 +26,7 @@ export function WorkflowHint({ book, activeTab, onSelectTab }: Props) {
   const { text, action } = message;
 
   return (
-    <div className="border-b border-ink-800/60 bg-ink-900">
+    <div className="border-b border-ink-800 bg-ink-900">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-6 py-2.5">
         <p className="font-serif text-sm italic leading-snug text-ink-400">
           {text}
@@ -39,7 +38,7 @@ export function WorkflowHint({ book, activeTab, onSelectTab }: Props) {
             className={cn(
               "inline-flex items-center gap-1 rounded px-2 py-1",
               "font-mono text-[11px] uppercase tracking-wider text-accent",
-              "hover:bg-accent/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+              "hover:bg-accent-soft focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
             )}
           >
             {action.label}
@@ -62,7 +61,6 @@ interface Hint {
 function computeHint(book: BookDetail, activeTab: BookTab): Hint | null {
   const glossaryStatus = book.glossary_extraction_status;
 
-  // On Manuscript: nudge toward whatever the next workflow step is.
   if (activeTab === "manuscript") {
     if (glossaryStatus === "idle") {
       return {
@@ -96,7 +94,6 @@ function computeHint(book: BookDetail, activeTab: BookTab): Hint | null {
     }
   }
 
-  // On Glossary: contextual instruction, no action button (user is here).
   if (activeTab === "glossary") {
     if (glossaryStatus === "idle") {
       return {

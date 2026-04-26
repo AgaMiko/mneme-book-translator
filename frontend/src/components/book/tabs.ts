@@ -3,8 +3,6 @@
  *
  * `Translation` is visible-but-disabled rather than hidden, on purpose:
  * it tells the user where they are in the workflow without overpromising.
- * The empty visible tab is the workflow's spine. When fragment translation
- * lands in step 4, drop the `disabled: true` and add the route.
  */
 export const BOOK_TABS = [
   { id: "manuscript", label: "Manuscript", disabled: false },

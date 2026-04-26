@@ -1,12 +1,19 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <rect width="32" height="32" rx="6" fill="#0a0a0a"/>
-  <text
-    x="16"
-    y="23"
-    font-family="Georgia, 'Times New Roman', serif"
-    font-size="22"
-    font-style="italic"
-    fill="#bef264"
-    text-anchor="middle"
-  >μ</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="10" fill="#f3efe6"/>
+  <!-- Left bracket -->
+  <path d="M14 8 H8 V56 H14" stroke="#b76a4a" stroke-width="2.5" stroke-linecap="square" fill="none"/>
+  <!-- Right bracket -->
+  <path d="M50 8 H56 V56 H50" stroke="#b76a4a" stroke-width="2.5" stroke-linecap="square" fill="none"/>
+  <!-- Page-line decorations, left -->
+  <line x1="16.5" y1="22" x2="22.5" y2="22" stroke="#2a2522" stroke-width="1.5" stroke-linecap="round" opacity="0.55"/>
+  <line x1="16.5" y1="28" x2="22.5" y2="28" stroke="#2a2522" stroke-width="1.5" stroke-linecap="round" opacity="0.55"/>
+  <line x1="16.5" y1="34" x2="22.5" y2="34" stroke="#2a2522" stroke-width="1.5" stroke-linecap="round" opacity="0.55"/>
+  <line x1="16.5" y1="40" x2="22.5" y2="40" stroke="#2a2522" stroke-width="1.5" stroke-linecap="round" opacity="0.55"/>
+  <!-- Page-line decorations, right -->
+  <line x1="41.5" y1="22" x2="47.5" y2="22" stroke="#2a2522" stroke-width="1.5" stroke-linecap="round" opacity="0.55"/>
+  <line x1="41.5" y1="28" x2="47.5" y2="28" stroke="#2a2522" stroke-width="1.5" stroke-linecap="round" opacity="0.55"/>
+  <line x1="41.5" y1="34" x2="47.5" y2="34" stroke="#2a2522" stroke-width="1.5" stroke-linecap="round" opacity="0.55"/>
+  <line x1="41.5" y1="40" x2="47.5" y2="40" stroke="#2a2522" stroke-width="1.5" stroke-linecap="round" opacity="0.55"/>
+  <!-- M -->
+  <text x="32" y="42" text-anchor="middle" font-family="Lora, Georgia, serif" font-size="28" font-weight="600" fill="#0f1115">M</text>
 </svg>

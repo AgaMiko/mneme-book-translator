@@ -54,7 +54,7 @@ export function GlossaryExtractionWorkspace({
           onClick={onOpenTerms}
           className={cn(
             "shrink-0 rounded-md border border-ink-700 px-3 py-2 font-mono text-xs uppercase tracking-wider text-ink-200",
-            "hover:border-ink-600 hover:bg-ink-800/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+            "hover:border-ink-600 hover:bg-ink-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
           )}
         >
           Jump to terms ↓
@@ -67,7 +67,7 @@ export function GlossaryExtractionWorkspace({
         </p>
       )}
       {estimate.isError && (
-        <p className="text-sm text-red-300">Could not load the estimate. Check the API and try again.</p>
+        <p className="text-sm text-danger">Could not load the estimate. Check the API and try again.</p>
       )}
       {estimate.data && estimate.data.window_count === 0 && (
         <p className="text-sm text-ink-300">
@@ -79,7 +79,7 @@ export function GlossaryExtractionWorkspace({
         <>
           <details
             className={cn(
-              "overflow-hidden rounded-lg border border-ink-800 bg-ink-950/30",
+              "overflow-hidden rounded-lg border border-ink-800 bg-ink-800",
               "[&[open]_summary_.glossary-chevron]:rotate-180",
             )}
           >
@@ -87,8 +87,8 @@ export function GlossaryExtractionWorkspace({
               className={cn(
                 "flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3",
                 "font-mono text-xs uppercase tracking-wider text-ink-300",
-                "hover:bg-ink-800/40 [&::-webkit-details-marker]:hidden",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent/50",
+                "hover:bg-ink-700 [&::-webkit-details-marker]:hidden",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
               )}
             >
               <span className="min-w-0 flex-1 text-left leading-snug text-ink-200">
@@ -113,7 +113,7 @@ export function GlossaryExtractionWorkspace({
                   {formatNumber(estimate.data.estimated_total_tokens)} tok
                 </span>
                 <span className="mx-2 text-ink-600">·</span>
-                <span className="text-accent-pink">{formatUsd(estimate.data.estimated_cost_usd)}</span>
+                <span className="text-accent">{formatUsd(estimate.data.estimated_cost_usd)}</span>
                 <span className="mx-2 text-ink-600">·</span>
                 <span className="tabular-nums text-ink-400">
                   {formatNumber(estimate.data.window_count)} pass
@@ -125,7 +125,7 @@ export function GlossaryExtractionWorkspace({
                 aria-hidden
               />
             </summary>
-            <div className="space-y-3 border-t border-ink-800/90 px-4 py-4 text-sm leading-relaxed text-ink-300">
+            <div className="space-y-3 border-t border-ink-700 px-4 py-4 text-sm leading-relaxed text-ink-300">
               <p>
                 <span className="text-ink-100">Glossary extraction</span> will run{" "}
                 <span className="font-mono text-ink-100">
@@ -182,46 +182,46 @@ export function GlossaryExtractionWorkspace({
 
           <div className="space-y-3 text-sm">
             {book.glossary_extraction_status === "completed" && (
-              <div className="rounded-md border border-emerald-900/40 bg-emerald-950/15 px-3 py-2 text-emerald-200/95">
-                <p>Last run finished. Switch to Glossary terms to review.</p>
+              <div className="rounded-md border border-success-border bg-success-surface px-3 py-2 text-success">
+                <p>Last run finished. Review the terms below.</p>
                 <button
                   type="button"
                   onClick={onOpenTerms}
-                  className="mt-2 font-mono text-xs uppercase tracking-wider text-emerald-100 underline decoration-emerald-800 underline-offset-2 hover:text-white"
+                  className="mt-2 font-mono text-xs uppercase tracking-wider underline underline-offset-2 hover:opacity-80"
                 >
-                  Open glossary terms
+                  Jump to terms ↓
                 </button>
               </div>
             )}
             {book.glossary_extraction_status === "failed" && (
-              <p className="text-red-300">
+              <p className="text-danger">
                 Extraction failed. Fix the issue (API key, quota), then Continue to resume or
                 start a new run.
               </p>
             )}
             {book.glossary_extraction_status === "cancelled" && (
-              <p className="text-amber-200/90">
+              <p className="text-warning">
                 Stopped mid-run. Partial results are kept. Continue to resume or start fresh.
               </p>
             )}
           </div>
 
           {startGlossary.isError && (
-            <p className="text-sm text-red-300">
+            <p className="text-sm text-danger">
               {startGlossary.error instanceof ApiError
                 ? startGlossary.error.detail
                 : "Could not start extraction."}
             </p>
           )}
           {continueGlossary.isError && (
-            <p className="text-sm text-red-300">
+            <p className="text-sm text-danger">
               {continueGlossary.error instanceof ApiError
                 ? continueGlossary.error.detail
                 : "Could not continue extraction."}
             </p>
           )}
           {stopGlossary.isError && (
-            <p className="text-sm text-red-300">
+            <p className="text-sm text-danger">
               {stopGlossary.error instanceof ApiError
                 ? stopGlossary.error.detail
                 : "Could not request stop."}
@@ -259,8 +259,8 @@ export function GlossaryExtractionActionBar({
           className={cn(
             "inline-flex items-center gap-2 rounded-md border border-ink-600 px-3 py-1.5",
             "font-mono text-xs uppercase tracking-wider text-ink-200",
-            "hover:border-red-900/60 hover:bg-red-950/35 hover:text-red-200",
-            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-400/50",
+            "hover:border-danger-border hover:bg-danger-surface hover:text-danger",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger",
             "disabled:cursor-not-allowed disabled:opacity-40",
           )}
         >
@@ -274,9 +274,9 @@ export function GlossaryExtractionActionBar({
           disabled={continueGlossary.isPending}
           onClick={() => continueGlossary.mutate()}
           className={cn(
-            "inline-flex items-center gap-2 rounded-md border border-emerald-800/50 px-3 py-1.5",
-            "font-mono text-xs uppercase tracking-wider text-emerald-200/90",
-            "hover:bg-emerald-950/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500/40",
+            "inline-flex items-center gap-2 rounded-md border border-success-border px-3 py-1.5",
+            "font-mono text-xs uppercase tracking-wider text-success",
+            "hover:bg-success-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success",
             "disabled:cursor-not-allowed disabled:opacity-40",
           )}
         >
@@ -288,9 +288,9 @@ export function GlossaryExtractionActionBar({
         disabled={book.glossary_extraction_status === "running" || startGlossary.isPending}
         onClick={() => startGlossary.mutate()}
         className={cn(
-          "inline-flex items-center gap-2 rounded-md border border-accent/45 px-3 py-1.5",
+          "inline-flex items-center gap-2 rounded-md border border-accent px-3 py-1.5",
           "font-mono text-xs uppercase tracking-wider text-accent",
-          "bg-accent/10 hover:bg-accent/18 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+          "bg-accent-soft hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
           "disabled:cursor-not-allowed disabled:opacity-40",
         )}
       >

@@ -92,12 +92,19 @@ export function BookHeader({ book, activeTab, onSelectTab }: Props) {
   );
 }
 
+/**
+ * Status pill base — semantic tokens (success/warning/danger) that
+ * resolve to mode-appropriate colors via CSS variables.
+ */
+const pillBase =
+  "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider";
+
 function MetadataPill({ status }: { status: MetadataStatus }) {
   if (status === "ready") return null;
 
   if (status === "pending") {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-ink-800 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-ink-300">
+      <span className={cn(pillBase, "bg-ink-800 text-ink-300")}>
         <span
           className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent"
           aria-hidden
@@ -108,7 +115,12 @@ function MetadataPill({ status }: { status: MetadataStatus }) {
   }
 
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-red-900/60 bg-red-950/30 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-red-300">
+    <span
+      className={cn(
+        pillBase,
+        "border border-danger-border bg-danger-surface text-danger",
+      )}
+    >
       <AlertCircle className="h-3 w-3" aria-hidden />
       metadata extraction failed
     </span>
@@ -132,7 +144,7 @@ function GlossaryExtractionPill({
         ? ` ${windowsCompleted ?? 0}/${windowsTotal}`
         : "";
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-ink-800 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-ink-300">
+      <span className={cn(pillBase, "bg-ink-800 text-ink-300")}>
         <span
           className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent"
           aria-hidden
@@ -144,7 +156,12 @@ function GlossaryExtractionPill({
 
   if (status === "completed") {
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-950/40 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-emerald-300">
+      <span
+        className={cn(
+          pillBase,
+          "border border-success-border bg-success-surface text-success",
+        )}
+      >
         glossary saved
       </span>
     );
@@ -156,14 +173,24 @@ function GlossaryExtractionPill({
         ? ` after ${windowsCompleted ?? 0}/${windowsTotal}`
         : "";
     return (
-      <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-900/50 bg-amber-950/25 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-amber-200/90">
+      <span
+        className={cn(
+          pillBase,
+          "border border-warning-border bg-warning-surface text-warning",
+        )}
+      >
         glossary stopped{tail}
       </span>
     );
   }
 
   return (
-    <span className="inline-flex items-center gap-1.5 rounded-full border border-red-900/60 bg-red-950/30 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider text-red-300">
+    <span
+      className={cn(
+        pillBase,
+        "border border-danger-border bg-danger-surface text-danger",
+      )}
+    >
       <AlertCircle className="h-3 w-3" aria-hidden />
       glossary failed
     </span>

@@ -10,16 +10,26 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   size?: Size;
 }
 
+/**
+ * Button variants reference the semantic accent / status tokens, not
+ * raw Tailwind colors. Each token resolves to a different actual hex
+ * in light vs. dark mode (via CSS variables in index.css), so these
+ * variants automatically work in both modes without `dark:` overrides.
+ *
+ * `primary` uses the clay accent on a white-text body — adequate
+ * contrast in both modes because clay is mid-tone and stays roughly
+ * the same lightness across modes.
+ */
 const variants: Record<Variant, string> = {
   primary:
-    "bg-accent text-ink-900 hover:bg-accent-pink hover:text-ink-50 active:translate-y-px " +
+    "bg-accent text-white hover:opacity-90 active:translate-y-px " +
     "focus-visible:ring-accent",
   ghost:
-    "text-ink-100 hover:bg-ink-700 active:bg-ink-700/80 " +
+    "text-ink-100 hover:bg-ink-800 active:bg-ink-700 " +
     "focus-visible:ring-ink-300",
   danger:
-    "text-ink-100 hover:bg-red-900/40 hover:text-red-200 active:bg-red-900/60 " +
-    "focus-visible:ring-red-500",
+    "text-ink-100 hover:bg-danger-surface hover:text-danger active:bg-danger-surface " +
+    "focus-visible:ring-danger",
 };
 
 const sizes: Record<Size, string> = {

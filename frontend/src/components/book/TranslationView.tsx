@@ -1,10 +1,8 @@
 /**
  * Placeholder for the translation surface (step 4).
  *
- * The Translation tab is normally disabled in the header so this view
- * is unreachable through the UI. It exists for the edge case of a user
- * landing here via a stale `?tab=translation` URL — better to render
- * "coming soon" than to flash a blank canvas.
+ * Normally unreachable through the UI (the tab is disabled). Renders
+ * "coming next" if a user lands here via a stale `?tab=translation` URL.
  */
 export function TranslationView() {
   return (

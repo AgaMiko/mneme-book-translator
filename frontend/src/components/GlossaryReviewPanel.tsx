@@ -24,77 +24,25 @@ import {
 import { useWorkingGlossary } from "@/lib/api/hooks";
 import { cn, formatNumber } from "@/lib/utils";
 
-/** Presentation only — ids and labels come from ``term_type_options`` on the API. */
-type TermTypeStyle = {
-  Icon: LucideIcon;
-  chipOn: string;
-  chipOff: string;
-  badge: string;
-  iconClass: string;
+/**
+ * Term-type presentation. Color is intentionally NOT part of the
+ * categorical mapping — every chip and badge uses the same neutral
+ * surface so the brand palette stays coherent. Distinction across types
+ * is carried by the icon, not by a per-type color. Active filter state
+ * (when one type is isolated) is signalled via the clay accent border;
+ * everything else dims.
+ */
+const TERM_TYPE_ICON: Record<string, LucideIcon> = {
+  character_name: UserRound,
+  place_name: MapPin,
+  organization: Building2,
+  lore_term: Sparkles,
+  cultural_term: Library,
+  specialized_usage: Braces,
 };
 
-const DEFAULT_TERM_STYLE: TermTypeStyle = {
-  Icon: Shapes,
-  chipOn:
-    "border-zinc-500/40 bg-zinc-900/90 text-zinc-200 shadow-sm shadow-black/30 ring-1 ring-zinc-500/20",
-  chipOff: "border-ink-700/90 bg-ink-950/60 text-ink-500 opacity-55",
-  badge: "border-zinc-600/40 bg-zinc-900/70 text-zinc-200",
-  iconClass: "text-zinc-400",
-};
-
-const TERM_TYPE_STYLE: Record<string, TermTypeStyle> = {
-  character_name: {
-    Icon: UserRound,
-    chipOn:
-      "border-sky-500/45 bg-sky-950/55 text-sky-100 shadow-sm shadow-sky-950/40 ring-1 ring-sky-400/25",
-    chipOff: "border-ink-700/90 bg-ink-950/60 text-ink-500 opacity-55",
-    badge: "border-sky-500/35 bg-sky-950/45 text-sky-100",
-    iconClass: "text-sky-400",
-  },
-  place_name: {
-    Icon: MapPin,
-    chipOn:
-      "border-emerald-500/45 bg-emerald-950/55 text-emerald-100 shadow-sm shadow-emerald-950/40 ring-1 ring-emerald-400/25",
-    chipOff: "border-ink-700/90 bg-ink-950/60 text-ink-500 opacity-55",
-    badge: "border-emerald-500/35 bg-emerald-950/45 text-emerald-100",
-    iconClass: "text-emerald-400",
-  },
-  organization: {
-    Icon: Building2,
-    chipOn:
-      "border-blue-500/45 bg-blue-950/55 text-blue-100 shadow-sm shadow-blue-950/40 ring-1 ring-blue-400/25",
-    chipOff: "border-ink-700/90 bg-ink-950/60 text-ink-500 opacity-55",
-    badge: "border-blue-500/35 bg-blue-950/45 text-blue-100",
-    iconClass: "text-blue-400",
-  },
-  lore_term: {
-    Icon: Sparkles,
-    chipOn:
-      "border-violet-500/45 bg-violet-950/55 text-violet-100 shadow-sm shadow-violet-950/40 ring-1 ring-violet-400/25",
-    chipOff: "border-ink-700/90 bg-ink-950/60 text-ink-500 opacity-55",
-    badge: "border-violet-500/35 bg-violet-950/45 text-violet-100",
-    iconClass: "text-violet-400",
-  },
-  cultural_term: {
-    Icon: Library,
-    chipOn:
-      "border-amber-500/45 bg-amber-950/55 text-amber-100 shadow-sm shadow-amber-950/40 ring-1 ring-amber-400/20",
-    chipOff: "border-ink-700/90 bg-ink-950/60 text-ink-500 opacity-55",
-    badge: "border-amber-500/35 bg-amber-950/45 text-amber-100",
-    iconClass: "text-amber-400",
-  },
-  specialized_usage: {
-    Icon: Braces,
-    chipOn:
-      "border-rose-500/40 bg-rose-950/50 text-rose-100 shadow-sm shadow-rose-950/35 ring-1 ring-rose-400/25",
-    chipOff: "border-ink-700/90 bg-ink-950/60 text-ink-500 opacity-55",
-    badge: "border-rose-500/35 bg-rose-950/45 text-rose-100",
-    iconClass: "text-rose-300",
-  },
-};
-
-function termTypeStyleFor(id: string): TermTypeStyle {
-  return TERM_TYPE_STYLE[id] ?? DEFAULT_TERM_STYLE;
+function iconFor(id: string): LucideIcon {
+  return TERM_TYPE_ICON[id] ?? Shapes;
 }
 
 function canonicalTermTypeId(raw: string, optionIds: readonly string[]): string {
@@ -145,10 +93,10 @@ function formatWhen(iso: string): string {
 }
 
 function runStatusTone(status: string): string {
-  if (status === "completed") return "text-emerald-300/90";
+  if (status === "completed") return "text-success";
   if (status === "running") return "text-accent";
-  if (status === "cancelled") return "text-amber-200/90";
-  if (status === "failed") return "text-red-300";
+  if (status === "cancelled") return "text-warning";
+  if (status === "failed") return "text-danger";
   return "text-ink-400";
 }
 
@@ -163,7 +111,15 @@ export function GlossaryReviewPanel({ bookId, pollWhileRunning }: Props) {
     refetchIntervalMs: pollWhileRunning ? 2000 : false,
   });
   const [query, setQuery] = useState("");
-  const [hiddenTermTypes, setHiddenTermTypes] = useState<Set<string>>(() => new Set());
+  /**
+   * Filter mode: single-select isolation. `null` = show all term types;
+   * a string value = show only entries of that type. Click the active
+   * type to clear; click another to switch. Inclusion semantics (focus
+   * on one) reads more naturally than the previous exclusion set
+   * (subtract noise) for a glossary the user is reviewing one bucket
+   * at a time.
+   */
+  const [isolatedTermType, setIsolatedTermType] = useState<string | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
 
   const termTypeOptionIds = useMemo(
@@ -171,22 +127,46 @@ export function GlossaryReviewPanel({ bookId, pollWhileRunning }: Props) {
     [data?.term_type_options],
   );
 
+  /**
+   * Per-type counts, reactive to the search query. The chip count
+   * previews how many entries the user would see if they clicked it
+   * — i.e. it counts entries that match the search AND have this type.
+   * Clicking a chip while a search is active yields exactly the count
+   * shown. Counts ignore the current isolation, so all chips can show
+   * their would-be result regardless of which one is active.
+   */
   const termTypeCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const id of termTypeOptionIds) counts[id] = 0;
+    const q = query.trim().toLowerCase();
     for (const e of data?.entries ?? []) {
+      if (q) {
+        const tr = readTranslation(e.translation_recommendation);
+        const blob = [
+          e.canonical_form,
+          e.meaning,
+          e.term_type,
+          ...e.variants,
+          tr.proposed_target ?? "",
+          tr.rationale,
+          ...tr.alternative_targets,
+        ]
+          .join(" ")
+          .toLowerCase();
+        if (!blob.includes(q)) continue;
+      }
       const id = canonicalTermTypeId(e.term_type, termTypeOptionIds);
       counts[id] = (counts[id] ?? 0) + 1;
     }
     return counts;
-  }, [data?.entries, termTypeOptionIds]);
+  }, [data?.entries, query, termTypeOptionIds]);
 
   const filtered = useMemo(() => {
     if (!data?.entries.length) return [];
     const q = query.trim().toLowerCase();
     return data.entries.filter((e) => {
       const tid = canonicalTermTypeId(e.term_type, termTypeOptionIds);
-      if (hiddenTermTypes.has(tid)) return false;
+      if (isolatedTermType !== null && tid !== isolatedTermType) return false;
       if (!q) return true;
       const tr = readTranslation(e.translation_recommendation);
       const blob = [
@@ -202,18 +182,18 @@ export function GlossaryReviewPanel({ bookId, pollWhileRunning }: Props) {
         .toLowerCase();
       return blob.includes(q);
     });
-  }, [data?.entries, query, hiddenTermTypes, termTypeOptionIds]);
+  }, [data?.entries, query, isolatedTermType, termTypeOptionIds]);
 
-  const toggleTermTypeVisibility = (id: string) => {
-    setHiddenTermTypes((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+  /**
+   * Click semantics:
+   * - Click the active type → clear (return to "all types").
+   * - Click any other type → switch isolation to it.
+   * - No additive multi-select; that's a different mental model and
+   *   would need a different UI affordance.
+   */
+  const selectOnlyTermType = (id: string) => {
+    setIsolatedTermType((prev) => (prev === id ? null : id));
   };
-
-  const clearTermTypeFilter = () => setHiddenTermTypes(new Set());
 
   return (
     <section
@@ -268,52 +248,65 @@ export function GlossaryReviewPanel({ bookId, pollWhileRunning }: Props) {
             <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
               Term types
             </p>
-            {hiddenTermTypes.size > 0 && (
-              <button
-                type="button"
-                onClick={clearTermTypeFilter}
-                className={cn(
-                  "rounded px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-accent-pink",
-                  "hover:bg-accent-pink/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent-pink/40",
-                )}
-              >
-                Show all types
-              </button>
+            {isolatedTermType !== null && (
+              <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
+                Showing only{" "}
+                <span className="text-accent">
+                  {(data.term_type_options ?? []).find(
+                    (o) => o.id === isolatedTermType,
+                  )?.label ?? isolatedTermType.replace(/_/g, " ")}
+                </span>
+                {" · "}
+                <button
+                  type="button"
+                  onClick={() => setIsolatedTermType(null)}
+                  className={cn(
+                    "underline decoration-ink-600 underline-offset-2",
+                    "hover:text-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                  )}
+                >
+                  show all
+                </button>
+              </p>
             )}
           </div>
           <div className="flex flex-wrap gap-2">
             {(data.term_type_options ?? []).map((opt) => {
               const id = opt.id;
-              const meta = termTypeStyleFor(id);
-              const { Icon } = meta;
-              const visible = !hiddenTermTypes.has(id);
+              const Icon = iconFor(id);
+              const isActive = isolatedTermType === id;
+              const isDimmed = isolatedTermType !== null && !isActive;
               const count = termTypeCounts[id] ?? 0;
               return (
                 <button
                   key={id}
                   type="button"
-                  aria-pressed={visible}
-                  title={visible ? `Hide ${opt.label} terms` : `Show ${opt.label} terms`}
-                  onClick={() => toggleTermTypeVisibility(id)}
+                  aria-pressed={isActive}
+                  title={
+                    isActive
+                      ? `Showing only ${opt.label} — click to clear`
+                      : `Show only ${opt.label}`
+                  }
+                  onClick={() => selectOnlyTermType(id)}
                   className={cn(
-                    "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 font-mono text-[11px] font-medium transition-all duration-150",
-                    visible ? meta.chipOn : meta.chipOff,
+                    "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1.5",
+                    "font-mono text-[11px] font-medium transition-all duration-150",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                    isActive
+                      ? "border-accent bg-accent-soft text-ink-50"
+                      : "border-ink-700 bg-ink-800 text-ink-200 hover:border-ink-600 hover:text-ink-100",
+                    isDimmed && "opacity-50",
                   )}
                 >
                   <Icon
                     className={cn(
                       "h-3.5 w-3.5 shrink-0",
-                      visible ? meta.iconClass : "text-ink-500",
+                      isActive ? "text-accent" : "text-ink-400",
                     )}
                     aria-hidden
                   />
                   <span>{opt.label}</span>
-                  <span
-                    className={cn(
-                      "min-w-[1.25rem] tabular-nums",
-                      visible ? "opacity-80" : "opacity-60",
-                    )}
-                  >
+                  <span className="min-w-[1.25rem] tabular-nums opacity-70">
                     {count}
                   </span>
                 </button>
@@ -330,7 +323,7 @@ export function GlossaryReviewPanel({ bookId, pollWhileRunning }: Props) {
       )}
 
       {isError && (
-        <p className="text-sm text-red-300" role="alert">
+        <p className="text-sm text-danger" role="alert">
           {error instanceof Error ? error.message : String(error)}
         </p>
       )}
@@ -352,14 +345,9 @@ export function GlossaryReviewPanel({ bookId, pollWhileRunning }: Props) {
       {!isLoading && !isError && filtered.length > 0 && (
         <p className="mb-3 font-mono text-xs text-ink-500">
           Showing {filtered.length}
-          {(query.trim() || hiddenTermTypes.size > 0) && ` of ${data?.entries.length ?? 0}`} term
-          {filtered.length === 1 ? "" : "s"}
-          {hiddenTermTypes.size > 0 && (
-            <span className="text-ink-600">
-              {" "}
-              · {hiddenTermTypes.size} type{hiddenTermTypes.size === 1 ? "" : "s"} hidden
-            </span>
-          )}
+          {(query.trim() || isolatedTermType !== null) &&
+            ` of ${data?.entries.length ?? 0}`}{" "}
+          term{filtered.length === 1 ? "" : "s"}
         </p>
       )}
 
@@ -385,10 +373,7 @@ export function GlossaryReviewPanel({ bookId, pollWhileRunning }: Props) {
 
       {!isLoading && !isError && data && data.entries.length > 0 && filtered.length === 0 && (
         <p className="text-sm text-ink-400">
-          No terms match that filter
-          {hiddenTermTypes.size === (data.term_type_options?.length ?? 0)
-            ? " (all types are hidden)"
-            : ""}.
+          No terms match that filter.
         </p>
       )}
     </section>
@@ -432,16 +417,15 @@ function TermTypeBadge({
 }) {
   const id = canonicalTermTypeId(termType, termTypeOptionIds);
   const label = termTypeOptions.find((o) => o.id === id)?.label ?? id.replace(/_/g, " ");
-  const meta = termTypeStyleFor(id);
-  const { Icon } = meta;
+  const Icon = iconFor(id);
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider",
-        meta.badge,
+        "inline-flex items-center gap-1 rounded border border-ink-700 bg-ink-800",
+        "px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-ink-300",
       )}
     >
-      <Icon className={cn("h-3 w-3 shrink-0", meta.iconClass)} aria-hidden />
+      <Icon className="h-3 w-3 shrink-0 text-accent" aria-hidden />
       <span>{label}</span>
       {id !== termType && (
         <span className="sr-only"> ({termType})</span>

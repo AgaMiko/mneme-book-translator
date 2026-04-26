@@ -1,38 +1,77 @@
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
-  darkMode: "class",
+
+  // Theme switching is driven by a `data-theme="dark"` attribute on
+  // <html>, set by useTheme. `selector` strategy lets us key off any
+  // attribute, but Tailwind v3.4+ supports the simpler form below.
+  darkMode: ["selector", '[data-theme="dark"]'],
+
   theme: {
     extend: {
       fontFamily: {
-        // Distinctive but readable: a modern grotesk for UI chrome,
-        // a literary serif for the manuscript reader, mono for technical bits.
-        sans: ["Geist", "system-ui", "sans-serif"],
+        // Three voices. Inter for UI chrome (per brand board); Lora for
+        // the literary reading surface and the wordmark; JetBrains Mono
+        // for technical metadata, paths, and code.
+        sans: ["Inter", "system-ui", "sans-serif"],
         serif: ["Lora", "Georgia", "serif"],
         mono: ["JetBrains Mono", "ui-monospace", "monospace"],
       },
+
+      // The palette is now driven by CSS variables defined in index.css.
+      // Existing component code referencing `bg-ink-900`, `text-ink-50`,
+      // `text-accent`, etc. continues to work — the names are stable;
+      // only what the names *resolve to* now flows from the active theme.
+      //
+      // Keeping the legacy `ink-N` and `accent-*` names (rather than
+      // renaming everything) means this refactor is one-file rather than
+      // a 200-site sweep, and any future Cursor-generated component
+      // immediately picks up the right palette without our review.
       colors: {
-        // Neutrals + dual accent: lime (primary chrome, CTAs) and pink (highlights, prose).
         ink: {
-          DEFAULT: "#0a0a0a",
-          50: "#f7f7f6",
-          100: "#ececea",
-          200: "#d6d6d2",
-          300: "#a8a8a3",
-          400: "#787873",
-          500: "#525250",
-          600: "#3a3a38",
-          700: "#26262a",
-          800: "#181818",
-          900: "#0a0a0a",
+          DEFAULT: "var(--color-text-primary)",
+          50: "var(--color-text-primary)",
+          100: "var(--color-text-primary)",
+          200: "var(--color-text-secondary)",
+          300: "var(--color-text-secondary)",
+          400: "var(--color-text-tertiary)",
+          500: "var(--color-text-tertiary)",
+          600: "var(--color-border)",
+          700: "var(--color-border)",
+          800: "var(--color-surface-elevated)",
+          900: "var(--color-surface)",
+          950: "var(--color-surface)",
         },
         accent: {
-          DEFAULT: "#bef264", // lime — buttons, rings, drop caps
-          lime: "#d9f99d", // lighter lime for hovers from dark lime fills
-          soft: "#fbcfe8", // pink-200 — subtle fills, borders on dark
-          pink: "#f472b6", // pink-400 — chapter titles, secondary emphasis
+          DEFAULT: "var(--color-accent)",
+          // Legacy alias: `accent-pink` (originally a secondary accent
+          // for chapter titles) now maps to the same clay as `accent`.
+          // Kept so existing JSX doesn't break; visually merged.
+          pink: "var(--color-accent)",
+          // Soft / lighter accent for hover states and subtle fills.
+          soft: "var(--color-accent-soft)",
+        },
+
+        // Semantic status tokens. Components that previously hardcoded
+        // `text-emerald-300`, `border-red-900/60`, etc. should be moved
+        // here — those raw Tailwind colors don't adapt across modes.
+        success: {
+          DEFAULT: "var(--color-success)",
+          surface: "var(--color-success-surface)",
+          border: "var(--color-success-border)",
+        },
+        warning: {
+          DEFAULT: "var(--color-warning)",
+          surface: "var(--color-warning-surface)",
+          border: "var(--color-warning-border)",
+        },
+        danger: {
+          DEFAULT: "var(--color-danger)",
+          surface: "var(--color-danger-surface)",
+          border: "var(--color-danger-border)",
         },
       },
+
       maxWidth: {
         prose: "68ch",
       },

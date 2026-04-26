@@ -6,15 +6,7 @@ import { useCallback, useEffect, useState } from "react";
  * - Reads `?tab=...` on mount so a reload preserves the working view.
  * - Writes back via `history.replaceState` (no extra entry per click).
  * - Resets to the default whenever `bookId` changes — opening a fresh
- *   book always starts on Manuscript, regardless of the tab the previous
- *   book was on. This is deliberate: a book is "what's in it" first;
- *   "what we're doing with it" is a deliberate next step, not a sticky
- *   preference that follows the user across books.
- *
- * Avoids a router dependency. Plays nicely with the back/forward buttons
- * because we use replaceState (not pushState) — back goes to the previous
- * book or page, not to the previous tab. That's the right default for
- * a workflow surface where each tab isn't a "place" worth revisiting.
+ *   book always starts on Manuscript.
  */
 export function useBookTab<T extends string>(
   bookId: string,
@@ -29,7 +21,6 @@ export function useBookTab<T extends string>(
 
   const [tab, setTabState] = useState<T>(readFromUrl);
 
-  // Reset on book switch
   useEffect(() => {
     setTabState(readFromUrl());
   }, [bookId, readFromUrl]);

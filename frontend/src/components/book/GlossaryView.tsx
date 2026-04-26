@@ -21,12 +21,7 @@ interface Props {
 
 /**
  * The working surface. Composes extraction controls (top) and the live
- * glossary table (below) as scrolling sections of one page — not as
- * sub-tabs. The author can run a pass and see terms accumulate without
- * navigating away.
- *
- * The sticky action bar at the bottom keeps the run/stop controls in
- * reach no matter how far the user has scrolled the term list.
+ * glossary table (below) as scrolling sections of one page.
  */
 export function GlossaryView({ book }: Props) {
   const queryClient = useQueryClient();
@@ -36,8 +31,6 @@ export function GlossaryView({ book }: Props) {
   const stopGlossary = useStopGlossaryExtraction(book.id);
   const termsRef = useRef<HTMLDivElement | null>(null);
 
-  // When extraction finishes, refresh the working glossary so newly
-  // landed terms appear without a page reload.
   const prevStatus = useRef<string | null>(null);
   useEffect(() => {
     const prev = prevStatus.current;
@@ -71,7 +64,6 @@ export function GlossaryView({ book }: Props) {
             }}
           />
 
-          {/* Divider — visually separates "what we're doing" from "what we have" */}
           <div className="my-12 border-t border-ink-800" />
 
           <div ref={termsRef} className="scroll-mt-6">

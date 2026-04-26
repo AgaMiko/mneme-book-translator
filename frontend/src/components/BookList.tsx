@@ -20,7 +20,7 @@ export function BookList({ selectedId, onSelect, onDeleted }: Props) {
         {Array.from({ length: 3 }).map((_, i) => (
           <li
             key={i}
-            className="h-16 animate-pulse rounded-md bg-ink-800/50"
+            className="h-16 animate-pulse rounded-md bg-ink-800"
             aria-hidden
           />
         ))}
@@ -30,7 +30,7 @@ export function BookList({ selectedId, onSelect, onDeleted }: Props) {
 
   if (isError) {
     return (
-      <p className="text-xs text-red-300">
+      <p className="text-xs text-danger">
         Couldn't load library — is the API running?
       </p>
     );
@@ -57,16 +57,14 @@ export function BookList({ selectedId, onSelect, onDeleted }: Props) {
               className={cn(
                 "group relative flex items-start gap-2 rounded-md px-3 py-2",
                 "transition-colors duration-150",
-                isSelected
-                  ? "bg-ink-700"
-                  : "hover:bg-ink-800/80",
+                isSelected ? "bg-ink-700" : "hover:bg-ink-800",
               )}
             >
               <button
                 type="button"
                 onClick={() => onSelect(book.id)}
                 className={cn(
-                  "flex-1 min-w-0 text-left rounded",
+                  "min-w-0 flex-1 rounded text-left",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                 )}
                 aria-current={isSelected ? "true" : undefined}
@@ -96,7 +94,7 @@ export function BookList({ selectedId, onSelect, onDeleted }: Props) {
                     });
                   }
                 }}
-                className="opacity-0 group-hover:opacity-100 focus-visible:opacity-100 px-2"
+                className="px-2 opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
               >
                 <Trash2 className="h-3.5 w-3.5" aria-hidden />
               </Button>

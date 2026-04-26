@@ -2,27 +2,131 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Theme variables.
+ *
+ * Light is the default at :root — this is what someone sees on first
+ * visit before useTheme has resolved system preference, and what every
+ * marketing surface promises (parchment, clay, scholarly mood). The
+ * `[data-theme="dark"]` override flips the lighting without changing
+ * the brand: same parchment paper imagined by candlelight rather than
+ * daylight. The clay accent stays clay in both modes — slightly
+ * brighter in dark to compensate for surrounding low contrast — never
+ * replaced by another color. That's the bridge that keeps the brand
+ * coherent across modes.
+ */
 @layer base {
   :root {
+    color-scheme: light;
+
+    /* Brand palette (per brand board) */
+    --color-parchment: #f3efe6;
+    --color-stone: #e5e1da;
+    --color-paper-ink: #2a2522;
+    --color-ink: #0f1115;
+    --color-clay: #b76a4a;
+
+    /* Semantic surface tokens — what code references via Tailwind aliases */
+    --color-surface: var(--color-parchment);
+    --color-surface-elevated: var(--color-stone);
+    --color-border: #d6d2ca;
+    --color-text-primary: var(--color-ink);
+    --color-text-secondary: var(--color-paper-ink);
+    --color-text-tertiary: #6e6862;
+
+    /* Brand accent and its hover/soft pair */
+    --color-accent: var(--color-clay);
+    --color-accent-soft: rgba(183, 106, 74, 0.12);
+
+    /* Reader surface texture color (subtle warm grain) */
+    --color-reader-grain: rgba(42, 37, 34, 0.04);
+
+    /* Status palette — sized for legibility on parchment */
+    --color-success: #2f6b3e;
+    --color-success-surface: rgba(47, 107, 62, 0.08);
+    --color-success-border: rgba(47, 107, 62, 0.25);
+    --color-warning: #8a5a14;
+    --color-warning-surface: rgba(138, 90, 20, 0.1);
+    --color-warning-border: rgba(138, 90, 20, 0.28);
+    --color-danger: #9b2d2d;
+    --color-danger-surface: rgba(155, 45, 45, 0.08);
+    --color-danger-border: rgba(155, 45, 45, 0.28);
+
+    /* Reading typography — light mode runs slightly tighter than dark.
+       Dark mode benefits from more breathing room because contrast is
+       lower; light mode at 1.6 reads more naturally on paper. */
+    --reader-line-height: 1.6;
+  }
+
+  [data-theme="dark"] {
     color-scheme: dark;
+
+    /* Surfaces — warm dark, not blue-black. The brown undertone is what
+       makes this read as "lamp-lit study" rather than "developer terminal". */
+    --color-surface: var(--color-ink);
+    --color-surface-elevated: var(--color-paper-ink);
+    --color-border: #3a3530;
+    --color-text-primary: #e8e2d5;
+    --color-text-secondary: #c9c2b5;
+    --color-text-tertiary: #857c72;
+
+    /* Clay slightly brightened to maintain the accent's perceived weight
+       against a dark background. Same hue family — never another color. */
+    --color-accent: #c97c5e;
+    --color-accent-soft: rgba(201, 124, 94, 0.18);
+
+    /* Reader grain inverts to a faint warm light dot */
+    --color-reader-grain: rgba(232, 226, 213, 0.025);
+
+    /* Status palette — sized for legibility on warm dark */
+    --color-success: #7fb88c;
+    --color-success-surface: rgba(127, 184, 140, 0.1);
+    --color-success-border: rgba(127, 184, 140, 0.28);
+    --color-warning: #d9a96a;
+    --color-warning-surface: rgba(217, 169, 106, 0.1);
+    --color-warning-border: rgba(217, 169, 106, 0.28);
+    --color-danger: #e08b8b;
+    --color-danger-surface: rgba(224, 139, 139, 0.1);
+    --color-danger-border: rgba(224, 139, 139, 0.28);
+
+    --reader-line-height: 1.7;
   }
 
   body {
+    background-color: var(--color-surface);
+    color: var(--color-text-primary);
     font-feature-settings: "ss01", "cv01", "cv11";
+    /* Prevent the white flash on theme initialization — useTheme sets
+       data-theme synchronously before React mounts, and bg-color flows
+       from the CSS variable so we never paint the wrong surface. */
+    transition:
+      background-color 200ms ease-out,
+      color 200ms ease-out;
   }
 
-  /* Subtle paper texture for the manuscript reader area */
+  /* Reader paper texture. A faint warm grain that evokes paper without
+     imitating it. Variable-driven so it adapts to mode without ceremony. */
   .reader-surface {
     background-image:
-      radial-gradient(circle at 1px 1px, rgba(255,255,255,0.015) 1px, transparent 0);
+      radial-gradient(
+        circle at 1px 1px,
+        var(--color-reader-grain) 1px,
+        transparent 0
+      );
     background-size: 4px 4px;
   }
 
-  /* Drop-cap on the very first paragraph of each chapter */
+  /* Drop cap on the very first paragraph of each chapter. Clay in both
+     modes — interactive accent doubles as the typographic flourish. */
   .chapter-body > p:first-of-type::first-letter {
     @apply font-serif text-5xl float-left mr-2 leading-none;
     line-height: 0.85;
-    color: theme('colors.accent.DEFAULT');
+    color: var(--color-accent);
+  }
+
+  /* Mode-aware reading line-height for the manuscript prose */
+  .chapter-body {
+    line-height: var(--reader-line-height);
   }
 }
 
@@ -34,12 +138,12 @@
            disabled:pointer-events-none disabled:opacity-50;
   }
   .btn-primary {
-    @apply bg-accent text-ink-900 hover:bg-accent-pink hover:text-ink-50;
+    @apply bg-accent text-white hover:opacity-90;
   }
   .btn-ghost {
-    @apply text-ink-100 hover:bg-ink-700;
+    @apply hover:bg-ink-700;
   }
   .card {
-    @apply rounded-lg border border-ink-700 bg-ink-800/50 p-5;
+    @apply rounded-lg border border-ink-700 bg-ink-800 p-5;
   }
 }

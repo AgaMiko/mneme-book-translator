@@ -9,16 +9,11 @@ interface Props {
 
 /**
  * The reading surface. Lora prose, drop caps, sticky chapter nav.
- *
- * Lifted from the old BookReader unchanged — this is the experience
- * that was working. The point of the refactor was to *separate* this
- * from the workspace, not redesign it.
  */
 export function ManuscriptView({ book }: Props) {
   const [activeChapter, setActiveChapter] = useState<string | null>(null);
   const chapterRefs = useRef<Record<string, HTMLElement | null>>({});
 
-  // Track which chapter is currently in view to highlight the nav.
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
@@ -55,7 +50,7 @@ export function ManuscriptView({ book }: Props) {
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                     activeChapter === id
                       ? "bg-ink-800 text-ink-50"
-                      : "text-ink-400 hover:bg-ink-800/60 hover:text-ink-100",
+                      : "text-ink-400 hover:bg-ink-800 hover:text-ink-100",
                   )}
                 >
                   <span className="mr-2 tabular-nums text-ink-500">
@@ -86,10 +81,8 @@ export function ManuscriptView({ book }: Props) {
                 ref={(el) => (chapterRefs.current[id] = el)}
                 className="mb-16 scroll-mt-8"
               >
-                <h2 className="mb-6 font-serif text-2xl text-accent-pink">
-                  {label}
-                </h2>
-                <div className="chapter-body space-y-5 font-serif text-lg leading-relaxed text-ink-100">
+                <h2 className="mb-6 font-serif text-2xl text-accent">{label}</h2>
+                <div className="chapter-body space-y-5 font-serif text-lg text-ink-100">
                   {chapter.paragraphs.length === 0 ? (
                     <p className="italic text-ink-500">[empty chapter]</p>
                   ) : (

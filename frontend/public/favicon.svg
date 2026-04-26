@@ -1,4 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
   <rect width="32" height="32" rx="6" fill="#0a0a0a"/>
-  <text x="16" y="22" font-family="Georgia, serif" font-size="20" font-style="italic" fill="#c8553d" text-anchor="middle">Z</text>
+  <text
+    x="16"
+    y="23"
+    font-family="Georgia, 'Times New Roman', serif"
+    font-size="22"
+    font-style="italic"
+    fill="#bef264"
+    text-anchor="middle"
+  >μ</text>
 </svg>

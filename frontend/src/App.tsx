@@ -12,12 +12,10 @@ export default function App() {
       {/* Sidebar */}
       <aside className="flex w-80 shrink-0 flex-col border-r border-ink-800 bg-ink-900">
         <header className="border-b border-ink-800 px-5 py-4">
-          <div className="flex items-baseline gap-2">
-            <h1 className="font-serif text-lg italic text-accent">Book Translator</h1>
-            <span className="font-mono text-xs uppercase tracking-widest text-accent-pink">
-              translator
-            </span>
-          </div>
+          <h1 className="font-serif text-lg italic text-accent">Mneme</h1>
+          <p className="mt-0.5 text-xs leading-snug text-ink-500">
+            Translation that remembers.
+          </p>
           <p className="mt-1 font-mono text-[10px] uppercase tracking-wider text-ink-500">
             pl → en
           </p>
@@ -41,19 +39,15 @@ export default function App() {
         </div>
 
         <footer className="border-t border-ink-800 px-5 py-3">
-          <p className="font-mono text-[10px] text-ink-500">
-            v0.1 · step 1 of 5
+          <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
+            mneme · v0.1
           </p>
         </footer>
       </aside>
 
       {/* Main */}
       <main className="flex-1 overflow-hidden">
-        {selectedId ? (
-          <BookReader bookId={selectedId} />
-        ) : (
-          <EmptyState />
-        )}
+        {selectedId ? <BookReader bookId={selectedId} /> : <EmptyState />}
       </main>
     </div>
   );
@@ -63,16 +57,26 @@ function EmptyState() {
   return (
     <div className="flex h-full items-center justify-center reader-surface">
       <div className="max-w-md px-6 text-center">
-        <div className="mb-6 inline-flex h-16 w-16 items-center justify-center rounded-full border border-ink-700 bg-ink-800/60">
-          <span className="font-serif text-2xl italic text-accent-pink">Z</span>
+        {/* Greek mu — the project's brand mark. Echoes the favicon and
+            connects the empty state to the identity established in the
+            sidebar header without repeating the wordmark. */}
+        <div
+          className="mb-6 inline-flex h-16 w-16 items-center justify-center rounded-full border border-ink-700 bg-ink-800/60"
+          aria-hidden
+        >
+          <span className="font-serif text-3xl italic text-accent">μ</span>
         </div>
         <h2 className="font-serif text-2xl text-ink-100">
-          Upload a manuscript to begin
+          Begin with a manuscript
         </h2>
         <p className="mt-3 text-sm leading-relaxed text-ink-400">
           Drop a <span className="font-mono text-xs text-ink-200">.docx</span>{" "}
-          file in the sidebar. We'll parse it into chapters and paragraphs you
-          can read here. Translation pipeline arrives in the next milestone.
+          into the sidebar. Mneme will read your book end to end, build a
+          glossary you can review, and remember every decision you make as
+          translation proceeds.
+        </p>
+        <p className="mt-4 text-xs leading-relaxed text-ink-500">
+          AI drafts. You decide. The book stays whole.
         </p>
       </div>
     </div>

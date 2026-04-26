@@ -39,14 +39,14 @@ export function GlossaryExtractionWorkspace({
   onOpenTerms,
 }: Props) {
   return (
-    <div className="mb-10 space-y-5">
+    <div className="space-y-5">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h2 className="font-serif text-xl font-medium text-ink-50">Run extraction</h2>
           <p className="mt-1 max-w-xl text-sm leading-relaxed text-ink-500">
             One model pass per overlapping text window (~{formatNumber(GLOSSARY_EXTRACTION_WINDOW_WORDS)}{" "}
-            words, ~{formatNumber(GLOSSARY_EXTRACTION_OVERLAP_WORDS)} overlap). Review extracted terms on
-            the other tab when a run finishes.
+            words, ~{formatNumber(GLOSSARY_EXTRACTION_OVERLAP_WORDS)} overlap). Extracted terms appear
+            below as the run progresses.
           </p>
         </div>
         <button
@@ -57,7 +57,7 @@ export function GlossaryExtractionWorkspace({
             "hover:border-ink-600 hover:bg-ink-800/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
           )}
         >
-          Glossary terms
+          Jump to terms ↓
         </button>
       </div>
 

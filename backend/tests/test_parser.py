@@ -11,7 +11,7 @@ from app.services.manuscript_parser import parse_docx
 @pytest.fixture
 def sample_docx(tmp_path: Path) -> Path:
     doc = Document()
-    doc.add_heading("Book Translator", level=0)
+    doc.add_heading("Mneme", level=0)
 
     doc.add_heading("Rozdział 1", level=1)
     doc.add_paragraph("To był pierwszy akapit.")

@@ -1,8 +1,12 @@
-# Book Translator
+# Mneme
 
-LLM-assisted translation pipeline for Polish fiction → English, with author-in-the-loop glossary review and per-fragment quality gates.
+**Translation that remembers.**
 
-This repo is **Step 1**: a working Docker stack where you can upload a `.docx` manuscript, parse it into chapters and paragraphs, persist to Postgres, and read it back in a minimal web UI. The translation pipeline (glossary extraction, fragment translation, problematic-fragment flagging) lands in subsequent steps.
+Mneme is an open-source AI translation pipeline for fiction manuscripts. It keeps persistent state across the book—glossary, extraction memory, and (in later steps) voice and translator decisions—so the model is an assistant in a workflow, not a one-shot translator.
+
+This repo is a working Docker stack (**Step 1** complete): upload a `.docx` manuscript, parse into chapters and paragraphs, persist to Postgres, and read it back in the web UI. Async metadata and glossary extraction (**Step 2**) and deeper author-in-the-loop flows are in active development.
+
+**Repository:** [github.com/AgaMiko/mneme-book-translator](https://github.com/AgaMiko/mneme-book-translator)
 
 ## Stack
 
@@ -54,7 +58,7 @@ backend/app/
 ## Project layout
 
 ```
-book-translator/
+mneme-book-translator/
 ├── backend/                 # FastAPI app + Alembic
 │   ├── app/
 │   │   ├── api/routes/      # endpoints
@@ -95,9 +99,9 @@ just lint            # ruff + mypy + tsc
 ## Roadmap
 
 - [x] Step 1 — Upload `.docx`, parse, persist, display
-- [ ] Step 2 — Redis + ARQ worker, Langfuse, glossary extraction (two-pass)
+- [ ] Step 2 — Async metadata extraction; glossary chain (delta-shaped, iterative) *(in progress)*
 - [ ] Step 3 — Author glossary review UI + acceptance flow
-- [ ] Step 4 — Fragment translation with context windows + character-voice consistency
+- [ ] Step 4 — Fragment translation with context windows + per-character voice
 - [ ] Step 5 — Problematic-fragment detection + author flag review
 
 ## License

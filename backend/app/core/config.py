@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     )
 
     # --- API ---
-    API_TITLE: str = "Book Translator API"
+    API_TITLE: str = "Mneme API"
     API_VERSION: str = "0.1.0"
     LOG_LEVEL: str = "INFO"
     CORS_ORIGINS: str = "http://localhost:5173"

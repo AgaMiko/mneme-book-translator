@@ -19,6 +19,9 @@ export const GlossaryExtractionStatusSchema = z.enum([
 ]);
 export type GlossaryExtractionStatus = z.infer<typeof GlossaryExtractionStatusSchema>;
 
+export const VoiceExtractionStatusSchema = GlossaryExtractionStatusSchema;
+export type VoiceExtractionStatus = z.infer<typeof VoiceExtractionStatusSchema>;
+
 export const ParagraphSchema = z.object({
   id: z.string().uuid(),
   position: z.number().int(),
@@ -48,6 +51,10 @@ export const BookSummarySchema = z.object({
   glossary_extraction_status: GlossaryExtractionStatusSchema,
   glossary_extraction_windows_total: z.number().int().nullable().optional(),
   glossary_extraction_windows_completed: z.number().int().nullable().optional(),
+  voice_extraction_status: VoiceExtractionStatusSchema,
+  voice_extraction_windows_total: z.number().int().nullable().optional(),
+  voice_extraction_windows_completed: z.number().int().nullable().optional(),
+  voice_extraction_last_error: z.string().nullable().optional(),
   original_filename: z.string(),
   word_count: z.number().int(),
   created_at: z.string(),
@@ -131,6 +138,43 @@ export const WorkingGlossaryResponseSchema = z.object({
 });
 export type WorkingGlossaryResponse = z.infer<typeof WorkingGlossaryResponseSchema>;
 
+export const VoiceWorkingProfileSchema = z.object({
+  id: z.string().uuid(),
+  glossary_entry_id: z.string().uuid(),
+  canonical_name: z.string(),
+  voice_summary: z.string(),
+  reference_passage_source: z.string(),
+  reference_passage_translation_proposed: z.string(),
+  reference_passage_translation_authoritative: z.string().nullable(),
+  status: z.string(),
+  dialogue_volume_observed: z.number().int(),
+  first_seen_window: z.number().int(),
+  last_observed_window: z.number().int(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+export type VoiceWorkingProfile = z.infer<typeof VoiceWorkingProfileSchema>;
+
+export const WorkingVoicesResponseSchema = z.object({
+  entries: z.array(VoiceWorkingProfileSchema),
+});
+export type WorkingVoicesResponse = z.infer<typeof WorkingVoicesResponseSchema>;
+
+export type VoiceProfilePatchBody = {
+  accept?: boolean;
+  reject?: boolean;
+  voice_summary?: string;
+  reference_passage_translation?: string;
+};
+
+export type GlossaryEntryPatchBody = {
+  proposed_target?: string;
+  suggestion?: "keep_original" | "translate";
+  accept?: boolean;
+  reject?: boolean;
+  merge_into_entry_id?: string;
+};
+
 // ─── Errors ─────────────────────────────────────────────
 
 export class ApiError extends Error {
@@ -177,6 +221,58 @@ export const api = {
     handleResponse(
       await fetch(`${API_URL}/books/${id}/glossary-working`),
       WorkingGlossaryResponseSchema,
+    ),
+
+  getWorkingVoices: async (id: string): Promise<WorkingVoicesResponse> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/voices-working`),
+      WorkingVoicesResponseSchema,
+    ),
+
+  patchVoiceWorkingProfile: async (
+    bookId: string,
+    voiceId: string,
+    body: VoiceProfilePatchBody,
+  ): Promise<VoiceWorkingProfile> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${bookId}/voices-working/profiles/${voiceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      VoiceWorkingProfileSchema,
+    ),
+
+  startVoiceExtraction: async (id: string): Promise<GlossaryExtractionStartResponse> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/voice-extraction/run`, { method: "POST" }),
+      GlossaryExtractionStartResponseSchema,
+    ),
+
+  continueVoiceExtraction: async (id: string): Promise<GlossaryExtractionStartResponse> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/voice-extraction/continue`, { method: "POST" }),
+      GlossaryExtractionStartResponseSchema,
+    ),
+
+  stopVoiceExtraction: async (id: string): Promise<GlossaryExtractionStopResponse> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/voice-extraction/stop`, { method: "POST" }),
+      GlossaryExtractionStopResponseSchema,
+    ),
+
+  patchGlossaryWorkingEntry: async (
+    bookId: string,
+    entryId: string,
+    body: GlossaryEntryPatchBody,
+  ): Promise<GlossaryWorkingEntry> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${bookId}/glossary-working/entries/${entryId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      GlossaryWorkingEntrySchema,
     ),
 
   startGlossaryExtraction: async (id: string): Promise<GlossaryExtractionStartResponse> =>

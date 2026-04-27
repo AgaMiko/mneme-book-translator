@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 from uuid import UUID
 
 from langfuse import propagate_attributes
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -28,6 +29,7 @@ from app.generation.prompt_manager.models.extract_glossary_model import (
     GlossaryEntryCompact,
     GlossaryUpdate,
     NewTerm,
+    TranslationRecommendation,
 )
 from app.models.book import Book, Chapter
 from app.models.glossary import (
@@ -40,6 +42,7 @@ from app.schemas.glossary import (
     GlossaryRunMetaOut,
     GlossarySelectOptionOut,
     GlossaryWorkingEntryOut,
+    GlossaryWorkingEntryPatchIn,
     WorkingGlossaryResponse,
 )
 
@@ -216,6 +219,131 @@ async def load_working_glossary_for_latest_run(
         .order_by(GlossaryEntry.canonical_form.asc()),
     )
     return run, list(ent_result.scalars().all())
+
+
+async def merge_working_glossary_entries(
+    session: AsyncSession,
+    *,
+    book_id: UUID,
+    loser_id: UUID,
+    winner_id: UUID,
+) -> GlossaryWorkingEntryOut:
+    """Fold ``loser_id`` into ``winner_id`` (same as an LLM ``merges`` delta)."""
+
+    run, _ = await load_working_glossary_for_latest_run(session, book_id=book_id)
+    if run is None:
+        raise LookupError("no_run")
+    if loser_id == winner_id:
+        raise ValueError("Cannot merge an entry into itself.")
+
+    winner = await session.get(GlossaryEntry, winner_id)
+    loser = await session.get(GlossaryEntry, loser_id)
+    if winner is None or loser is None:
+        raise LookupError("entry")
+    if (
+        winner.book_id != book_id
+        or loser.book_id != book_id
+        or winner.extraction_run_id != run.id
+        or loser.extraction_run_id != run.id
+    ):
+        raise LookupError("entry")
+    if winner.status == "rejected" or loser.status == "rejected":
+        raise ValueError(
+            "Merge is only available between non-rejected entries.",
+        )
+
+    w_var = list(winner.variants or [])
+    l_var = list(loser.variants or [])
+    winner.variants = _unique_variants(
+        w_var + l_var + [loser.canonical_form],
+    )
+    await session.delete(loser)
+    await session.commit()
+    await session.refresh(winner)
+
+    plaintext = await _load_book_plaintext(session, book_id)
+    wins = make_windows(plaintext) if plaintext else []
+    enriched = enrich_glossary_entries_for_review([winner], plaintext or "", wins)
+    log.info(
+        "glossary_author_merge",
+        book_id=str(book_id),
+        winner_id=str(winner_id),
+        loser_id=str(loser_id),
+        extraction_run_id=str(run.id),
+    )
+    return enriched[0]
+
+
+async def patch_working_glossary_entry(
+    session: AsyncSession,
+    *,
+    book_id: UUID,
+    entry_id: UUID,
+    patch: GlossaryWorkingEntryPatchIn,
+) -> GlossaryWorkingEntryOut:
+    """Update translation fields and/or acceptance on one row of the latest run."""
+
+    run, _ = await load_working_glossary_for_latest_run(session, book_id=book_id)
+    if run is None:
+        raise LookupError("no_run")
+
+    entry = await session.get(GlossaryEntry, entry_id)
+    if entry is None or entry.book_id != book_id or entry.extraction_run_id != run.id:
+        raise LookupError("entry")
+
+    if patch.merge_into_entry_id is not None:
+        return await merge_working_glossary_entries(
+            session,
+            book_id=book_id,
+            loser_id=entry_id,
+            winner_id=patch.merge_into_entry_id,
+        )
+
+    if patch.reject:
+        entry.status = "rejected"
+        await session.commit()
+        await session.refresh(entry)
+        plaintext = await _load_book_plaintext(session, book_id)
+        wins = make_windows(plaintext) if plaintext else []
+        enriched = enrich_glossary_entries_for_review([entry], plaintext or "", wins)
+        log.info(
+            "glossary_author_reject",
+            book_id=str(book_id),
+            entry_id=str(entry_id),
+            extraction_run_id=str(run.id),
+        )
+        return enriched[0]
+
+    raw = dict(entry.translation_recommendation or {})
+    if patch.proposed_target is not None:
+        raw["proposed_target"] = patch.proposed_target
+    if patch.suggestion is not None:
+        raw["suggestion"] = patch.suggestion
+
+    if patch.proposed_target is not None or patch.suggestion is not None:
+        try:
+            tr = TranslationRecommendation.model_validate(raw)
+        except ValidationError as exc:
+            msg = "; ".join(
+                f"{'.'.join(str(x) for x in err.get('loc', ()))}: {err.get('msg', 'invalid')}"
+                for err in exc.errors()
+            )
+            raise ValueError(msg) from exc
+        entry.translation_recommendation = tr.model_dump(mode="json")
+
+    if patch.accept:
+        entry.status = "accepted"
+    elif patch.proposed_target is not None or patch.suggestion is not None:
+        if entry.status in ("proposed", "accepted", "adjusted", "rejected"):
+            entry.status = "adjusted"
+
+    await session.commit()
+    await session.refresh(entry)
+
+    plaintext = await _load_book_plaintext(session, book_id)
+    wins = make_windows(plaintext) if plaintext else []
+    enriched = enrich_glossary_entries_for_review([entry], plaintext or "", wins)
+    return enriched[0]
 
 
 async def _max_stored_glossary_window(

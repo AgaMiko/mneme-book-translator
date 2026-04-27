@@ -19,6 +19,19 @@ from app.generation.prompt_manager.models.extract_glossary_model import (
     RefineOperation,
     TranslationRecommendation,
 )
+
+from app.generation.chains.extract_voices_chain import extract_voices_window
+from app.generation.prompt_manager.models.extract_voices_model import (
+    CharacterVoiceCompact,
+    ExtendVoiceProfile,
+    GlossaryCharacterRef,
+    NewVoiceProfile,
+    ReplaceReferencePassage,
+    VoiceNote,
+    VoiceNoteCategory,
+    VoiceUpdate,
+)
+
 __all__ = [
     "GenerationDisabledError",
     "ManuscriptMetadata",
@@ -31,4 +44,13 @@ __all__ = [
     "RefineOperation",
     "TranslationRecommendation",
     "extract_glossary_window",
+    "CharacterVoiceCompact",
+    "ExtendVoiceProfile",
+    "GlossaryCharacterRef",
+    "NewVoiceProfile",
+    "ReplaceReferencePassage",
+    "VoiceNote",
+    "VoiceNoteCategory",
+    "VoiceUpdate",
+    "extract_voices_window",
 ]

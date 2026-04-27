@@ -3,6 +3,7 @@ import { GlossaryView } from "@/components/book/GlossaryView";
 import { ManuscriptView } from "@/components/book/ManuscriptView";
 import { BOOK_TAB_IDS, DEFAULT_BOOK_TAB } from "@/components/book/tabs";
 import { TranslationView } from "@/components/book/TranslationView";
+import { VoiceView } from "@/components/book/VoiceView";
 import { WorkflowHint } from "@/components/book/WorkflowHint";
 import { useBookTab } from "@/hooks/useBookTab";
 import { useBook } from "@/lib/api/hooks";
@@ -48,6 +49,7 @@ export function BookReader({ bookId }: Props) {
       <div className="min-h-0 flex-1">
         {activeTab === "manuscript" && <ManuscriptView book={book} />}
         {activeTab === "glossary" && <GlossaryView book={book} />}
+        {activeTab === "voices" && <VoiceView book={book} />}
         {activeTab === "translation" && <TranslationView />}
       </div>
     </div>

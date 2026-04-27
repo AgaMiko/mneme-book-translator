@@ -24,6 +24,8 @@ GlossaryExtractionStatus = Literal[
     "cancelled",
 ]
 
+VoiceExtractionStatus = GlossaryExtractionStatus
+
 
 class ParagraphResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -63,6 +65,10 @@ class BookSummary(BaseModel):
     glossary_extraction_status: GlossaryExtractionStatus
     glossary_extraction_windows_total: int | None = None
     glossary_extraction_windows_completed: int | None = None
+    voice_extraction_status: VoiceExtractionStatus
+    voice_extraction_windows_total: int | None = None
+    voice_extraction_windows_completed: int | None = None
+    voice_extraction_last_error: str | None = None
     original_filename: str
     word_count: int
     created_at: datetime

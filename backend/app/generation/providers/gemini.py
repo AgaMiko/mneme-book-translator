@@ -138,6 +138,7 @@ async def generate(
     timeout_s: int = 240,
     max_retries: int = 4,
     initial_backoff_s: float = 1.0,
+    max_output_tokens: int | None = 8192,
 ) -> types.GenerateContentResponse:
     """Call Gemini with a JSON-schema-constrained response.
 
@@ -145,17 +146,24 @@ async def generate(
     immediately. Returns the raw SDK response — chain code is responsible
     for ``.parsed`` vs ``.text`` handling, since the right fallback depends
     on what each step considers an acceptable degradation.
+
+    ``max_output_tokens`` defaults to 8192 so structured JSON responses are
+    less likely to hit model output ceilings mid-object; pass ``None`` to
+    omit the knob and use the API default.
     """
     if not settings.GEMINI_API_KEY:
         raise GenerationDisabledError("GEMINI_API_KEY is not configured.")
 
     client = _get_client(settings.GEMINI_API_KEY, timeout_s * 1000)
 
-    config = types.GenerateContentConfig(
-        response_mime_type="application/json",
-        response_schema=schema,
-        temperature=temperature,
-    )
+    config_kwargs: dict[str, Any] = {
+        "response_mime_type": "application/json",
+        "response_schema": schema,
+        "temperature": temperature,
+    }
+    if max_output_tokens is not None:
+        config_kwargs["max_output_tokens"] = max_output_tokens
+    config = types.GenerateContentConfig(**config_kwargs)
 
     last_exc: Exception | None = None
     for attempt in range(max_retries):

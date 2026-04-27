@@ -14,6 +14,7 @@ Upload is split into two concerns:
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -42,8 +43,17 @@ from app.schemas.book import (
     GlossaryExtractionStopResponse,
     UploadBookResponse,
 )
-from app.schemas.glossary import WorkingGlossaryResponse
-from app.services import book_service, glossary_service
+from app.schemas.glossary import (
+    GlossaryWorkingEntryOut,
+    GlossaryWorkingEntryPatchIn,
+    WorkingGlossaryResponse,
+)
+from app.schemas.voice import (
+    VoiceWorkingProfileOut,
+    VoiceWorkingProfilePatchIn,
+    WorkingVoicesResponse,
+)
+from app.services import book_service, glossary_service, voice_service
 from app.services.glossary_extraction_estimate import estimate_glossary_extraction
 from app.services.manuscript_parser import ParsedManuscript, parse_docx
 
@@ -237,6 +247,48 @@ async def get_working_glossary(
     )
 
 
+@router.patch(
+    "/{book_id}/glossary-working/entries/{entry_id}",
+    response_model=GlossaryWorkingEntryOut,
+    summary="Update a working glossary entry (translation and/or accept)",
+)
+async def patch_working_glossary_entry(
+    book_id: UUID,
+    entry_id: UUID,
+    body: GlossaryWorkingEntryPatchIn,
+    session: AsyncSession = Depends(get_session),
+) -> GlossaryWorkingEntryOut:
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Book not found",
+        )
+    try:
+        return await glossary_service.patch_working_glossary_entry(
+            session,
+            book_id=book_id,
+            entry_id=entry_id,
+            patch=body,
+        )
+    except LookupError as exc:
+        code = exc.args[0] if exc.args else ""
+        if code == "no_run":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="No glossary extraction run exists for this book.",
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Glossary entry not found for this book's latest run.",
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
 @router.post(
     "/{book_id}/glossary-extraction/run",
     status_code=status.HTTP_202_ACCEPTED,
@@ -387,6 +439,266 @@ async def stop_glossary_extraction(
             detail="Glossary extraction is not running for this book.",
         )
     log.info("glossary_extraction_stop_requested", book_id=str(book_id))
+    return GlossaryExtractionStopResponse(book_id=book_id)
+
+
+def _schedule_extract_book_voices(
+    book_id: UUID,
+    settings: Settings,
+    *,
+    continue_extraction: bool = False,
+) -> None:
+    """Run voice extraction in the current event loop (not after HTTP response only).
+
+    Starlette's ``BackgroundTasks`` run only after the response is fully sent. In some
+    setups (reload, proxy buffering, or client behavior) that path is unreliable. Using
+    ``asyncio.create_task`` matches glossary-style fire-and-forget and starts work as
+    soon as the request commits.
+    """
+    task = asyncio.create_task(
+        voice_service.extract_book_voices(
+            book_id=book_id,
+            settings=settings,
+            continue_extraction=continue_extraction,
+        )
+    )
+
+    def _on_done(t: asyncio.Task[object]) -> None:
+        try:
+            t.result()
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            log.exception(
+                "voice_extraction_background_unhandled",
+                book_id=str(book_id),
+            )
+
+    task.add_done_callback(_on_done)
+
+
+def _voice_extraction_has_partial_progress(book: Book) -> bool:
+    tw = book.voice_extraction_windows_total
+    done = book.voice_extraction_windows_completed
+    return tw is not None and done is not None and tw > 0 and 0 < done < tw
+
+
+@router.get(
+    "/{book_id}/voices-working",
+    response_model=WorkingVoicesResponse,
+    summary="Character voice profiles for review",
+)
+async def get_working_voices(
+    book_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> WorkingVoicesResponse:
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Book not found",
+        )
+    return await voice_service.build_working_voices_response(session, book_id=book_id)
+
+
+@router.patch(
+    "/{book_id}/voices-working/profiles/{voice_id}",
+    response_model=VoiceWorkingProfileOut,
+    summary="Update a voice profile (accept/reject or edit baseline)",
+)
+async def patch_working_voice_profile(
+    book_id: UUID,
+    voice_id: UUID,
+    body: VoiceWorkingProfilePatchIn,
+    session: AsyncSession = Depends(get_session),
+) -> VoiceWorkingProfileOut:
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Book not found",
+        )
+    try:
+        return await voice_service.patch_working_voice_profile(
+            session,
+            book_id=book_id,
+            voice_id=voice_id,
+            patch=body,
+        )
+    except LookupError as exc:
+        if exc.args and exc.args[0] == "voice":
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Voice profile not found for this book.",
+            ) from exc
+        raise
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
+
+
+@router.post(
+    "/{book_id}/voice-extraction/run",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=GlossaryExtractionStartResponse,
+    summary="Start voice extraction (background)",
+)
+async def run_voice_extraction(
+    book_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> GlossaryExtractionStartResponse:
+    if not settings.GEMINI_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="GEMINI_API_KEY is not configured.",
+        )
+
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Book not found",
+        )
+    if book.voice_extraction_status == "running":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Voice extraction is already running for this book.",
+        )
+    if book.voice_extraction_status == "completed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Voice extraction already completed for this book.",
+        )
+    if _voice_extraction_has_partial_progress(book):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An interrupted extraction exists — use Continue to resume.",
+        )
+
+    ok, reason = await voice_service.can_run_voice_extraction(session, book_id=book_id)
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=reason or "Voice extraction cannot start.",
+        )
+
+    result = await session.execute(
+        update(Book)
+        .where(
+            Book.id == book_id,
+            Book.voice_extraction_status != "running",
+        )
+        .values(
+            voice_extraction_status="running",
+            voice_extraction_cancel_requested=False,
+            voice_extraction_windows_total=None,
+            voice_extraction_windows_completed=None,
+            voice_extraction_last_error=None,
+        ),
+    )
+    await session.commit()
+    if result.rowcount == 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Voice extraction is already running for this book.",
+        )
+
+    _schedule_extract_book_voices(book_id, settings, continue_extraction=False)
+    log.info("voice_extraction_scheduled", book_id=str(book_id))
+    return GlossaryExtractionStartResponse(book_id=book_id)
+
+
+@router.post(
+    "/{book_id}/voice-extraction/continue",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=GlossaryExtractionStartResponse,
+    summary="Resume voice extraction after failure or cancel",
+)
+async def continue_voice_extraction(
+    book_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> GlossaryExtractionStartResponse:
+    if not settings.GEMINI_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="GEMINI_API_KEY is not configured.",
+        )
+
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Book not found",
+        )
+    if book.voice_extraction_status == "running":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Voice extraction is already running for this book.",
+        )
+    if not await voice_service.can_continue_voice_extraction(session, book_id=book_id):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "No interrupted voice extraction to continue, the manuscript changed since that run, "
+                "or the run is already complete."
+            ),
+        )
+
+    result = await session.execute(
+        update(Book)
+        .where(Book.id == book_id, Book.voice_extraction_status != "running")
+        .values(
+            voice_extraction_status="running",
+            voice_extraction_cancel_requested=False,
+        ),
+    )
+    await session.commit()
+    if result.rowcount == 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Voice extraction is already running for this book.",
+        )
+
+    _schedule_extract_book_voices(book_id, settings, continue_extraction=True)
+    log.info("voice_extraction_continue_scheduled", book_id=str(book_id))
+    return GlossaryExtractionStartResponse(book_id=book_id)
+
+
+@router.post(
+    "/{book_id}/voice-extraction/stop",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=GlossaryExtractionStopResponse,
+    summary="Request cooperative cancel of voice extraction",
+)
+async def stop_voice_extraction(
+    book_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> GlossaryExtractionStopResponse:
+    result = await session.execute(
+        update(Book)
+        .where(
+            Book.id == book_id,
+            Book.voice_extraction_status == "running",
+        )
+        .values(voice_extraction_cancel_requested=True),
+    )
+    await session.commit()
+    if result.rowcount == 0:
+        book = await session.get(Book, book_id)
+        if book is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Book not found",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Voice extraction is not running for this book.",
+        )
+    log.info("voice_extraction_stop_requested", book_id=str(book_id))
     return GlossaryExtractionStopResponse(book_id=book_id)
 
 

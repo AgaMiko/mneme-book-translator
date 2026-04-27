@@ -37,6 +37,11 @@ class Settings(BaseSettings):
     UPLOAD_DIR: Path = Path("/data/uploads")
     MAX_UPLOAD_SIZE_MB: int = 50
 
+    # If True, books stuck in `*_extraction_status="running"` from a dead worker
+    # (e.g. process restart) are marked failed on API startup. Disable in multi-replica
+    # deployments where another instance may legitimately be running extraction.
+    RECONCILE_STALE_EXTRACTIONS_ON_STARTUP: bool = True
+
     # --- LLM providers ---
     GEMINI_API_KEY: str | None = None
     GEMINI_MODEL: str = "gemini-3.1-flash-lite-preview"

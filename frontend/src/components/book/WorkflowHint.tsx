@@ -75,6 +75,18 @@ function computeHint(book: BookDetail, activeTab: BookTab): Hint | null {
       };
     }
     if (glossaryStatus === "completed") {
+      if (book.voice_extraction_status === "running") {
+        return {
+          text: "Voice extraction is running in the background.",
+          action: { label: "Watch progress", tab: "voices" },
+        };
+      }
+      if (book.voice_extraction_status !== "completed") {
+        return {
+          text: "Glossary is ready — run character voice extraction next (same windows as the glossary pass).",
+          action: { label: "Open voices", tab: "voices" },
+        };
+      }
       return {
         text: "Glossary is ready — review and accept terms before translation.",
         action: { label: "Review terms", tab: "glossary" },
@@ -108,6 +120,30 @@ function computeHint(book: BookDetail, activeTab: BookTab): Hint | null {
     if (glossaryStatus === "completed") {
       return {
         text: "Review and accept terms. Translation uses these decisions.",
+      };
+    }
+  }
+
+  if (activeTab === "voices") {
+    if (book.glossary_extraction_status !== "completed") {
+      return {
+        text: "Finish the glossary first — voices attach only to character entries there.",
+        action: { label: "Open glossary", tab: "glossary" },
+      };
+    }
+    if (book.voice_extraction_status === "idle") {
+      return {
+        text: "Start extraction to scan the manuscript in windows and build profiles.",
+      };
+    }
+    if (book.voice_extraction_status === "running") {
+      return {
+        text: "Profiles update as each window finishes.",
+      };
+    }
+    if (book.voice_extraction_status === "completed") {
+      return {
+        text: "Accept or reject each profile; rejected voices stay out of the next extraction pass.",
       };
     }
   }

@@ -1,10 +1,10 @@
 """API contracts for the working glossary (author review)."""
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class GlossaryWorkingEntryOut(BaseModel):
@@ -48,3 +48,39 @@ class WorkingGlossaryResponse(BaseModel):
     translation_suggestion_options: list[GlossarySelectOptionOut] = Field(
         default_factory=list,
     )
+
+
+class GlossaryWorkingEntryPatchIn(BaseModel):
+    """Author updates to one working glossary row (persisted on ``GlossaryEntry``)."""
+
+    proposed_target: str | None = None
+    suggestion: Literal["keep_original", "translate"] | None = None
+    accept: bool = False
+    reject: bool = False
+    merge_into_entry_id: UUID | None = None
+
+    @model_validator(mode="after")
+    def _exclusive_and_nonempty(self) -> Self:
+        merge = self.merge_into_entry_id is not None
+        rej = self.reject
+        acc = self.accept
+        trans = self.proposed_target is not None or self.suggestion is not None
+
+        if merge and (rej or acc or trans):
+            raise ValueError(
+                "merge_into_entry_id cannot be combined with other patch fields.",
+            )
+        if rej and (merge or acc or trans):
+            raise ValueError("reject cannot be combined with other patch fields.")
+        if merge:
+            return self
+        if rej:
+            return self
+        if acc:
+            return self
+        if trans:
+            return self
+        raise ValueError(
+            "Provide proposed_target and/or suggestion, set accept or reject, "
+            "or set merge_into_entry_id.",
+        )

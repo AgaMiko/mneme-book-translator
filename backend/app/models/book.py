@@ -70,6 +70,22 @@ class Book(Base):
         Integer, default=None
     )
 
+    voice_extraction_status: Mapped[str] = mapped_column(
+        String(16),
+        default="idle",
+        server_default="idle",
+    )
+    voice_extraction_cancel_requested: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+    )
+    voice_extraction_windows_total: Mapped[int | None] = mapped_column(Integer, default=None)
+    voice_extraction_windows_completed: Mapped[int | None] = mapped_column(
+        Integer, default=None
+    )
+    voice_extraction_last_error: Mapped[str | None] = mapped_column(Text, default=None)
+
     # Which published glossary downstream translation should use (immutable
     # ``FinalGlossary`` + ``FinalGlossaryEntry`` rows). Working drafts live in
     # ``GlossaryEntry`` for the relevant ``GlossaryExtractionRun``.
@@ -124,6 +140,13 @@ class Book(Base):
         primaryjoin="Book.active_final_glossary_id == FinalGlossary.id",
         uselist=False,
         overlaps="book,final_glossaries",
+        init=False,
+    )
+    character_voices: Mapped[list["CharacterVoice"]] = relationship(  # noqa: F821
+        "CharacterVoice",
+        back_populates="book",
+        cascade="all, delete-orphan",
+        default_factory=list,
         init=False,
     )
 

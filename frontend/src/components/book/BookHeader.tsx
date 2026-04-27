@@ -4,6 +4,7 @@ import type {
   BookDetail,
   GlossaryExtractionStatus,
   MetadataStatus,
+  VoiceExtractionStatus,
 } from "@/lib/api/client";
 import { cn, formatNumber } from "@/lib/utils";
 
@@ -24,6 +25,7 @@ interface Props {
  */
 export function BookHeader({ book, activeTab, onSelectTab }: Props) {
   const language = (book.manuscript_language ?? book.source_language).toUpperCase();
+  const voicesLocked = book.glossary_extraction_status !== "completed";
 
   return (
     <header className="border-b border-ink-800 bg-ink-900/95 backdrop-blur-sm">
@@ -39,6 +41,13 @@ export function BookHeader({ book, activeTab, onSelectTab }: Props) {
             windowsCompleted={book.glossary_extraction_windows_completed ?? null}
             windowsTotal={book.glossary_extraction_windows_total ?? null}
           />
+          {!voicesLocked && (
+            <VoiceExtractionPill
+              status={book.voice_extraction_status}
+              windowsCompleted={book.voice_extraction_windows_completed ?? null}
+              windowsTotal={book.voice_extraction_windows_total ?? null}
+            />
+          )}
         </div>
         <h1 className="mt-2 font-serif text-3xl font-semibold text-ink-50">
           {book.title}
@@ -58,15 +67,16 @@ export function BookHeader({ book, activeTab, onSelectTab }: Props) {
         >
           {BOOK_TABS.map((t) => {
             const active = t.id === activeTab;
+            const tabDisabled = t.disabled || (t.id === "voices" && voicesLocked);
             return (
               <button
                 key={t.id}
                 type="button"
                 role="tab"
                 aria-selected={active}
-                aria-disabled={t.disabled || undefined}
-                disabled={t.disabled}
-                onClick={() => !t.disabled && onSelectTab(t.id)}
+                aria-disabled={tabDisabled || undefined}
+                disabled={tabDisabled}
+                onClick={() => !tabDisabled && onSelectTab(t.id)}
                 className={cn(
                   "relative -mb-px border-b-2 px-4 py-3 font-mono text-xs uppercase tracking-wider",
                   "transition-colors duration-150 ease-out",
@@ -74,11 +84,16 @@ export function BookHeader({ book, activeTab, onSelectTab }: Props) {
                   active
                     ? "border-accent text-ink-50"
                     : "border-transparent text-ink-400 hover:text-ink-100",
-                  t.disabled && "cursor-not-allowed text-ink-600 hover:text-ink-600",
+                  tabDisabled && "cursor-not-allowed text-ink-600 hover:text-ink-600",
                 )}
               >
                 <span>{t.label}</span>
-                {t.disabled && (
+                {t.id === "voices" && voicesLocked && (
+                  <span className="ml-2 rounded bg-ink-800 px-1.5 py-0.5 text-[9px] text-ink-500">
+                    glossary first
+                  </span>
+                )}
+                {t.id === "translation" && t.disabled && (
                   <span className="ml-2 rounded bg-ink-800 px-1.5 py-0.5 text-[9px] text-ink-500">
                     soon
                   </span>
@@ -193,6 +208,76 @@ function GlossaryExtractionPill({
     >
       <AlertCircle className="h-3 w-3" aria-hidden />
       glossary failed
+    </span>
+  );
+}
+
+function VoiceExtractionPill({
+  status,
+  windowsCompleted,
+  windowsTotal,
+}: {
+  status: VoiceExtractionStatus;
+  windowsCompleted: number | null;
+  windowsTotal: number | null;
+}) {
+  if (status === "idle") return null;
+
+  if (status === "running") {
+    const progress =
+      windowsTotal != null && windowsTotal > 0
+        ? ` ${windowsCompleted ?? 0}/${windowsTotal}`
+        : "";
+    return (
+      <span className={cn(pillBase, "bg-ink-800 text-ink-300")}>
+        <span
+          className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent"
+          aria-hidden
+        />
+        voice extraction…{progress}
+      </span>
+    );
+  }
+
+  if (status === "completed") {
+    return (
+      <span
+        className={cn(
+          pillBase,
+          "border border-success-border bg-success-surface text-success",
+        )}
+      >
+        voices saved
+      </span>
+    );
+  }
+
+  if (status === "cancelled") {
+    const tail =
+      windowsTotal != null && windowsTotal > 0
+        ? ` after ${windowsCompleted ?? 0}/${windowsTotal}`
+        : "";
+    return (
+      <span
+        className={cn(
+          pillBase,
+          "border border-warning-border bg-warning-surface text-warning",
+        )}
+      >
+        voices stopped{tail}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={cn(
+        pillBase,
+        "border border-danger-border bg-danger-surface text-danger",
+      )}
+    >
+      <AlertCircle className="h-3 w-3" aria-hidden />
+      voices failed
     </span>
   );
 }

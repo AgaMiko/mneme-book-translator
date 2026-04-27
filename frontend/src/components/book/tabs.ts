@@ -1,12 +1,13 @@
 /**
- * The three sections of an open book — single source of truth.
+ * Sections of an open book — single source of truth.
  *
- * `Translation` is visible-but-disabled rather than hidden, on purpose:
- * it tells the user where they are in the workflow without overpromising.
+ * `Voices` unlocks after glossary extraction completes (canonical characters exist).
+ * `Translation` is visible-but-disabled rather than hidden, on purpose.
  */
 export const BOOK_TABS = [
   { id: "manuscript", label: "Manuscript", disabled: false },
   { id: "glossary", label: "Glossary", disabled: false },
+  { id: "voices", label: "Voices", disabled: false },
   { id: "translation", label: "Translation", disabled: true },
 ] as const satisfies readonly {
   id: string;

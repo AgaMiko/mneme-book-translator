@@ -7,5 +7,5 @@ Frontend mirror (keep values identical):
 ``frontend/src/constants/glossaryExtraction.ts``.
 """
 
-GLOSSARY_EXTRACTION_WINDOW_WORDS = 500
-GLOSSARY_EXTRACTION_OVERLAP_WORDS = 100
+GLOSSARY_EXTRACTION_WINDOW_WORDS = 1000
+GLOSSARY_EXTRACTION_OVERLAP_WORDS = 200

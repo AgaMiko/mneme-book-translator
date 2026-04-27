@@ -10,11 +10,16 @@ import {
   api,
   type BookDetail,
   type BookSummary,
+  type GlossaryEntryPatchBody,
   type GlossaryExtractionEstimate,
   type GlossaryExtractionStartResponse,
   type GlossaryExtractionStopResponse,
+  type GlossaryWorkingEntry,
   type UploadBookResponse,
+  type VoiceProfilePatchBody,
+  type VoiceWorkingProfile,
   type WorkingGlossaryResponse,
+  type WorkingVoicesResponse,
 } from "./client";
 
 // Query key factory — all cache invalidation flows through here.
@@ -24,6 +29,7 @@ export const bookKeys = {
   detail: (id: string) => [...bookKeys.all, "detail", id] as const,
   glossaryEstimate: (id: string) => [...bookKeys.all, "glossary-estimate", id] as const,
   workingGlossary: (id: string) => [...bookKeys.all, "working-glossary", id] as const,
+  workingVoices: (id: string) => [...bookKeys.all, "working-voices", id] as const,
 };
 
 // How often to re-fetch a book while it's still being enriched. Short
@@ -41,7 +47,8 @@ export function useBooks(): UseQueryResult<BookSummary[], Error> {
       if (!data) return false;
       const anyPending = data.some((b) => b.metadata_status === "pending");
       const anyGlossary = data.some((b) => b.glossary_extraction_status === "running");
-      return anyPending || anyGlossary ? METADATA_POLL_INTERVAL_MS : false;
+      const anyVoice = data.some((b) => b.voice_extraction_status === "running");
+      return anyPending || anyGlossary || anyVoice ? METADATA_POLL_INTERVAL_MS : false;
     },
   });
 }
@@ -60,6 +67,7 @@ export function useBook(id: string | null): UseQueryResult<BookDetail, Error> {
       if (!data) return false;
       if (data.metadata_status === "pending") return METADATA_POLL_INTERVAL_MS;
       if (data.glossary_extraction_status === "running") return METADATA_POLL_INTERVAL_MS;
+      if (data.voice_extraction_status === "running") return METADATA_POLL_INTERVAL_MS;
       return false;
     },
   });
@@ -86,6 +94,23 @@ export function useWorkingGlossary(
     enabled: opts.enabled,
     refetchInterval:
       opts.refetchIntervalMs === false ? false : opts.refetchIntervalMs,
+  });
+}
+
+export function usePatchGlossaryWorkingEntry(
+  bookId: string,
+): UseMutationResult<
+  GlossaryWorkingEntry,
+  Error,
+  { entryId: string; body: GlossaryEntryPatchBody }
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ entryId, body }) =>
+      api.patchGlossaryWorkingEntry(bookId, entryId, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: bookKeys.workingGlossary(bookId) });
+    },
   });
 }
 
@@ -147,6 +172,77 @@ export function useStopGlossaryExtraction(
       void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
       void qc.invalidateQueries({ queryKey: bookKeys.lists() });
       void qc.invalidateQueries({ queryKey: bookKeys.workingGlossary(bookId) });
+    },
+  });
+}
+
+export function useWorkingVoices(
+  bookId: string,
+  opts: { enabled: boolean; refetchIntervalMs: number | false },
+): UseQueryResult<WorkingVoicesResponse, Error> {
+  return useQuery({
+    queryKey: bookKeys.workingVoices(bookId),
+    queryFn: () => api.getWorkingVoices(bookId),
+    enabled: opts.enabled,
+    refetchInterval:
+      opts.refetchIntervalMs === false ? false : opts.refetchIntervalMs,
+  });
+}
+
+export function usePatchVoiceWorkingProfile(
+  bookId: string,
+): UseMutationResult<
+  VoiceWorkingProfile,
+  Error,
+  { voiceId: string; body: VoiceProfilePatchBody }
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ voiceId, body }) => api.patchVoiceWorkingProfile(bookId, voiceId, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: bookKeys.workingVoices(bookId) });
+    },
+  });
+}
+
+export function useStartVoiceExtraction(
+  bookId: string,
+): UseMutationResult<GlossaryExtractionStartResponse, Error, void> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.startVoiceExtraction(bookId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
+      void qc.invalidateQueries({ queryKey: bookKeys.lists() });
+      void qc.invalidateQueries({ queryKey: bookKeys.workingVoices(bookId) });
+    },
+  });
+}
+
+export function useContinueVoiceExtraction(
+  bookId: string,
+): UseMutationResult<GlossaryExtractionStartResponse, Error, void> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.continueVoiceExtraction(bookId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
+      void qc.invalidateQueries({ queryKey: bookKeys.lists() });
+      void qc.invalidateQueries({ queryKey: bookKeys.workingVoices(bookId) });
+    },
+  });
+}
+
+export function useStopVoiceExtraction(
+  bookId: string,
+): UseMutationResult<GlossaryExtractionStopResponse, Error, void> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.stopVoiceExtraction(bookId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
+      void qc.invalidateQueries({ queryKey: bookKeys.lists() });
+      void qc.invalidateQueries({ queryKey: bookKeys.workingVoices(bookId) });
     },
   });
 }

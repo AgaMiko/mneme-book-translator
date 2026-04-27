@@ -11,6 +11,7 @@ from app.models.glossary import (
     GlossaryNotepad,
     GlossaryWindowGeneration,
 )
+from app.models.voice import CharacterVoice, VoiceNotepad
 
 __all__ = [
     "Book",
@@ -22,4 +23,6 @@ __all__ = [
     "GlossaryNotepad",
     "GlossaryWindowGeneration",
     "Paragraph",
+    "CharacterVoice",
+    "VoiceNotepad",
 ]

@@ -2,75 +2,53 @@
 
 Paired with ``../prompts/extract_voices_prompt.py``.
 
-Design
-------
-Voice extraction runs after glossary extraction is complete. Each pass
-sees one window of text plus the running voice profiles, and returns a
-*delta* — the model reasons about *changes*, not state.
+What changed in this revision
+-----------------------------
+The single ``voice_summary`` field is split into two fields:
 
-What a voice profile is
------------------------
-Two fields, both serving translation directly:
+- ``source_voice_observation`` — what the character is REALLY doing in
+  the source language. Names specific linguistic markers: particles,
+  archaic vocabulary, register shifts, address conventions, deliberate
+  non-standard spellings, anything the source author is doing
+  intentionally.
 
-1. ``voice_summary`` — 2-3 sentences of prose describing how the
-   character speaks: register, diction, address strategy, situational
-   shifts. Read as a *constraint* on translation, not as content.
-   Single field, no separate register / diction / verbal_tics breakdown.
-   Verbal tics specifically are NOT collected: a translator given a
-   list of phrases will reuse them where the source doesn't, amplifying
-   the recurrence pattern beyond the original. Source text carries
-   vocabulary; the profile carries voice constraints.
+- ``target_voice_strategy`` — how to render that voice in the target
+  language. Names specific target-language markers to use, and
+  things to avoid (anachronisms, wrong-region accents, etc.).
 
-2. ``reference_passage`` — 3-4 sentences of real dialogue from the
-   manuscript, plus the model's translation of those exact sentences.
-   This is the calibration sample. Translation downstream uses this
-   pair (Polish ↔ English) as a known-good example of how the character
-   should sound in translation, with the author's edits as ground
-   truth.
+The two fields are different cognitive jobs:
 
-The author reviews each profile by reading the summary and the
-reference translation and accepting / editing / rejecting. Their
-edits become the canonical version translation will use.
+1. *Observation* is reading work — look at the source, name what's
+   happening linguistically.
+2. *Strategy* is craft work — decide how the target language should
+   render those features.
 
-Iteration model
----------------
-Per window, the model can:
+Conflating them into a single voice_summary forced the model to do
+both at once, and produced vague results ("rural feel") that didn't
+give the translator anything specific to work with. Splitting makes
+each job nameable and reviewable independently — the author can edit
+either field during voice review without disturbing the other.
 
-- **Create** a new profile when a character speaks for the first time,
-  including its voice_summary and an initial reference passage drawn
-  from this window.
-- **Extend** an existing profile by replacing the voice_summary with
-  one that integrates new evidence (full replacement, not patch).
-- **Replace the reference passage** when this window contains a
-  meaningfully better representative passage than the stored one.
-  Separate explicit operation requiring reasoning — prevents the
-  model from churning the reference cosmetically each window.
+Why generate both during extraction
+-----------------------------------
+The same model call sees the source dialogue and is best positioned to
+write the observation. Writing the strategy in the same pass is cheap
+(no extra API calls) and natural — observation and strategy inform
+each other ("the character uses an emphatic particle → render with an
+equivalent target-language marker"). Quality of model-produced
+strategies is the weak link; that's why author review is critical.
 
-What the model does NOT do
---------------------------
-- It does not output dialogue counts or excerpts for analytics.
-  ``voice_service`` derives those deterministically from the source.
-- It does not collect verbal tics. (See above; behavioral risk.)
-- It does not categorize register / speech-acts / context shifts.
-  All of that is folded into the prose voice_summary.
+The author's edit loop calibrates the strategies. If the model writes
+"render in archaic-rural English" and the author refines to "render
+in Hardy/Eliot country-servant register, specific markers: ye, afore,
+reckon, no eye-dialect," that's the authorial intent translation
+needs. Translation runs after review.
 
-Layering
---------
-- Glossary entries are the canonical character list. Voice profiles
-  link via ``glossary_entry_id`` and never invent characters of their
-  own.
-- The persisted ORM shape (``app.models.voice.CharacterVoice``) is a
-  third, distinct shape. Service code converts.
-
-ID typing — ``str``, not ``UUID``
----------------------------------
-From the model's perspective, every ID it sees is an opaque token to
-copy back. Typing those fields as ``UUID`` adds ``format: "uuid"`` to
-the JSON Schema sent to Gemini and makes Pydantic strict-validate the
-format on parse — one stray character and the whole window crashes.
-The glossary chain has the same shape and uses ``str`` everywhere;
-voice follows the same pattern. Service code converts at the DB
-boundary.
+Other design choices (unchanged from previous revision)
+-------------------------------------------------------
+- Candidate pool capped at 8 per character.
+- ID + name cross-check on every operation.
+- IDs typed as ``str`` for Gemini schema compatibility.
 """
 
 from __future__ import annotations
@@ -79,18 +57,13 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 
-# Do not use ``Field(max_length=…)`` or ``StringConstraints`` here.
-# Gemini's response-schema path does not support those JSON Schema
-# keywords; they either break generation or are ignored. Length
-# discipline lives in field descriptions plus the prompt template.
 
-
-# ─── Closed enum ────────────────────────────────────────
+# ─── Closed enums ───────────────────────────────────────
 
 VoiceNoteCategory = Literal[
-    "pattern_to_watch",       # something noticed but not yet codified
-    "consistency_concern",    # a character's voice may have drifted across windows
-    "unresolved_question",    # something the author should weigh in on
+    "pattern_to_watch",
+    "consistency_concern",
+    "unresolved_question",
 ]
 
 
@@ -101,8 +74,32 @@ class VoiceNote(BaseModel):
     """A working-memory note the model writes for its future self."""
 
     category: VoiceNoteCategory
-    content: str = Field(
-        description="One short note for the next pass.",
+    content: str = Field(description="One short note for the next pass.")
+
+
+class CandidatePassage(BaseModel):
+    """A representative passage for a character, drawn from this window.
+
+    Candidates accumulate across the run. Selection happens later, by a
+    different chain. The model's job here is to *contribute* — to flag
+    moments worth keeping — not to pick a single best passage.
+    """
+
+    source_text: str = Field(
+        description=(
+            "3-5 consecutive sentences of this character's dialogue, "
+            "verbatim from the source text. Verbatim — do not paraphrase."
+        ),
+    )
+    why_representative: str = Field(
+        description=(
+            "One short clause: what does this passage show about this "
+            "character's voice that's worth keeping? "
+            "Examples: 'shows the diminutive shift toward Mira'; "
+            "'rare moment of dropped facade'; "
+            "'most representative of his commanding mode'. "
+            "Selection later uses this reason when picking final passages."
+        ),
     )
 
 
@@ -112,135 +109,164 @@ class VoiceNote(BaseModel):
 class NewVoiceProfile(BaseModel):
     """Create a voice profile for a character first speaking in this window.
 
-    Reasoning is first because both the voice_summary and the choice of
-    reference passage benefit from the model committing to its analysis
-    before producing the artifacts.
-
-    The ``glossary_entry_id`` MUST point to a character entry from the
-    glossary list provided in the prompt. The model never invents IDs;
-    if a speaker appears who isn't in the glossary, the model writes a
-    note in the notepad and skips creating a profile.
+    Includes BOTH voice fields (observation + strategy) AND seeds the
+    candidate pool with one or more initial passages.
     """
 
     reasoning: str = Field(
         description=(
-            "Brief grounding in the dialogue evidence — what about the way "
-            "this character speaks led to the voice_summary below, and why "
-            "the chosen passage represents the voice well. One or two "
-            "clauses, not a scene recap."
+            "Brief grounding in the dialogue evidence — what about how "
+            "this character speaks led to the observation and strategy "
+            "below."
         ),
     )
     glossary_entry_id: str = Field(
+        description="ID from the glossary character list. Copy verbatim.",
+    )
+    canonical_name: str = Field(
         description=(
-            "ID of the character's glossary entry — the same "
-            "`glossary_entry_id` string as in the character list provided "
-            "in the prompt."
+            "Canonical name as it appears in the glossary character "
+            "list. Cross-checked against ID; mismatched ops are dropped. "
+            "Copy verbatim."
         ),
     )
-    voice_summary: str = Field(
+    source_voice_observation: str = Field(
         description=(
-            "2-3 sentences describing how this character speaks. Covers "
-            "register, diction, address strategy, and any situational "
-            "shifts — all in flowing prose, not separate slots. Reads as "
-            "a CONSTRAINT for the translator, not as content to copy. "
-            "Good: 'Speaks in clipped urgent military commands, softening "
-            "to a conspiratorial tone when discussing illness. Uses "
-            "diminutives toward Mira in moments of intimacy or "
-            "condescension. Sounds like a soldier maintaining a facade of "
-            "control while delivering bad news.' "
-            "Bad: 'Speaks in clipped commands like Spokojnie spokojnie!' "
-            "(That tells the translator what to write; the translator will "
-            "write it whether the source contains it or not.)"
+            "What is this character REALLY doing in the source language? "
+            "Name specific linguistic markers — particles, archaic words, "
+            "deliberate non-standard spellings, register shifts, address "
+            "conventions, lexical choices that signal class or era. "
+            "Specific is better than abstract: 'uses the -że emphatic "
+            "particle, archaic-rural lexicon (chłop, chałupa, dziad), "
+            "deliberate misspellings as eye-dialect (tile, dzjewko)' "
+            "beats 'rural and informal'. "
+            "Written in the target language. 2-3 sentences."
         ),
     )
-    reference_passage_source: str = Field(
+    target_voice_strategy: str = Field(
         description=(
-            "3-4 consecutive sentences of this character's dialogue, "
-            "verbatim from this window's source text. The passage should "
-            "show voice fully, be self-contained, and be representative "
-            "(not extreme). Include voice-distinguishing features the "
-            "translator must preserve. Verbatim — do not paraphrase or "
-            "edit the source."
+            "How should this voice be rendered in the target language? "
+            "Name specific markers to use, and specific things to avoid. "
+            "Specific is better than abstract: 'render in archaic-rural "
+            "English (Hardy/Eliot country-servant type), markers: ye, "
+            "afore, reckon, mind ye, would-ye for emphatic imperatives; "
+            "preserve master-servant address (pan → sir); avoid "
+            "Americanisms (y'all, ain\\'t) and heavy eye-dialect' beats "
+            "'translate naturally with rural feel'. "
+            "Written in the target language. 2-3 sentences. "
+            "Author may refine during review — your job is a strong "
+            "starting point, not a final answer."
         ),
     )
-    reference_passage_translation: str = Field(
+    initial_candidates: list[CandidatePassage] = Field(
+        default_factory=list,
         description=(
-            "Your translation of those exact sentences into the target "
-            "language. Preserve the voice characteristics in voice_summary. "
-            "Do not insert phrases not present in the source. Aim for what "
-            "a careful human literary translator would produce — this "
-            "translation will be reviewed by the author and used as a "
-            "calibration sample for the rest of translation."
+            "One or more starting candidate passages from this window. "
+            "Most profiles start with one; complex characters with "
+            "multiple distinct voice displays may start with 2-3. "
+            "The pool grows on later passes via AddCandidate."
         ),
     )
 
 
 class ExtendVoiceProfile(BaseModel):
-    """Replace voice_summary with one that integrates new evidence.
+    """Replace observation and/or strategy with versions integrating new evidence.
 
-    Full replacement, not patch — the model writes a fresh summary that
-    incorporates whatever new observation this window provides. Most
-    passes will not extend; only when this window meaningfully sharpens
-    or contradicts the prior summary.
+    Either field can be updated independently — this window may sharpen
+    the observation while leaving the strategy intact, or vice versa.
+    Provide only the field(s) actually changing; ``None`` means
+    "no change."
 
-    Does NOT touch the reference passage. For that, use
-    ``ReplaceReferencePassage``.
+    Most passes will not extend. Only when this window meaningfully
+    sharpens or contradicts what's recorded.
     """
 
-    profile_id: str = Field(
+    profile_id: str = Field(description="ID from the current voice profiles list. Copy verbatim.")
+    canonical_name: str = Field(
         description=(
-            "ID of the existing profile — the same `id` string as in the "
-            "current voice-profile table."
+            "Canonical name from the current voice profiles list. "
+            "Cross-checked against profile_id; mismatched ops are dropped."
         ),
     )
-    new_voice_summary: str = Field(
+    new_source_voice_observation: str | None = Field(
+        default=None,
         description=(
-            "Updated voice_summary integrating new evidence from this "
-            "window. Same constraints as the new-profile voice_summary: "
-            "2-3 sentences of prose, describes voice as a constraint, no "
-            "phrase examples to copy."
+            "Updated observation, if this window's evidence justifies "
+            "an update. Null if observation is unchanged. Same "
+            "constraints as new-profile observation."
+        ),
+    )
+    new_target_voice_strategy: str | None = Field(
+        default=None,
+        description=(
+            "Updated strategy, if this window's evidence justifies an "
+            "update. Null if strategy is unchanged. Same constraints "
+            "as new-profile strategy. Note: most updates will be to "
+            "observation; strategy changes less often, since it's a "
+            "literary craft decision that doesn't shift with each new "
+            "scene."
         ),
     )
     reasoning: str = Field(
         description=(
-            "What new evidence in this window justifies updating the "
-            "summary. If you cannot point to specific new evidence, do "
-            "not extend — leave the existing summary alone."
+            "What new evidence in this window justifies the update(s). "
+            "If you cannot point to specific new evidence, do not "
+            "extend — leave the existing fields alone."
         ),
     )
 
 
-class ReplaceReferencePassage(BaseModel):
-    """Replace the stored reference passage with a better one from this window.
+class AddCandidate(BaseModel):
+    """Add a candidate passage to an existing profile's pool.
 
-    Use sparingly. Only when this window contains a passage that
-    *meaningfully* shows voice better than the stored one — for example,
-    the stored passage was a single short line and this window has a
-    fuller exchange that shows register and address strategy together.
-
-    Cosmetic improvement is not sufficient justification. If the stored
-    passage is adequate, leave it alone.
+    Use when this window contains a moment worth keeping for selection
+    later, AND the pool has fewer than 8 entries, AND the passage shows
+    something the existing candidates don't.
     """
 
     profile_id: str
-    new_reference_passage_source: str = Field(
+    canonical_name: str = Field(
         description=(
-            "Replacement passage, verbatim from this window. Same "
-            "selection criteria as new-profile passages: 3-4 sentences, "
-            "voice-rich, self-contained, representative."
+            "Canonical name from the current voice profiles list. "
+            "Cross-checked against profile_id; mismatched ops are dropped."
         ),
     )
-    new_reference_passage_translation: str = Field(
-        description=(
-            "Fresh translation of the replacement passage. Same quality "
-            "expectations as new-profile translations."
-        ),
-    )
+    candidate: CandidatePassage
     reasoning: str = Field(
         description=(
-            "Why this passage is meaningfully better than the stored one. "
-            "Be specific — 'shows the diminutive shift the prior passage "
-            "missed' is good; 'better passage' is not."
+            "Why this passage is worth keeping in the pool. What does "
+            "it show that the existing candidates don't? Be specific."
+        ),
+    )
+
+
+class ReplaceCandidate(BaseModel):
+    """Swap a less-representative candidate for a better one.
+
+    Use when the candidate pool is full (8 entries) and this window has
+    a passage that's clearly more valuable than one of the existing
+    candidates. Identify the candidate to remove by its
+    ``why_representative`` text — exact match required.
+    """
+
+    profile_id: str
+    canonical_name: str = Field(
+        description=(
+            "Canonical name from the current voice profiles list. "
+            "Cross-checked against profile_id; mismatched ops are dropped."
+        ),
+    )
+    remove_candidate_reason: str = Field(
+        description=(
+            "The ``why_representative`` text of the candidate to remove. "
+            "Must match an existing candidate exactly."
+        ),
+    )
+    new_candidate: CandidatePassage
+    reasoning: str = Field(
+        description=(
+            "Why the new candidate is meaningfully better than the one "
+            "being removed. Cosmetic improvement is not enough."
         ),
     )
 
@@ -249,32 +275,20 @@ class ReplaceReferencePassage(BaseModel):
 
 
 class VoiceUpdate(BaseModel):
-    """The full delta produced by one voice-extraction pass.
-
-    Field order follows the schema-first principle: orient on the window
-    first, then commit operations, then curate working memory for next
-    pass.
-    """
+    """The full delta produced by one voice-extraction pass."""
 
     window_summary: str = Field(
         description=(
-            "One short paragraph: who speaks in this window, dialogue "
-            "density, register shifts worth noting — orients you before "
-            "operations. Keep it compact; the pipeline does not persist "
-            "this field."
+            "One short paragraph orienting on the window. Not persisted."
         ),
     )
     new_profiles: list[NewVoiceProfile] = Field(default_factory=list)
     extensions: list[ExtendVoiceProfile] = Field(default_factory=list)
-    reference_replacements: list[ReplaceReferencePassage] = Field(default_factory=list)
+    candidate_additions: list[AddCandidate] = Field(default_factory=list)
+    candidate_replacements: list[ReplaceCandidate] = Field(default_factory=list)
     notepad: list[VoiceNote] = Field(
         default_factory=list,
-        description=(
-            "Working memory carried into the next pass. At most one "
-            "entry. Use it for things you've noticed but haven't yet "
-            "codified — speakers not in the glossary, possible voice "
-            "drift across windows, patterns to confirm later."
-        ),
+        description="Working memory carried into the next pass. At most one entry.",
     )
 
     @model_validator(mode="after")
@@ -284,52 +298,57 @@ class VoiceUpdate(BaseModel):
         return self.model_copy(update={"notepad": self.notepad[:1]})
 
 
-# ─── Prompt-input shape ─────────────────────────────────
+# ─── Prompt-input shapes ────────────────────────────────
 
 
 class CharacterVoiceCompact(BaseModel):
-    """The lean shape passed INTO the prompt to represent existing profiles.
+    """Lean shape passed INTO the prompt to represent existing profiles.
 
-    Includes the full voice_summary because it's the only descriptive
-    field — the model genuinely needs it to decide whether new dialogue
-    is consistent with the stored voice. Includes the source half of
-    the reference passage so the model can decide whether to issue a
-    ReplaceReferencePassage operation; deliberately excludes the
-    translation half — the model's job is selecting source passages,
-    not reviewing its own prior translations.
+    Includes BOTH voice fields plus the candidate pool size and the
+    ``why_representative`` reasons of existing candidates. Token cost
+    is higher than the previous single-summary form, but the model
+    needs both fields to:
+
+    - Decide whether new evidence in this window justifies extending
+      observation, strategy, or both.
+    - Avoid duplicating an observation that's already captured.
+
+    Excludes the candidate passage source texts themselves (too long
+    for prompt context).
     """
 
     id: str
     glossary_entry_id: str
     canonical_name: str
-    voice_summary: str
-    reference_passage_source: str
-    last_observed_window: int = Field(
+    source_voice_observation: str
+    target_voice_strategy: str
+    candidate_count: int = Field(
+        description="Current size of the candidate pool. Cap is 8.",
+    )
+    candidate_reasons: list[str] = Field(
+        default_factory=list,
         description=(
-            "Window number where this profile last received an operation. "
-            "Helps the model spot characters whose voice may have drifted "
-            "because they haven't been observed for many windows."
+            "The ``why_representative`` reasons of the existing "
+            "candidates, in the order they were added. Used by the "
+            "model to judge whether a new candidate would duplicate "
+            "what's already there."
         ),
+    )
+    last_observed_window: int = Field(
+        description="Window number where this profile last received an op.",
     )
 
 
 class GlossaryCharacterRef(BaseModel):
-    """Character entries from the glossary, passed in so the model knows
-    who can be the subject of a voice operation.
-
-    Sent for ALL character glossary entries (status != rejected),
-    including ones that don't yet have a voice profile. The model uses
-    these to attach new profiles via ``glossary_entry_id``.
-    """
+    """Character entries from the glossary — sent for ALL character
+    glossary entries (status != rejected)."""
 
     glossary_entry_id: str
     canonical_name: str
     variants: list[str] = Field(default_factory=list)
     has_voice_profile: bool = Field(
         description=(
-            "Whether a voice profile already exists. False = creating a "
-            "profile is the right operation; True = extend or replace "
-            "reference (or do nothing if the existing profile fits this "
-            "window's evidence)."
+            "Whether a voice profile already exists. False = create. "
+            "True = extend, add candidates, or do nothing."
         ),
     )

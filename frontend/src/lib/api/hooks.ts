@@ -246,3 +246,17 @@ export function useStopVoiceExtraction(
     },
   });
 }
+
+export function useResetVoiceExtraction(
+  bookId: string,
+): UseMutationResult<void, Error, void> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.resetVoiceExtraction(bookId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
+      void qc.invalidateQueries({ queryKey: bookKeys.lists() });
+      void qc.invalidateQueries({ queryKey: bookKeys.workingVoices(bookId) });
+    },
+  });
+}

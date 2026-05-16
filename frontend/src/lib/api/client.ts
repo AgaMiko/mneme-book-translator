@@ -138,14 +138,29 @@ export const WorkingGlossaryResponseSchema = z.object({
 });
 export type WorkingGlossaryResponse = z.infer<typeof WorkingGlossaryResponseSchema>;
 
+export const VoiceSelectedPassageSchema = z.object({
+  id: z.string().uuid(),
+  selection_rank: z.number().int(),
+  source_text: z.string(),
+  why_selected: z.string(),
+  translation_proposed: z.string().nullable(),
+  translation_authoritative: z.string().nullable(),
+  status: z.string(),
+});
+export type VoiceSelectedPassage = z.infer<typeof VoiceSelectedPassageSchema>;
+
 export const VoiceWorkingProfileSchema = z.object({
   id: z.string().uuid(),
   glossary_entry_id: z.string().uuid(),
   canonical_name: z.string(),
-  voice_summary: z.string(),
+  source_voice_observation: z.string(),
+  target_voice_strategy: z.string(),
+  /** Primary passage (rank 0); use `selected_passages` for the full v3 set. */
   reference_passage_source: z.string(),
   reference_passage_translation_proposed: z.string(),
   reference_passage_translation_authoritative: z.string().nullable(),
+  /** Always present on the API (v3); may be `[]` before selection runs. */
+  selected_passages: z.array(VoiceSelectedPassageSchema),
   status: z.string(),
   dialogue_volume_observed: z.number().int(),
   first_seen_window: z.number().int(),
@@ -163,7 +178,8 @@ export type WorkingVoicesResponse = z.infer<typeof WorkingVoicesResponseSchema>;
 export type VoiceProfilePatchBody = {
   accept?: boolean;
   reject?: boolean;
-  voice_summary?: string;
+  source_voice_observation?: string;
+  target_voice_strategy?: string;
   reference_passage_translation?: string;
 };
 
@@ -260,6 +276,20 @@ export const api = {
       await fetch(`${API_URL}/books/${id}/voice-extraction/stop`, { method: "POST" }),
       GlossaryExtractionStopResponseSchema,
     ),
+
+  resetVoiceExtraction: async (id: string): Promise<void> => {
+    const res = await fetch(`${API_URL}/books/${id}/voice-extraction/reset`, { method: "POST" });
+    if (!res.ok) {
+      let detail = `${res.status} ${res.statusText}`;
+      try {
+        const body = (await res.json()) as { detail?: unknown };
+        if (body?.detail != null) detail = String(body.detail);
+      } catch {
+        // keep default
+      }
+      throw new ApiError(res.status, detail);
+    }
+  },
 
   patchGlossaryWorkingEntry: async (
     bookId: string,

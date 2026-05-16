@@ -702,6 +702,30 @@ async def stop_voice_extraction(
     return GlossaryExtractionStopResponse(book_id=book_id)
 
 
+@router.post(
+    "/{book_id}/voice-extraction/reset",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete all character voice data and reset extraction state",
+)
+async def reset_voice_extraction(
+    book_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Book not found",
+        )
+    if book.voice_extraction_status == "running":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Stop voice extraction before resetting.",
+        )
+    await voice_service.reset_book_voice_data(session, book=book)
+    log.info("voice_extraction_reset", book_id=str(book_id))
+
+
 @router.delete("/{book_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_book(
     book_id: UUID,

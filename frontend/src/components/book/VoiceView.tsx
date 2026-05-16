@@ -11,6 +11,7 @@ import {
   bookKeys,
   useContinueVoiceExtraction,
   usePatchVoiceWorkingProfile,
+  useResetVoiceExtraction,
   useStartVoiceExtraction,
   useStopVoiceExtraction,
   useWorkingVoices,
@@ -51,6 +52,10 @@ function VoiceProfileCard({
   onAccept: () => void;
   onReject: () => void;
 }) {
+  const selected = v.selected_passages ?? [];
+  const hasMulti = selected.length > 0;
+  const showLegacyOnly =
+    !hasMulti && v.reference_passage_source.trim().length > 0;
   const sameTranslation =
     v.reference_passage_translation_authoritative != null &&
     v.reference_passage_translation_authoritative.trim() ===
@@ -62,8 +67,10 @@ function VoiceProfileCard({
         <div className="min-w-0 flex-1">
           <p className="font-serif text-base font-medium text-ink-50">{v.canonical_name}</p>
           <p className="mt-1 font-mono text-[10px] uppercase tracking-wider text-ink-500">
-            {v.status} · windows {v.first_seen_window}→{v.last_observed_window} · dialogue scans{" "}
-            {formatNumber(v.dialogue_volume_observed)}
+            {v.status} · windows {v.first_seen_window}→{v.last_observed_window}
+            {hasMulti
+              ? ` · ${selected.length} reference passage${selected.length === 1 ? "" : "es"}`
+              : ` · dialogue scans ${formatNumber(v.dialogue_volume_observed)}`}
           </p>
           <p className="mt-1.5 break-all font-mono text-[10px] leading-relaxed text-ink-600">
             glossary entry · {v.glossary_entry_id}
@@ -98,39 +105,107 @@ function VoiceProfileCard({
         </div>
       </div>
 
-      <ProfileBlock label="Voice summary">{v.voice_summary}</ProfileBlock>
+      <ProfileBlock label="Source voice observation">{v.source_voice_observation}</ProfileBlock>
+      <ProfileBlock label="Target voice strategy">{v.target_voice_strategy}</ProfileBlock>
 
-      <ProfileBlock
-        label={`Reference passage — source (${book.source_language})`}
-      >
-        <p className="whitespace-pre-wrap border-l-2 border-ink-600 pl-3 text-ink-200">
-          {v.reference_passage_source}
-        </p>
-      </ProfileBlock>
+      {hasMulti ? (
+        <div className="mt-4 space-y-6">
+          {selected
+            .slice()
+            .sort((a, b) => a.selection_rank - b.selection_rank)
+            .map((p, i) => {
+              const pos = i + 1;
+              const prop = p.translation_proposed?.trim() ?? "";
+              const auth = p.translation_authoritative;
+              const same =
+                auth != null && auth.trim() === prop;
+              return (
+                <div
+                  key={p.id}
+                  className="rounded-md border border-ink-800/80 bg-ink-900/25 p-3"
+                >
+                  <p className="font-mono text-[10px] uppercase tracking-wider text-accent">
+                    Reference passage {pos} of {selected.length}
+                    {p.selection_rank > 0 ? ` · rank ${p.selection_rank}` : ""} · {p.status}
+                  </p>
+                  <p className="mt-1 text-[10px] leading-relaxed text-ink-500">{p.why_selected}</p>
+                  <ProfileBlock
+                    label={`Source (${book.source_language})`}
+                    className="!mt-2"
+                  >
+                    <p className="whitespace-pre-wrap border-l-2 border-ink-600 pl-3 text-ink-200">
+                      {p.source_text}
+                    </p>
+                  </ProfileBlock>
+                  <ProfileBlock
+                    label={`Model translation (${book.target_language})`}
+                    className="!mt-2"
+                  >
+                    <p className="whitespace-pre-wrap leading-relaxed text-ink-200">
+                      {p.translation_proposed ?? "—"}
+                    </p>
+                  </ProfileBlock>
+                  {auth != null && auth !== "" ? (
+                    <ProfileBlock
+                      label="Final translation (for downstream use)"
+                      className="!mt-2"
+                    >
+                      <p className="whitespace-pre-wrap leading-relaxed text-ink-100">{auth}</p>
+                      {same && prop ? (
+                        <p className="mt-2 text-[10px] font-mono text-ink-500">Same as model draft.</p>
+                      ) : null}
+                    </ProfileBlock>
+                  ) : (
+                    <p className="mt-2 text-[10px] text-ink-500">
+                      No final translation for this passage yet (accept the profile to lock
+                      the model draft on all passages, or reject).
+                    </p>
+                  )}
+                </div>
+              );
+            })}
+        </div>
+      ) : showLegacyOnly ? (
+        <>
+          <ProfileBlock
+            label={`Reference passage — source (${book.source_language})`}
+          >
+            <p className="whitespace-pre-wrap border-l-2 border-ink-600 pl-3 text-ink-200">
+              {v.reference_passage_source}
+            </p>
+          </ProfileBlock>
 
-      <ProfileBlock label={`Translation — model (${book.target_language})`}>
-        <p className="whitespace-pre-wrap leading-relaxed text-ink-200">
-          {v.reference_passage_translation_proposed}
-        </p>
-      </ProfileBlock>
+          <ProfileBlock label={`Translation — model (${book.target_language})`}>
+            <p className="whitespace-pre-wrap leading-relaxed text-ink-200">
+              {v.reference_passage_translation_proposed}
+            </p>
+          </ProfileBlock>
 
-      {v.reference_passage_translation_authoritative != null ? (
-        <ProfileBlock label="Translation — final (for downstream use)">
-          <p className="whitespace-pre-wrap leading-relaxed text-ink-100">
-            {v.reference_passage_translation_authoritative}
-          </p>
-          {sameTranslation ? (
-            <p className="mt-2 text-[10px] font-mono text-ink-500">Same as model draft.</p>
+          {v.reference_passage_translation_authoritative != null ? (
+            <ProfileBlock label="Translation — final (for downstream use)">
+              <p className="whitespace-pre-wrap leading-relaxed text-ink-100">
+                {v.reference_passage_translation_authoritative}
+              </p>
+              {sameTranslation ? (
+                <p className="mt-2 text-[10px] font-mono text-ink-500">Same as model draft.</p>
+              ) : (
+                <p className="mt-2 text-[10px] font-mono text-ink-500">
+                  Differs from model draft — your edits or accept workflow set this.
+                </p>
+              )}
+            </ProfileBlock>
           ) : (
-            <p className="mt-2 text-[10px] font-mono text-ink-500">
-              Differs from model draft — your edits or accept workflow set this.
+            <p className="mt-3 rounded border border-ink-800/80 bg-ink-900/30 px-3 py-2 text-xs text-ink-500">
+              No authoritative translation yet — accept the profile to lock in the model
+              draft, or reject to dismiss the profile.
             </p>
           )}
-        </ProfileBlock>
+        </>
       ) : (
         <p className="mt-3 rounded border border-ink-800/80 bg-ink-900/30 px-3 py-2 text-xs text-ink-500">
-          No authoritative translation yet — accept the profile to lock in the model
-          draft, or reject to dismiss the profile.
+          No selected reference passages yet. They appear after the selection and
+          translation steps of the voice pipeline finish (1–4 per character from the
+          candidate pool).
         </p>
       )}
     </article>
@@ -151,6 +226,7 @@ export function VoiceView({ book }: Props) {
   const startVoice = useStartVoiceExtraction(book.id);
   const continueVoice = useContinueVoiceExtraction(book.id);
   const stopVoice = useStopVoiceExtraction(book.id);
+  const resetVoice = useResetVoiceExtraction(book.id);
   const patchVoice = usePatchVoiceWorkingProfile(book.id);
 
   const prevVoice = useRef<string | null>(null);
@@ -163,6 +239,11 @@ export function VoiceView({ book }: Props) {
   }, [book.voice_extraction_status, book.id, queryClient]);
 
   const actionEnabled = book.word_count > 0 && book.glossary_extraction_status === "completed";
+  const nothingToReset =
+    book.voice_extraction_status === "idle" &&
+    !book.voice_extraction_last_error &&
+    voices.isSuccess &&
+    voices.data.entries.length === 0;
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -173,10 +254,12 @@ export function VoiceView({ book }: Props) {
               <h2 className="font-serif text-xl font-medium text-ink-50">Character voices</h2>
               <p className="mt-1 max-w-xl text-sm leading-relaxed text-ink-500">
                 One pass per window (~{formatNumber(GLOSSARY_EXTRACTION_WINDOW_WORDS)} words, ~
-                {formatNumber(GLOSSARY_EXTRACTION_OVERLAP_WORDS)} overlap) — same geometry as glossary. Each
-                character gets a short <strong className="text-ink-400">voice summary</strong> and one{" "}
-                <strong className="text-ink-400">reference passage</strong> (source + model translation) for
-                you to review; nothing else to curate.
+                {formatNumber(GLOSSARY_EXTRACTION_OVERLAP_WORDS)} overlap) — same geometry as glossary. The
+                pipeline <strong className="text-ink-400">extracts</strong> a source observation, target
+                strategy, and candidate
+                lines, <strong className="text-ink-400">selects</strong> 1–4 reference passages per character
+                (by glossary weight), then <strong className="text-ink-400">translates</strong> them with
+                full glossary context. Review the observation, strategy, and passages below.
               </p>
             </div>
 
@@ -218,6 +301,13 @@ export function VoiceView({ book }: Props) {
                 {stopVoice.error instanceof ApiError
                   ? stopVoice.error.detail
                   : "Could not request stop."}
+              </p>
+            )}
+            {resetVoice.isError && (
+              <p className="text-sm text-danger">
+                {resetVoice.error instanceof ApiError
+                  ? resetVoice.error.detail
+                  : "Could not reset voice data."}
               </p>
             )}
 
@@ -267,59 +357,87 @@ export function VoiceView({ book }: Props) {
       {actionEnabled && (
         <div
           className={cn(
-            "sticky bottom-0 z-10 flex flex-wrap items-center justify-end gap-2",
+            "sticky bottom-0 z-10 flex w-full min-w-0 flex-wrap items-center justify-between gap-2",
             "border-t border-ink-800 bg-ink-900/95 px-4 py-2.5 backdrop-blur-sm",
           )}
         >
-          {book.voice_extraction_status === "running" && (
+          {book.voice_extraction_status !== "running" && (
             <button
               type="button"
-              disabled={stopVoice.isPending}
-              onClick={() => stopVoice.mutate()}
+              disabled={nothingToReset || resetVoice.isPending}
+              title={nothingToReset ? "No voice data to clear." : undefined}
+              onClick={() => {
+                if (
+                  !window.confirm(
+                    "This will permanently delete all character voice profiles, the extraction notepad, and your review progress (accept/reject) for this book. You can run extraction again afterward. This cannot be undone. Continue?",
+                  )
+                ) {
+                  return;
+                }
+                resetVoice.mutate();
+              }}
               className={cn(
-                "inline-flex items-center gap-2 rounded-md border border-ink-600 px-3 py-1.5",
-                "font-mono text-xs uppercase tracking-wider text-ink-200",
-                "hover:border-danger-border hover:bg-danger-surface hover:text-danger",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger",
+                "inline-flex items-center gap-2 rounded-md border border-danger-border px-3 py-1.5",
+                "font-mono text-xs uppercase tracking-wider text-danger",
+                "hover:bg-danger-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger",
                 "disabled:cursor-not-allowed disabled:opacity-40",
               )}
             >
-              {stopVoice.isPending ? "Stopping…" : "Stop"}
+              {resetVoice.isPending ? "Resetting…" : "Reset voices"}
             </button>
           )}
-          {(book.voice_extraction_status === "failed" ||
-            book.voice_extraction_status === "cancelled") && (
-            <button
-              type="button"
-              disabled={continueVoice.isPending}
-              onClick={() => continueVoice.mutate()}
-              className={cn(
-                "inline-flex items-center gap-2 rounded-md border border-success-border px-3 py-1.5",
-                "font-mono text-xs uppercase tracking-wider text-success",
-                "hover:bg-success-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success",
-                "disabled:cursor-not-allowed disabled:opacity-40",
-              )}
-            >
-              {continueVoice.isPending ? "Continuing…" : "Continue"}
-            </button>
-          )}
-          <button
-            type="button"
-            disabled={book.voice_extraction_status === "running" || startVoice.isPending}
-            onClick={() => startVoice.mutate()}
-            className={cn(
-              "inline-flex items-center gap-2 rounded-md border border-accent px-3 py-1.5",
-              "font-mono text-xs uppercase tracking-wider text-accent",
-              "bg-accent-soft hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-              "disabled:cursor-not-allowed disabled:opacity-40",
+          {book.voice_extraction_status === "running" && <span className="min-w-0 flex-1" aria-hidden />}
+          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+            {book.voice_extraction_status === "running" && (
+              <button
+                type="button"
+                disabled={stopVoice.isPending}
+                onClick={() => stopVoice.mutate()}
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-md border border-ink-600 px-3 py-1.5",
+                  "font-mono text-xs uppercase tracking-wider text-ink-200",
+                  "hover:border-danger-border hover:bg-danger-surface hover:text-danger",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger",
+                  "disabled:cursor-not-allowed disabled:opacity-40",
+                )}
+              >
+                {stopVoice.isPending ? "Stopping…" : "Stop"}
+              </button>
             )}
-          >
-            {book.voice_extraction_status === "running"
-              ? "Running…"
-              : startVoice.isPending
-                ? "Starting…"
-                : "Start extraction"}
-          </button>
+            {(book.voice_extraction_status === "failed" ||
+              book.voice_extraction_status === "cancelled") && (
+              <button
+                type="button"
+                disabled={continueVoice.isPending}
+                onClick={() => continueVoice.mutate()}
+                className={cn(
+                  "inline-flex items-center gap-2 rounded-md border border-success-border px-3 py-1.5",
+                  "font-mono text-xs uppercase tracking-wider text-success",
+                  "hover:bg-success-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success",
+                  "disabled:cursor-not-allowed disabled:opacity-40",
+                )}
+              >
+                {continueVoice.isPending ? "Continuing…" : "Continue"}
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={book.voice_extraction_status === "running" || startVoice.isPending}
+              onClick={() => startVoice.mutate()}
+              className={cn(
+                "inline-flex items-center gap-2 rounded-md border border-accent px-3 py-1.5",
+                "font-mono text-xs uppercase tracking-wider text-accent",
+                "bg-accent-soft hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                "disabled:cursor-not-allowed disabled:opacity-40",
+              )}
+            >
+              {book.voice_extraction_status === "running"
+                ? "Running…"
+                : startVoice.isPending
+                  ? "Starting…"
+                  : "Start extraction"}
+            </button>
+          </div>
         </div>
       )}
     </div>

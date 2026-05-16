@@ -22,11 +22,13 @@ from app.generation.prompt_manager.models.extract_glossary_model import (
 
 from app.generation.chains.extract_voices_chain import extract_voices_window
 from app.generation.prompt_manager.models.extract_voices_model import (
+    AddCandidate,
+    CandidatePassage,
     CharacterVoiceCompact,
     ExtendVoiceProfile,
     GlossaryCharacterRef,
     NewVoiceProfile,
-    ReplaceReferencePassage,
+    ReplaceCandidate,
     VoiceNote,
     VoiceNoteCategory,
     VoiceUpdate,
@@ -47,8 +49,10 @@ __all__ = [
     "CharacterVoiceCompact",
     "ExtendVoiceProfile",
     "GlossaryCharacterRef",
+    "AddCandidate",
+    "CandidatePassage",
     "NewVoiceProfile",
-    "ReplaceReferencePassage",
+    "ReplaceCandidate",
     "VoiceNote",
     "VoiceNoteCategory",
     "VoiceUpdate",

@@ -2,58 +2,176 @@
 
 Paired with ``../models/extract_voices_model.py``.
 
-The schema (``VoiceUpdate``) owns shape, types, and field-level
-constraints. This template carries:
+What this prompt is for
+-----------------------
+Voice extraction is the FIRST of three chains. It produces:
 
-- task framing (what voice extraction is for and how iteration works)
-- the "constraints not content" rule (the core behavioral instruction)
-- reference passage selection and translation criteria
-- the notepad contract
-- the conditional first-pass note
+- source_voice_observation per character (target language, names what
+  the character is REALLY doing in the source language)
+- target_voice_strategy per character (target language, names how to
+  render that voice in target-language equivalents)
+- a pool of candidate passages per character (capped at 8)
+
+It does NOT translate. Translation runs as a separate later chain
+with the full accepted glossary in context.
 """
 
 PROMPT = """\
 You are building a translator's reference for character voices in a \
 {source_language} fiction manuscript that will be translated into \
-{target_language}. Your job, across many passes, is to capture how each \
-speaking character sounds, AND to produce a representative reference \
-translation passage per character — so the translator can preserve voice \
-consistency across the whole book and has a known-good calibration \
-sample for each speaker.
+{target_language}. Your job, across many passes, is to capture how \
+each speaking character REALLY sounds in {source_language}, design \
+how that voice should be rendered in {target_language}, and flag \
+representative passages of their dialogue worth keeping for \
+translation later.
 
-You see one window of text per pass and the voice profiles built so far. \
-You return a *delta* — operations that create profiles, extend their \
-summaries, or replace their reference passages with better ones. You do \
-not regenerate state.
+You see one window of text per pass and the voice profiles built so \
+far. You return a *delta* — operations that create profiles, extend \
+their voice fields, add candidate passages, or replace weaker \
+candidates with stronger ones. You do not regenerate state.
 
-Keep every string field short and direct. Rambling JSON gets truncated \
-by the API and breaks the run.
+This pass produces voice metadata only. **Do not translate anything.** \
+Translation runs as a separate later step with the full accepted \
+glossary in context. Your work here is in {target_language} for both \
+voice fields, and in {source_language} for the candidate passage \
+source texts (verbatim from source).
+
+Keep every string field short and direct. Rambling JSON gets \
+truncated by the API and breaks the run.
+
+## Two non-negotiables
+
+The system checks both. Operations that violate them are dropped.
+
+**(1) The two voice fields are written in {target_language}, never \
+{source_language}.** They DESCRIBE features of {source_language} \
+dialogue, but they're written *in* {target_language}.
+
+**(2) Every operation includes both an ID and the matching \
+``canonical_name`` exactly as it appears in the lists below.** The \
+system cross-checks them. If you put one character's voice traits \
+under another character's ID, the operation is dropped.
 
 {first_pass_note}\
-## The core rule: describe voice as constraint, not content
+## The two voice fields, and what each one does
 
-Your job is to describe *how* a character sounds in a way the translator \
-can use to shape their work — not to provide example phrases for the \
-translator to copy. Models given lists of "this character says X" \
-over-apply those phrases, salting the translation with words the source \
-text does not actually contain in each scene.
+A character's voice is captured in two fields. They have different \
+jobs and the model should think about them separately.
 
-So:
+### source_voice_observation — what the character is REALLY doing
 
-- DO: "Speaks in clipped urgent military commands, softening to a \
-conspiratorial tone when discussing illness. Uses diminutives toward \
-Mira in moments of intimacy or condescension."
-- DON'T: "Says 'Spokojnie spokojnie!' as a calming phrase, calls Mira \
-'kwiatuszku'."
+This field names the specific linguistic features the source-language \
+author is using to mark this character's voice. It is OBSERVATION, \
+not description. Be concrete:
 
-The first describes the voice. The second tells the translator what to \
-write — and the translator will write it whether the source contains it \
-or not. The source text is the only place vocabulary lives; your \
-profile carries the constraints that shape how that vocabulary is \
-translated.
+- Does the character use particular emphatic particles, modal markers, \
+or sentence-final tags? Name them.
+- Does the source text use deliberate non-standard spelling to mark \
+the character's pronunciation? Name examples.
+- Does the character use lexical choices that signal class, era, or \
+region? (Archaic vocabulary, peasant words, courtly forms, military \
+jargon.) Name the specific words or word-types.
+- Does the character use particular address forms? (Formal vs. \
+informal pronouns, titles, diminutives.) Name them.
+- Does the register shift in different situations? Name the shifts \
+and what triggers them.
 
-This rule applies to ``voice_summary`` and to your ``reasoning`` notes \
-across all operations.
+DO write things like:
+- "Uses the -że emphatic particle (Łapaćże, lepiejże, raczejże). \
+Archaic-rural vocabulary (chłop, chałupa, dziad, dziewka — peasant \
+register, not modern Polish). Source author renders pronunciation \
+through deliberate misspellings (tile for tyle, dzjewko for dziewko, \
+ogjer for ogier). Uses formal pan address to masters even while \
+delivering folk wisdom."
+
+DON'T write things like:
+- "Speaks rurally and informally." (Vague — names no markers.)
+- "Old-fashioned, colloquial." (Adjectives, no observation.)
+- "Sounds like a peasant." (Stereotype, not observation.)
+
+The test: could a translator who hasn't read the source identify the \
+specific markers to track? If not, the observation isn't specific \
+enough.
+
+### target_voice_strategy — how to render in {target_language}
+
+This field names how the translator should construct an equivalent \
+voice in {target_language}. It is a CRAFT DECISION about which \
+target-language register to use, with specific markers named, and \
+specific things to avoid.
+
+Be concrete:
+
+- What target-language register is the equivalent? Name it specifically \
+(not "rural" but e.g. "Hardy/Eliot 19th-century English country-servant").
+- What target-language markers should the translator use? Name actual \
+words, contractions, grammatical patterns. (For English country-servant: \
+"ye, afore, reckon, mind ye, would ye for emphatic imperatives, \
+occasional dropped articles.")
+- How should source-language address forms map? (Polish pan/pani → \
+sir/madam? "my lord"? Just the name?)
+- What should the translator AVOID? (Anachronisms, wrong-region \
+accents, stagey eye-dialect, modern slang, words that would feel \
+out of place in this register.)
+- One marker per sentence is usually enough — pile too high and the \
+voice reads as parody. Note this explicitly when relevant.
+
+DO write things like:
+- "Render in archaic-rural English of the 19th-century country-servant \
+type. Markers to use: 'ye' for informal you, 'afore' for before, \
+'reckon' for think, 'mind ye' for emphatic imperatives, 'would ye' as \
+the equivalent of the -że particle, 'tis for it is, occasional dropped \
+articles. Polish pan address → 'sir' (preserve the master/servant \
+register). Avoid: y'all, ain't (too American), heavy eye-dialect like \
+'tha'/'thee' (too theatrical), modern slang. One marker per sentence; \
+don't pile up."
+
+DON'T write things like:
+- "Translate naturally with rural feel." (Vague.)
+- "Use folksy English." (No markers named.)
+- "Make him sound uneducated." (Patronizing, no craft direction.)
+
+The test: could a translator who hasn't read the source produce \
+consistent, specific output from this strategy alone? If not, the \
+strategy isn't specific enough.
+
+The author will review your strategies. Your job is a strong starting \
+point, not a final answer. The author may refine markers, change the \
+target register entirely, or add avoidances based on their own ear. \
+Write strategies that give them something concrete to react to.
+
+## How the two fields relate
+
+Observation describes what's happening. Strategy decides what to do \
+about it. They should be coherent — strategy markers should map to \
+observation features. If observation names "the -że emphatic \
+particle," strategy should name a target-language equivalent ("would \
+ye" or "mind ye"). If observation names "deliberate misspellings as \
+eye-dialect," strategy should decide whether to mirror that in target \
+(usually no — most modern target-language readers find heavy \
+eye-dialect distracting; the equivalent register effect is achieved \
+through vocabulary choices instead).
+
+## When to use which operation
+
+- **Create a new profile** when a character speaks for the first time \
+AND ``has_voice_profile`` is False. Includes BOTH voice fields and \
+one or more starting candidate passages.
+
+- **Extend an existing profile** when this window adds NEW evidence \
+that meaningfully changes observation, strategy, or both. Provide \
+only the field(s) actually changing; ``None`` means "no change." \
+Most passes will not extend — observation should stabilize after a \
+few windows of evidence, and strategy should change less often than \
+observation.
+
+- **Add a candidate** when this window contains a passage worth \
+keeping in the pool, AND the pool has fewer than 8 entries, AND the \
+passage shows something the existing candidates don't.
+
+- **Replace a candidate** when the pool is full (8 entries) AND this \
+window contains a passage that's meaningfully better than one of \
+the existing candidates.
 
 ## What counts as dialogue evidence
 
@@ -70,91 +188,59 @@ NOT evidence:
 - Description of the character that doesn't reveal voice.
 - A character being mentioned but not speaking.
 
-A profile for a character who hasn't actually spoken is worse than no \
-profile.
-
 ## Who can have a profile
 
-Only characters in the **glossary character list** provided below. The \
-``glossary_entry_id`` on every operation must come from that list — \
-never invent IDs.
+Only characters in the **glossary character list** below. Never \
+invent IDs. If a speaker appears who isn't in the glossary, do not \
+create a profile — write a notepad note instead.
 
-If you observe a speaker in this window who is NOT in the glossary list, \
-do not create a profile. Instead, write a note in the notepad describing \
-the missing character. The glossary will catch up on a later run; voice \
-profile creation can wait.
+## Candidate passages
 
-## When to create vs. extend vs. replace the reference
+A candidate passage is a representative moment of a character's voice \
+worth keeping for translation later. Selection (a separate later \
+step) will pick the final 1-4 passages from this pool.
 
-- **Create** a new profile when a character speaks for the first time in \
-the manuscript AND has no existing profile (``has_voice_profile`` is \
-False on the glossary character list). The new profile includes BOTH \
-voice_summary AND a reference passage drawn from this window.
+A good candidate:
 
-- **Extend** an existing profile when this window adds NEW evidence \
-that meaningfully changes how the voice should be described. Replace \
-the voice_summary entirely with one that integrates the new observation. \
-If you cannot point to specific new evidence, do NOT extend — leave the \
-existing summary alone. Most passes will not extend.
-
-- **Replace the reference passage** when this window contains a passage \
-that is *meaningfully better* than the stored one — for example, the \
-stored passage was a single short line and this window has a fuller \
-exchange that shows register and address strategy together. Cosmetic \
-improvement is not enough. If the stored passage is adequate, leave it \
-alone. Most passes will not replace anything.
-
-## Reference passage: selection criteria
-
-For each new profile (and occasionally for replacements), pick 3-4 \
-consecutive sentences of this character's dialogue from this window's \
-source text. Verbatim — do not paraphrase or edit the source.
-
-A good reference passage:
-
-- **Shows voice fully** — three or four sentences where you can hear \
-the character. Not one short line.
+- **Shows voice fully** — 3-5 sentences where you can hear the \
+character.
 - **Is self-contained** — makes sense without unstated context.
-- **Is representative** — not the character's most extreme moment. If \
-the character is normally clipped and this is one sobbing scene, that \
-scene is NOT the reference. Pick what shows them at their typical mode.
-- **Includes voice-distinguishing features** — a diminutive, a register \
-shift, a recurring construction the translator must preserve.
+- **Has voice-distinguishing features** — register, address \
+conventions, the specific markers named in the observation.
+- **Is verbatim from the source** — do not paraphrase.
 
-## Reference passage: translation
+The ``why_representative`` field is critical. Selection later uses it \
+to compare candidates. Be specific:
 
-Translate those exact sentences into {target_language}. The translation \
-should:
+- Good: "shows the diminutive shift toward Mira"
+- Good: "rare moment of dropped facade with Stein"
+- Bad: "good passage" / "shows his voice"
 
-- Preserve the voice characteristics described in the voice_summary.
-- Not insert phrases that aren't in the source. (If the source doesn't \
-say "easy now," your translation doesn't say "easy now.")
-The translation should read as if it were originally written in {target_language}.
-A native {target_language} reader should not be able to tell from your translation that the source was {source_language} — no calqued idioms, no Polish sentence rhythms, no Latinate word choices where the English author would use Anglo-Saxon.
+When deciding whether to add or replace a candidate, ask: **does this \
+passage show something the existing pool doesn't?** Look at the \
+``candidate_reasons`` list in the compact profile. If your new \
+passage duplicates a reason already there, do not add it.
 
-This translation will be reviewed by the author. The author's accepted \
-or edited version becomes the canonical calibration sample for the rest \
-of the translation pipeline. Do your best work here.
+If a window shows the character at the same display the pool already \
+captures, do nothing. Most windows will not produce candidate \
+operations.
 
 ## The notepad
 
-The notepad is your private working memory across passes. Use it for:
+Private working memory across passes. Use for:
 
-- Speakers in this window who aren't in the glossary character list \
+- Speakers in this window not in the glossary character list \
 (``unresolved_question``).
-- Characters whose voice may have drifted across windows in a way \
-worth checking (``consistency_concern``).
-- Patterns to confirm in later windows (``pattern_to_watch``).
+- Voice drift across windows worth checking (``consistency_concern``).
+- Patterns to confirm later (``pattern_to_watch``).
 
-The notepad is **capped at 1 note per pass**. Each pass receives the \
-previous note (if any) and chooses what to write for the next one. \
-Carry forward what's still useful; drop what's been resolved. Return \
-an empty notepad if nothing is worth carrying forward.
+Capped at 1 note per pass. Carry forward what's still useful; drop \
+what's resolved. Return empty if nothing's worth carrying.
 
-Do NOT use the notepad to:
-- Restate things already in the voice profiles.
-- Track overall progress.
-- Comment on the manuscript's quality.
+Do NOT use the notepad for:
+- Restating things already in voice profiles.
+- Tracking overall progress.
+- Commentary on manuscript quality.
 
 ---
 
@@ -180,10 +266,10 @@ Do NOT use the notepad to:
 
 FIRST_PASS_NOTE = """\
 This is the first window. No voice profiles exist yet — every speaking \
-character with a glossary entry needs a fresh profile, including a \
-voice_summary AND a reference passage with translation. Establish from \
-the dialogue you can see; later passes will refine. The notepad starts \
-empty too; write down anything worth carrying forward to pass 2.
+character with a glossary entry needs a fresh profile, including \
+source_voice_observation, target_voice_strategy, AND one or more \
+starting candidate passages. Establish from the dialogue you can see; \
+later passes will refine. The notepad starts empty too.
 
 """
 
@@ -191,38 +277,37 @@ empty too; write down anything worth carrying forward to pass 2.
 def render_voice_profiles_table(profiles: list) -> str:
     """Render compact voice profiles for the prompt.
 
-    Each profile gets two lines: a header with id / name / last window,
-    then the voice_summary indented, then the reference_passage_source
-    indented. The table format we used for glossary doesn't fit voice
-    because the summary and passage are too long for a single row —
-    a multi-line block reads better and uses less horizontal space.
+    Each profile gets a multi-line block with both voice fields, the
+    candidate pool size, and the candidate reasons (not the passage
+    texts themselves — those are too long for prompt context).
     """
     if not profiles:
         return "(empty — no voice profiles yet)"
 
     blocks: list[str] = []
     for p in profiles:
+        reasons_block = (
+            "\n".join(f"    - {r}" for r in p.candidate_reasons)
+            if p.candidate_reasons
+            else "    (none)"
+        )
         blocks.append(
             f"- id: {p.id}\n"
             f"  glossary_entry_id: {p.glossary_entry_id}\n"
             f"  canonical_name: {p.canonical_name}\n"
             f"  last_observed_window: {p.last_observed_window}\n"
-            f"  voice_summary: {p.voice_summary}\n"
-            f"  reference_passage_source: {p.reference_passage_source}"
+            f"  source_voice_observation: {p.source_voice_observation}\n"
+            f"  target_voice_strategy: {p.target_voice_strategy}\n"
+            f"  candidate_count: {p.candidate_count} / 8\n"
+            f"  candidate_reasons:\n{reasons_block}"
         )
     return "\n\n".join(blocks)
 
 
 def render_glossary_characters_table(characters: list) -> str:
-    """Render the glossary character list — every character available
-    as a target for voice operations.
-
-    Format: glossary_entry_id | canonical_name | variants | has_voice_profile
-
-    The ``has_voice_profile`` flag is critical: it tells the model
-    whether to expect a "create" operation (False) or an "extend / replace
-    reference" operation (True) for any character whose dialogue appears.
-    """
+    """Render the glossary character list — all available targets for
+    voice operations. canonical_name copied verbatim into the
+    cross-checked ``canonical_name`` field on every operation."""
     if not characters:
         return "(empty — no characters in the glossary; voice extraction cannot proceed)"
 
@@ -237,7 +322,6 @@ def render_glossary_characters_table(characters: list) -> str:
 
 
 def render_notepad(notes: list) -> str:
-    """Render the previous pass's notepad."""
     if not notes:
         return "(empty)"
     return "\n".join(f"- [{n.category}] {n.content}" for n in notes)

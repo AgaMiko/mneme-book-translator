@@ -32,7 +32,7 @@ just migrate      # apply Alembic migrations
 
 Then open:
 
-- Frontend → <http://localhost:5173>
+- Frontend → <http://localhost:5177>
 - API docs → <http://localhost:8000/docs>
 
 ## Architecture overview
@@ -42,7 +42,7 @@ Then open:
 │   React     │─────▶│   FastAPI   │─────▶│  Postgres   │
 │  (Vite/TS)  │ JSON │  (async)    │ ORM  │     16      │
 └─────────────┘      └─────────────┘      └─────────────┘
-   :5173                :8000                :5432
+   :5177                :8000                :5432
 ```
 
 Three schema layers are kept deliberately separate (this matters more once the pipeline lands):

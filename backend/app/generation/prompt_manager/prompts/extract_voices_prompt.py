@@ -68,13 +68,30 @@ not description. Be concrete:
 or sentence-final tags? Name them.
 - Does the source text use deliberate non-standard spelling to mark \
 the character's pronunciation? Name examples.
-- Does the character use lexical choices that signal class, era, or \
-region? (Archaic vocabulary, peasant words, courtly forms, military \
-jargon.) Name the specific words or word-types.
+- Does the character use deliberate non-standard grammar that the \
+author has put there on purpose? (Missing articles or prepositions, \
+wrong cases or genders, foreign syntax from a non-native speaker, \
+child grammar, broken concord, tense confusion.) Name the specific \
+errors and what they mark.
+- Does the character have signature speech patterns — a tic phrase, \
+a hesitation marker, a stutter, a habit of fragments, a habit of \
+run-on, repetitions? Name them.
+- Does the character drop phrases from other languages? (French in \
+pre-war gentry, Latin in scholarly or medical speech, German in \
+interwar military, English or Russian in modern émigré dialogue.) \
+Name the language, the kinds of phrases, and what the switching \
+signals — education, exile, class, professional jargon, affectation.
+- Does the character speak in a stable sociolect — class, era, region, \
+or profession as identity? Note BOTH the lexicon (peasant words, \
+Latinate vocabulary, military jargon, courtly forms) AND the \
+cognitive/syntactic tendency: a scientist hedges and reaches for \
+abstraction; a peasant uses concrete verbs and folk syntax; a \
+soldier is terse and imperative; a courtier is elaborate and \
+indirect.
 - Does the character use particular address forms? (Formal vs. \
 informal pronouns, titles, diminutives.) Name them.
-- Does the register shift in different situations? Name the shifts \
-and what triggers them.
+- Does the register shift in different situations on top of the \
+stable sociolect? Name the shifts and what triggers them.
 
 DO write things like:
 - "Uses the -że emphatic particle (Łapaćże, lepiejże, raczejże). \
@@ -83,53 +100,168 @@ register, not modern Polish). Source author renders pronunciation \
 through deliberate misspellings (tile for tyle, dzjewko for dziewko, \
 ogjer for ogier). Uses formal pan address to masters even while \
 delivering folk wisdom."
+- "Drops Polish case endings on nouns (jadę do dom instead of domu), \
+substitutes nominative for accusative, occasional Russian lexical \
+slips (давай, харашо). Marks her as a Russian-born émigré — the \
+errors are systematic and consistent with a Slavic L1 speaker of \
+Polish, not random."
+- "Repeats 'rozumie pan?' as a verbal tic at the end of nearly every \
+assertion, fragments sentences when agitated (verb-only clauses), \
+stutters on plosives under stress (k-k-konieczne)."
+- "Stable scientific sociolect — hedged assertions ('wydaje się', \
+'można przypuszczać'), Latinate vocabulary (akumulacja, sublimacja, \
+dyssolucja), long subordinate clauses with passive constructions, \
+abstract nouns where lay speakers would use verbs. Drops Latin tags \
+from his medical training ('primum non nocere', 'in vivo', 'sine qua \
+non') and occasional French phrases ('eh bien', 'tant pis') as \
+natural pre-war gentry code-switching, not affectation."
 
 DON'T write things like:
 - "Speaks rurally and informally." (Vague — names no markers.)
 - "Old-fashioned, colloquial." (Adjectives, no observation.)
 - "Sounds like a peasant." (Stereotype, not observation.)
+- "Formal academic register; rhetorical questions; philosophical framing." \
+(Hallucinated — projected from the character's role as a teacher \
+without quoting any dialogue showing it. A teacher who speaks with a \
+village accent has a village voice. Read the dialogue, do not \
+read the role.)
+
+**Grounding rule.** Every feature you name must be tied to an actual \
+quoted or near-quoted phrase from THIS window's dialogue. Do not \
+infer features from the character's role, profession, name, social \
+position, or what kind of person they "should" sound like. If you \
+cannot point at a specific source phrase as evidence, do not name \
+the feature — write a notepad note (``unresolved_question`` or \
+``pattern_to_watch``) and wait for evidence in a later window.
 
 The test: could a translator who hasn't read the source identify the \
-specific markers to track? If not, the observation isn't specific \
-enough.
+specific markers to track AND find each one in this window's \
+dialogue? If not, the observation isn't grounded enough.
 
-### target_voice_strategy — how to render in {target_language}
+### target_voice_strategy — translation guidance for this character
 
-This field names how the translator should construct an equivalent \
-voice in {target_language}. It is a CRAFT DECISION about which \
-target-language register to use, with specific markers named, and \
-specific things to avoid.
+**This field is translation guidance, not a generation prompt.** The \
+translator already has the source line in front of them. They do not \
+need instructions for writing fresh {target_language} prose. They \
+need answers to one question, repeated for every line of this \
+character's dialogue: *"when I see X in source, what's my move in \
+target — and what's the obvious wrong move I should avoid?"*
+
+Every entry must be keyed to a feature visible in the source. \
+"Render in a crisp, haughty register" tells the translator nothing \
+they can act on. "When you see her rhetorical questions, preserve \
+them verbatim — never flatten to a declarative or insert hedges \
+('I think', 'perhaps')" tells them what to do the moment they hit \
+the next rhetorical question.
 
 Be concrete:
 
-- What target-language register is the equivalent? Name it specifically \
-(not "rural" but e.g. "Hardy/Eliot 19th-century English country-servant").
-- What target-language markers should the translator use? Name actual \
-words, contractions, grammatical patterns. (For English country-servant: \
-"ye, afore, reckon, mind ye, would ye for emphatic imperatives, \
-occasional dropped articles.")
-- How should source-language address forms map? (Polish pan/pani → \
-sir/madam? "my lord"? Just the name?)
-- What should the translator AVOID? (Anachronisms, wrong-region \
-accents, stagey eye-dialect, modern slang, words that would feel \
-out of place in this register.)
-- One marker per sentence is usually enough — pile too high and the \
-voice reads as parody. Note this explicitly when relevant.
+- For each observation feature, write a **when-you-see-X-do-Y** \
+rule, with **mirror** (carry directly into {target_language}), \
+**recast** (substitute a {target_language} equivalent of the same \
+effect), or **watch** (a trap to avoid) as the move. Grammar errors, \
+verbal tics, signature phrases, stutters, fragmentation rhythm, \
+code-switching — usually mirror. Lexical archaism, eye-dialect, \
+source-specific particles — usually recast. Stable sociolect splits: \
+recast the lexicon, mirror the cognitive/syntactic tendency.
+- Name the {target_language} register the translator should reach \
+for when handling this character's lines. Be specific (not "rural" \
+but "Hardy/Eliot 19th-century English country-servant"). This is \
+the only generation-flavoured directive the field needs — the rest \
+is source-keyed.
+- For each mirrored feature, name what to *look for* in source and \
+what to *produce* in target. "When source drops Polish case endings \
+on nouns, drop English articles instead — English has no cases, so \
+the brokenness ports as article/preposition errors." "When source \
+inserts French ('eh bien'), keep the French verbatim in target — do \
+not translate or gloss." "When source has a signature filler \
+('rozumie pan?'), translate it directly and keep its sentence-final \
+position."
+- For each recast feature, name the source trigger and the target \
+substitution. "When source uses the -że emphatic particle, render \
+as 'would ye' or 'mind ye' — literal carry-over reads as gibberish."
+- **Eye-dialect is per-character, not categorical.** *Mirror* when \
+the source eye-dialect marks a regional or class accent within the \
+speech community (Polish villager → English country-servant; \
+English literary tradition has Hardy, Eliot, Twain, Scott to draw \
+on). Use sparse English eye-dialect of equivalent density — dropped \
+terminal -g ("lookin'", "cookin'"), "'tis" for it is, "arf" for \
+half, occasional ''ee' for he — one or two marks per sentence, not \
+phonetic transcription on every word. *Recast* when the source \
+eye-dialect renders a foreign speaker's accent (Russian L1 in \
+Polish, French L1 in English); phonetic stage-accents ("vere is ze") \
+are tired English clichés — use grammar errors and code-switching \
+instead. State the call explicitly in the strategy.
+- Address-form mappings: source 'pan/pani' → 'sir/madam'? 'my lord'? \
+Just the name? Specify the rule the translator applies on every \
+occurrence.
+- **Watch-for** entries — name the obvious wrong moves. \
+Anachronisms, wrong-region accents (y'all, tha'/thee), stagey \
+foreign accents (vere is ze), inline glosses for code-switched \
+phrases (the original didn't gloss), softening her tone where the \
+source is sharp, expanding clipped imperatives ("Idź." → "You should \
+go"), modern slang, contemporary academic tics ("I would argue", \
+"positionality"). Make the trap concrete — what the translator \
+might be tempted to do, and why it's wrong here.
+- One register marker per target sentence is usually enough — \
+piling higher reads as parody. Flag this in the strategy when the \
+character's voice is dense in source and easy to over-render in \
+target.
 
 DO write things like:
-- "Render in archaic-rural English of the 19th-century country-servant \
-type. Markers to use: 'ye' for informal you, 'afore' for before, \
-'reckon' for think, 'mind ye' for emphatic imperatives, 'would ye' as \
-the equivalent of the -że particle, 'tis for it is, occasional dropped \
-articles. Polish pan address → 'sir' (preserve the master/servant \
-register). Avoid: y'all, ain't (too American), heavy eye-dialect like \
-'tha'/'thee' (too theatrical), modern slang. One marker per sentence; \
-don't pile up."
+- "Reach for 19th-century English country-servant register \
+(Hardy/Eliot/Scott — eye-dialect is the literary tradition here, not \
+'ye olde' parody). When his line uses the -że particle, render with \
+'would ye' or 'mind ye'. When his line has deliberate misspellings \
+(tile, dzjewko, ogjer), MIRROR with sparse English eye-dialect of \
+equivalent density: drop terminal -g ('lookin'', 'cookin''), use \
+''tis' for it is, 'arf' for half, occasional ''ee' for he — one or \
+two marks per sentence, never phonetic transcription on every word. \
+Add register-marked vocabulary alongside ('wench', 'reckon', \
+'afore'). When he addresses a master with 'pan', render as 'sir' \
+(preserve master/servant). When he uses folk-mythological terms \
+('licho'), prefer keeping the source term italicised on first use \
+and glossing in narrative; recast to 'the blight' or 'the rot' only \
+where the lore weight is incidental. Watch for: y'all/ain't (too \
+American for the period), modern slang, dense phonetic transcription \
+(eye-dialect should mark the accent, not become a reading barrier), \
+overly polished grammar (his syntax is folk, not schooled)."
+- "When her line drops a Polish case ending or fronts an object \
+Slavic-style, render the brokenness in English as a Russian L1 \
+speaker actually breaks English: drop articles consistently \
+(random is unconvincing), use bare or wrong prepositions ('go on \
+store'), confuse he/she pronouns under stress. When she reaches for \
+a Russian word in source ('давай'), keep the Russian verbatim in \
+target. Watch for: invented fake Slavic spellings or 'vere is ze' \
+stage-Russian — the grammar errors are the voice, the accent is not \
+for the English reader to phonetically reconstruct."
+- "When his line contains a French phrase ('eh bien', 'tant pis') \
+or a Latin tag ('primum non nocere', 'in vivo'), keep it verbatim \
+and unglossed — the original reader felt the switch, the English \
+reader should too. When his line uses Polish hedges ('wydaje się', \
+'można przypuszczać'), reach for English equivalents ('one might \
+suppose', 'it appears that', 'so far as can be told') — never \
+collapse to a flat assertion. When he uses long subordinate Polish \
+clauses with passives, mirror the structure in English; do not chop \
+into short modern sentences for readability. Recast Polish-specific \
+scientific vocabulary to interwar English scientific register (not \
+modern academic). Watch for: inline glosses for French/Latin (the \
+original didn't gloss), and contemporary academic tics ('I would \
+argue', 'positionality')."
 
 DON'T write things like:
+- "Render in a crisp, haughty, articulate English register." \
+(Generation prompt, not translation guidance — names a target \
+register without telling the translator what to look for in source \
+or what to do when they see it.)
 - "Translate naturally with rural feel." (Vague.)
-- "Use folksy English." (No markers named.)
-- "Make him sound uneducated." (Patronizing, no craft direction.)
+- "Use folksy English." (No markers named, no source triggers.)
+- "Make him sound uneducated." (Patronizing, no craft direction, \
+not keyed to the source.)
+- "Mirror her use of rhetorical questions to belittle others." \
+(Names a feature but no triggered rule — what does the translator \
+do when they hit one? "Preserve verbatim, do not flatten to \
+declarative" is the rule.)
 
 The test: could a translator who hasn't read the source produce \
 consistent, specific output from this strategy alone? If not, the \
@@ -142,15 +274,57 @@ Write strategies that give them something concrete to react to.
 
 ## How the two fields relate
 
-Observation describes what's happening. Strategy decides what to do \
-about it. They should be coherent — strategy markers should map to \
-observation features. If observation names "the -że emphatic \
-particle," strategy should name a target-language equivalent ("would \
-ye" or "mind ye"). If observation names "deliberate misspellings as \
-eye-dialect," strategy should decide whether to mirror that in target \
-(usually no — most modern target-language readers find heavy \
-eye-dialect distracting; the equivalent register effect is achieved \
-through vocabulary choices instead).
+Observation describes what's happening in source. Strategy is read \
+by the translator while they're translating, line by line, and tells \
+them what to do when they see each observed feature. For every \
+observed feature, the strategy entry pairs a **source trigger** \
+("when you see X in this character's line…") with a **move**: \
+**mirror** (carry directly into {target_language}), **recast** \
+(substitute a {target_language} equivalent of the same effect), or \
+**watch** (a trap to avoid).
+
+Coherence test: every observation feature should appear in strategy \
+as a source-keyed rule. Every strategy entry should trigger on \
+something the translator can see in the source line in front of \
+them — never on an abstract directive about target register alone.
+
+Default moves, by feature type:
+
+- Non-standard grammar, verbal tics, signature phrases, stutters, \
+fragmentation, repetition rhythms — **mirror**. These features ARE \
+the character. The realisation often shifts (Polish case errors → \
+English article/preposition errors, since English has no cases) but \
+the brokenness carries over. Do not "clean up" a foreigner's \
+grammar, a child's syntax, or a stutter — the voice dies with it.
+- Code-switching / foreign-language insertions — **mirror**. Keep \
+the French in French, the Latin in Latin. The multilingual texture \
+*is* the voice. Inline gloss only when the original itself glossed \
+(rare); otherwise trust the {target_language} reader to feel the \
+switch the way the source reader did.
+- Stable sociolect (scientist, peasant, soldier, courtier) — \
+**split**. Recast the lexicon (English equivalents of the period, \
+class, and profession). Mirror the cognitive/syntactic tendency: a \
+hedger hedges in {target_language}; a peasant stays concrete in \
+{target_language}; a soldier stays terse; a courtier stays \
+elaborate. The shape of thought is not regional vocabulary — it \
+carries directly.
+- Source-specific particles and honorifics with no target equivalent \
+— **recast**. Literal carry-over reads as gibberish. The "-że" \
+particle becomes "would ye" or "mind ye".
+- Lexical archaism / regional vocabulary — **recast**. Render through \
+{target_language} period-and-class equivalents (peasant Polish → \
+19th-century English country-servant lexicon; gentry Polish → \
+period English drawing-room register).
+- Eye-dialect spelling — **per-character call, not categorical**. \
+*Mirror* for in-language regional/class accents (Polish villager → \
+English country-servant) using sparse equivalent eye-dialect; the \
+literary precedent is Hardy/Eliot/Twain/Scott, not 'ye olde' parody. \
+*Recast* for foreign-speaker accents (Russian L1 in Polish), where \
+phonetic English stage-accents ("vere is ze") are tired clichés — \
+use grammar errors instead. Make the call in the strategy.
+
+When the rule of thumb pulls the wrong way, name it explicitly in \
+the strategy. The author's review uses these calls.
 
 ## When to use which operation
 

@@ -7,14 +7,30 @@ What changed in this revision
 The single ``voice_summary`` field is split into two fields:
 
 - ``source_voice_observation`` — what the character is REALLY doing in
-  the source language. Names specific linguistic markers: particles,
-  archaic vocabulary, register shifts, address conventions, deliberate
-  non-standard spellings, anything the source author is doing
-  intentionally.
+  the source language. Names specific linguistic markers grounded in
+  THIS window's dialogue: particles, archaic vocabulary, register
+  shifts, address conventions, deliberate non-standard spellings,
+  deliberate non-standard grammar (a foreigner's broken cases, a
+  child's syntax, dropped articles), signature speech patterns
+  (verbal tics, stutters, fragmentation, repetitions), code-switching
+  to other languages, and stable sociolect by class/era/profession —
+  both lexicon AND cognitive/syntactic tendency. Every named feature
+  must be tied to a specific phrase in the dialogue; do not project
+  from role or profession (a teacher who speaks with a village accent
+  has a village voice).
 
-- ``target_voice_strategy`` — how to render that voice in the target
-  language. Names specific target-language markers to use, and
-  things to avoid (anachronisms, wrong-region accents, etc.).
+- ``target_voice_strategy`` — translation guidance, not a generation
+  prompt. Read by the translator line by line. Each entry pairs a
+  source trigger ("when you see X in this character's line…") with
+  a move: mirror (carry directly), recast (substitute a
+  target-language equivalent), or watch (a trap to avoid). Grammar
+  errors, verbal tics, signature phrases, and code-switching usually
+  mirror. Lexical register and source-specific particles usually
+  recast. Eye-dialect is per-character: mirror with sparse equivalent
+  eye-dialect for in-language regional/class accents (the Hardy/Eliot/
+  Twain/Scott tradition), recast for foreign-speaker accents (use
+  grammar errors, not stage-accent spellings). Stable sociolect
+  splits: recast the lexicon, mirror the cognitive/syntactic tendency.
 
 The two fields are different cognitive jobs:
 
@@ -133,26 +149,52 @@ class NewVoiceProfile(BaseModel):
     source_voice_observation: str = Field(
         description=(
             "What is this character REALLY doing in the source language? "
-            "Name specific linguistic markers — particles, archaic words, "
-            "deliberate non-standard spellings, register shifts, address "
-            "conventions, lexical choices that signal class or era. "
+            "Name specific linguistic markers — particles, archaic "
+            "vocabulary, eye-dialect spellings, non-standard grammar "
+            "(case/gender/article/concord errors, foreign or child "
+            "syntax), verbal tics and speech patterns (stutters, "
+            "fragmentation, repetitions, signature phrases), "
+            "code-switching to other languages and what the switching "
+            "signals, stable sociolect by class/era/region/profession "
+            "(lexicon AND syntactic/cognitive tendency — the scientist "
+            "hedges, the peasant is concrete, the soldier terse), "
+            "register shifts, address conventions. "
+            "GROUNDING RULE: every named feature must be tied to a "
+            "specific quoted or near-quoted phrase from THIS window's "
+            "dialogue. Do not project features from role or profession "
+            "(a teacher who speaks with a village accent has a village "
+            "voice). If you cannot quote evidence, do not name the "
+            "feature — write a notepad note instead. "
             "Specific is better than abstract: 'uses the -że emphatic "
-            "particle, archaic-rural lexicon (chłop, chałupa, dziad), "
-            "deliberate misspellings as eye-dialect (tile, dzjewko)' "
-            "beats 'rural and informal'. "
+            "particle (Łapaćże, lepiejże), archaic-rural lexicon "
+            "(chłop, chałupa, dziad), deliberate misspellings as "
+            "eye-dialect (tile, dzjewko)' beats 'rural and informal'. "
             "Written in the target language. 2-3 sentences."
         ),
     )
     target_voice_strategy: str = Field(
         description=(
-            "How should this voice be rendered in the target language? "
-            "Name specific markers to use, and specific things to avoid. "
-            "Specific is better than abstract: 'render in archaic-rural "
-            "English (Hardy/Eliot country-servant type), markers: ye, "
-            "afore, reckon, mind ye, would-ye for emphatic imperatives; "
-            "preserve master-servant address (pan → sir); avoid "
-            "Americanisms (y'all, ain\\'t) and heavy eye-dialect' beats "
-            "'translate naturally with rural feel'. "
+            "Translation guidance for this character — NOT a generation "
+            "prompt. Read by the translator line by line. Each entry "
+            "pairs a source trigger ('when you see X in this character's "
+            "line…') with a move: MIRROR (carry directly), RECAST "
+            "(substitute a target-language equivalent), or WATCH (name "
+            "a trap to avoid). Grammar errors, verbal tics, signature "
+            "phrases, stutters, and code-switching usually mirror. "
+            "Lexical register and source-specific particles usually "
+            "recast. Eye-dialect is per-character: mirror with sparse "
+            "equivalent eye-dialect for in-language regional/class "
+            "accents (Hardy/Eliot/Twain/Scott are the tradition); "
+            "recast for foreign-speaker accents (use grammar errors, "
+            "not phonetic stage-accents). Stable sociolect splits: "
+            "recast the lexicon, mirror the cognitive/syntactic tendency. "
+            "Specific source-keyed rules beat abstract directives: "
+            "'When his line uses the -że particle, render with would-ye "
+            "or mind-ye. When his line has eye-dialect misspellings, "
+            "MIRROR with sparse English eye-dialect (dropped -g, '\\'tis', "
+            "'arf') plus register vocabulary (wench, reckon, afore). "
+            "Watch for: y'all/ain\\'t (too American), dense phonetic "
+            "transcription' beats 'render in archaic-rural English'. "
             "Written in the target language. 2-3 sentences. "
             "Author may refine during review — your job is a strong "
             "starting point, not a final answer."

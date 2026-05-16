@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     API_TITLE: str = "Mneme API"
     API_VERSION: str = "0.1.0"
     LOG_LEVEL: str = "INFO"
-    CORS_ORIGINS: str = "http://localhost:5173"
+    CORS_ORIGINS: str = "http://localhost:5177"
 
     # --- Database ---
     DATABASE_URL: str = Field(

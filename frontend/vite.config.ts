@@ -10,7 +10,7 @@ export default defineConfig({
     },
   },
   server: {
-    port: 5173,
+    port: 5177,
     watch: {
       // Required for hot reload to work through Docker bind mount
       usePolling: true,

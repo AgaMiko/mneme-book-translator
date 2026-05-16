@@ -20,7 +20,18 @@ class Base(MappedAsDataclass, DeclarativeBase, kw_only=True):
     `kw_only=True` flag means subclasses don't have to worry about
     ordering required vs defaulted fields — every field is a keyword
     argument, which also makes call sites self-documenting.
+
+    `eager_defaults=True` makes SQLAlchemy fetch server-computed values
+    (``server_default``, ``onupdate=func.now()``) eagerly via Postgres
+    ``RETURNING`` in the same flush, instead of marking the column
+    expired and lazy-refreshing on next attribute access. Without this,
+    reading e.g. ``voice.updated_at`` after a commit triggers a sync
+    I/O refresh that crashes inside an async route with
+    ``MissingGreenlet``. Subclasses inherit this via class-attribute
+    lookup — none of our models override ``__mapper_args__``.
     """
+
+    __mapper_args__ = {"eager_defaults": True}
 
 
 _engine: AsyncEngine | None = None

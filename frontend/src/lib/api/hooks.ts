@@ -47,8 +47,11 @@ export function useBooks(): UseQueryResult<BookSummary[], Error> {
       if (!data) return false;
       const anyPending = data.some((b) => b.metadata_status === "pending");
       const anyGlossary = data.some((b) => b.glossary_extraction_status === "running");
+      const anySpeakers = data.some((b) => b.speakers_extraction_status === "running");
       const anyVoice = data.some((b) => b.voice_extraction_status === "running");
-      return anyPending || anyGlossary || anyVoice ? METADATA_POLL_INTERVAL_MS : false;
+      return anyPending || anyGlossary || anySpeakers || anyVoice
+        ? METADATA_POLL_INTERVAL_MS
+        : false;
     },
   });
 }
@@ -67,6 +70,7 @@ export function useBook(id: string | null): UseQueryResult<BookDetail, Error> {
       if (!data) return false;
       if (data.metadata_status === "pending") return METADATA_POLL_INTERVAL_MS;
       if (data.glossary_extraction_status === "running") return METADATA_POLL_INTERVAL_MS;
+      if (data.speakers_extraction_status === "running") return METADATA_POLL_INTERVAL_MS;
       if (data.voice_extraction_status === "running") return METADATA_POLL_INTERVAL_MS;
       return false;
     },
@@ -257,6 +261,58 @@ export function useResetVoiceExtraction(
       void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
       void qc.invalidateQueries({ queryKey: bookKeys.lists() });
       void qc.invalidateQueries({ queryKey: bookKeys.workingVoices(bookId) });
+    },
+  });
+}
+
+export function useStartSpeakersExtraction(
+  bookId: string,
+): UseMutationResult<GlossaryExtractionStartResponse, Error, void> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.startSpeakersExtraction(bookId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
+      void qc.invalidateQueries({ queryKey: bookKeys.lists() });
+    },
+  });
+}
+
+export function useContinueSpeakersExtraction(
+  bookId: string,
+): UseMutationResult<GlossaryExtractionStartResponse, Error, void> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.continueSpeakersExtraction(bookId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
+      void qc.invalidateQueries({ queryKey: bookKeys.lists() });
+    },
+  });
+}
+
+export function useStopSpeakersExtraction(
+  bookId: string,
+): UseMutationResult<GlossaryExtractionStopResponse, Error, void> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.stopSpeakersExtraction(bookId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
+      void qc.invalidateQueries({ queryKey: bookKeys.lists() });
+    },
+  });
+}
+
+export function useResetSpeakersExtraction(
+  bookId: string,
+): UseMutationResult<void, Error, void> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.resetSpeakersExtraction(bookId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
+      void qc.invalidateQueries({ queryKey: bookKeys.lists() });
     },
   });
 }

@@ -25,6 +25,7 @@ GlossaryExtractionStatus = Literal[
 ]
 
 VoiceExtractionStatus = GlossaryExtractionStatus
+SpeakersExtractionStatus = GlossaryExtractionStatus
 
 
 class ParagraphResponse(BaseModel):
@@ -69,6 +70,10 @@ class BookSummary(BaseModel):
     voice_extraction_windows_total: int | None = None
     voice_extraction_windows_completed: int | None = None
     voice_extraction_last_error: str | None = None
+    speakers_extraction_status: SpeakersExtractionStatus
+    speakers_extraction_windows_total: int | None = None
+    speakers_extraction_windows_completed: int | None = None
+    speakers_extraction_last_error: str | None = None
     original_filename: str
     word_count: int
     created_at: datetime

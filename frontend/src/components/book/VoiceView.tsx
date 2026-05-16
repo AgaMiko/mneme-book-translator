@@ -2,17 +2,21 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef, type ReactNode } from "react";
 
 import {
-  GLOSSARY_EXTRACTION_OVERLAP_WORDS,
-  GLOSSARY_EXTRACTION_WINDOW_WORDS,
-} from "@/constants/glossaryExtraction";
+  VOICE_EXTRACTION_OVERLAP_WORDS,
+  VOICE_EXTRACTION_WINDOW_WORDS,
+} from "@/constants/voiceExtraction";
 import type { BookDetail, VoiceWorkingProfile } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/client";
 import {
   bookKeys,
+  useContinueSpeakersExtraction,
   useContinueVoiceExtraction,
   usePatchVoiceWorkingProfile,
+  useResetSpeakersExtraction,
   useResetVoiceExtraction,
+  useStartSpeakersExtraction,
   useStartVoiceExtraction,
+  useStopSpeakersExtraction,
   useStopVoiceExtraction,
   useWorkingVoices,
 } from "@/lib/api/hooks";
@@ -223,6 +227,10 @@ export function VoiceView({ book }: Props) {
     enabled: book.glossary_extraction_status === "completed",
     refetchIntervalMs: book.voice_extraction_status === "running" ? 1500 : false,
   });
+  const startSpeakers = useStartSpeakersExtraction(book.id);
+  const continueSpeakers = useContinueSpeakersExtraction(book.id);
+  const stopSpeakers = useStopSpeakersExtraction(book.id);
+  const resetSpeakers = useResetSpeakersExtraction(book.id);
   const startVoice = useStartVoiceExtraction(book.id);
   const continueVoice = useContinueVoiceExtraction(book.id);
   const stopVoice = useStopVoiceExtraction(book.id);
@@ -239,7 +247,10 @@ export function VoiceView({ book }: Props) {
   }, [book.voice_extraction_status, book.id, queryClient]);
 
   const actionEnabled = book.word_count > 0 && book.glossary_extraction_status === "completed";
-  const nothingToReset =
+  const speakersIncomplete = book.speakers_extraction_status !== "completed";
+  const nothingToResetSpeakers =
+    book.speakers_extraction_status === "idle" && !book.speakers_extraction_last_error;
+  const nothingToResetVoice =
     book.voice_extraction_status === "idle" &&
     !book.voice_extraction_last_error &&
     voices.isSuccess &&
@@ -253,14 +264,66 @@ export function VoiceView({ book }: Props) {
             <div>
               <h2 className="font-serif text-xl font-medium text-ink-50">Character voices</h2>
               <p className="mt-1 max-w-xl text-sm leading-relaxed text-ink-500">
-                One pass per window (~{formatNumber(GLOSSARY_EXTRACTION_WINDOW_WORDS)} words, ~
-                {formatNumber(GLOSSARY_EXTRACTION_OVERLAP_WORDS)} overlap) — same geometry as glossary. The
-                pipeline <strong className="text-ink-400">extracts</strong> a source observation, target
-                strategy, and candidate
-                lines, <strong className="text-ink-400">selects</strong> 1–4 reference passages per character
-                (by glossary weight), then <strong className="text-ink-400">translates</strong> them with
-                full glossary context. Review the observation, strategy, and passages below.
+                Two passes over the same windows (~{formatNumber(VOICE_EXTRACTION_WINDOW_WORDS)} words, ~
+                {formatNumber(VOICE_EXTRACTION_OVERLAP_WORDS)} overlap).{" "}
+                <strong className="text-ink-400">Pass 1</strong> maps which glossary characters have quoted
+                speech in each window. <strong className="text-ink-400">Pass 2</strong> builds voice profiles,
+                then <strong className="text-ink-400">selects</strong> and{" "}
+                <strong className="text-ink-400">translates</strong> reference passages. Review profiles below.
               </p>
+            </div>
+
+            <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-4">
+              <h3 className="font-mono text-[10px] uppercase tracking-wider text-ink-400">
+                Pass 1 · Speaker identification
+              </h3>
+              <p className="mt-2 text-sm leading-relaxed text-ink-500">
+                For each window, list glossary characters with at least one quoted speaking line and a
+                verbatim phrase as evidence. POV narration counts when the narrative voice is clearly
+                theirs. This map scopes Pass 2 and later translation prompts.
+              </p>
+
+              {book.speakers_extraction_last_error &&
+                book.speakers_extraction_status !== "running" && (
+                  <p className="mt-3 rounded-md border border-danger-border bg-danger-surface px-3 py-2 text-sm text-danger">
+                    {book.speakers_extraction_last_error}
+                  </p>
+                )}
+
+              {book.speakers_extraction_status === "completed" && (
+                <p className="mt-3 rounded-md border border-success-border bg-success-surface px-3 py-2 text-sm text-success">
+                  Speaker map complete. You can run Pass 2 below.
+                </p>
+              )}
+
+              {startSpeakers.isError && (
+                <p className="mt-3 text-sm text-danger">
+                  {startSpeakers.error instanceof ApiError
+                    ? startSpeakers.error.detail
+                    : "Could not start speaker identification."}
+                </p>
+              )}
+              {continueSpeakers.isError && (
+                <p className="mt-3 text-sm text-danger">
+                  {continueSpeakers.error instanceof ApiError
+                    ? continueSpeakers.error.detail
+                    : "Could not continue speaker identification."}
+                </p>
+              )}
+              {stopSpeakers.isError && (
+                <p className="mt-3 text-sm text-danger">
+                  {stopSpeakers.error instanceof ApiError
+                    ? stopSpeakers.error.detail
+                    : "Could not request stop."}
+                </p>
+              )}
+              {resetSpeakers.isError && (
+                <p className="mt-3 text-sm text-danger">
+                  {resetSpeakers.error instanceof ApiError
+                    ? resetSpeakers.error.detail
+                    : "Could not reset speaker data."}
+                </p>
+              )}
             </div>
 
             {book.glossary_extraction_status !== "completed" && (
@@ -357,86 +420,183 @@ export function VoiceView({ book }: Props) {
       {actionEnabled && (
         <div
           className={cn(
-            "sticky bottom-0 z-10 flex w-full min-w-0 flex-wrap items-center justify-between gap-2",
-            "border-t border-ink-800 bg-ink-900/95 px-4 py-2.5 backdrop-blur-sm",
+            "sticky bottom-0 z-10 w-full min-w-0 border-t border-ink-800 bg-ink-900/95 px-4 py-3 backdrop-blur-sm",
           )}
         >
-          {book.voice_extraction_status !== "running" && (
-            <button
-              type="button"
-              disabled={nothingToReset || resetVoice.isPending}
-              title={nothingToReset ? "No voice data to clear." : undefined}
-              onClick={() => {
-                if (
-                  !window.confirm(
-                    "This will permanently delete all character voice profiles, the extraction notepad, and your review progress (accept/reject) for this book. You can run extraction again afterward. This cannot be undone. Continue?",
-                  )
-                ) {
-                  return;
+          <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-2 border-b border-ink-800/80 pb-2.5">
+            <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
+              Pass 1 · Speakers
+            </p>
+            <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+              {book.speakers_extraction_status !== "running" && (
+                <button
+                  type="button"
+                  disabled={nothingToResetSpeakers || resetSpeakers.isPending}
+                  title={nothingToResetSpeakers ? "No speaker data to clear." : undefined}
+                  onClick={() => {
+                    if (
+                      !window.confirm(
+                        "This will delete the per-window speaker map and Pass 1 notepad for this book. You can run identification again afterward. Continue?",
+                      )
+                    ) {
+                      return;
+                    }
+                    resetSpeakers.mutate();
+                  }}
+                  className={cn(
+                    "inline-flex items-center gap-2 rounded-md border border-danger-border px-3 py-1.5",
+                    "font-mono text-xs uppercase tracking-wider text-danger",
+                    "hover:bg-danger-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger",
+                    "disabled:cursor-not-allowed disabled:opacity-40",
+                  )}
+                >
+                  {resetSpeakers.isPending ? "Resetting…" : "Reset"}
+                </button>
+              )}
+              {book.speakers_extraction_status === "running" && (
+                <button
+                  type="button"
+                  disabled={stopSpeakers.isPending}
+                  onClick={() => stopSpeakers.mutate()}
+                  className={cn(
+                    "inline-flex items-center gap-2 rounded-md border border-ink-600 px-3 py-1.5",
+                    "font-mono text-xs uppercase tracking-wider text-ink-200",
+                    "hover:border-danger-border hover:bg-danger-surface hover:text-danger",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger",
+                    "disabled:cursor-not-allowed disabled:opacity-40",
+                  )}
+                >
+                  {stopSpeakers.isPending ? "Stopping…" : "Stop"}
+                </button>
+              )}
+              {(book.speakers_extraction_status === "failed" ||
+                book.speakers_extraction_status === "cancelled") && (
+                <button
+                  type="button"
+                  disabled={continueSpeakers.isPending}
+                  onClick={() => continueSpeakers.mutate()}
+                  className={cn(
+                    "inline-flex items-center gap-2 rounded-md border border-success-border px-3 py-1.5",
+                    "font-mono text-xs uppercase tracking-wider text-success",
+                    "hover:bg-success-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success",
+                    "disabled:cursor-not-allowed disabled:opacity-40",
+                  )}
+                >
+                  {continueSpeakers.isPending ? "Continuing…" : "Continue"}
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={
+                  book.speakers_extraction_status === "running" || startSpeakers.isPending
                 }
-                resetVoice.mutate();
-              }}
-              className={cn(
-                "inline-flex items-center gap-2 rounded-md border border-danger-border px-3 py-1.5",
-                "font-mono text-xs uppercase tracking-wider text-danger",
-                "hover:bg-danger-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger",
-                "disabled:cursor-not-allowed disabled:opacity-40",
-              )}
-            >
-              {resetVoice.isPending ? "Resetting…" : "Reset voices"}
-            </button>
-          )}
-          {book.voice_extraction_status === "running" && <span className="min-w-0 flex-1" aria-hidden />}
-          <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
-            {book.voice_extraction_status === "running" && (
-              <button
-                type="button"
-                disabled={stopVoice.isPending}
-                onClick={() => stopVoice.mutate()}
+                onClick={() => startSpeakers.mutate()}
                 className={cn(
-                  "inline-flex items-center gap-2 rounded-md border border-ink-600 px-3 py-1.5",
-                  "font-mono text-xs uppercase tracking-wider text-ink-200",
-                  "hover:border-danger-border hover:bg-danger-surface hover:text-danger",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger",
+                  "inline-flex items-center gap-2 rounded-md border border-accent px-3 py-1.5",
+                  "font-mono text-xs uppercase tracking-wider text-accent",
+                  "bg-accent-soft hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                   "disabled:cursor-not-allowed disabled:opacity-40",
                 )}
               >
-                {stopVoice.isPending ? "Stopping…" : "Stop"}
+                {book.speakers_extraction_status === "running"
+                  ? "Running…"
+                  : startSpeakers.isPending
+                    ? "Starting…"
+                    : book.speakers_extraction_status === "completed"
+                      ? "Re-run Pass 1"
+                      : "Start Pass 1"}
               </button>
+            </div>
+          </div>
+
+          <div className="mt-2.5 flex w-full min-w-0 flex-col gap-2">
+            {speakersIncomplete && book.voice_extraction_status !== "running" && (
+              <p className="text-center text-xs text-warning sm:text-left">
+                Speaker identification is not complete — Pass 2 will use the full glossary
+                character list per window until you finish Pass 1.
+              </p>
             )}
-            {(book.voice_extraction_status === "failed" ||
-              book.voice_extraction_status === "cancelled") && (
-              <button
-                type="button"
-                disabled={continueVoice.isPending}
-                onClick={() => continueVoice.mutate()}
-                className={cn(
-                  "inline-flex items-center gap-2 rounded-md border border-success-border px-3 py-1.5",
-                  "font-mono text-xs uppercase tracking-wider text-success",
-                  "hover:bg-success-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success",
-                  "disabled:cursor-not-allowed disabled:opacity-40",
+            <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-2">
+              <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
+                Pass 2 · Voices
+              </p>
+              <div className="flex min-w-0 flex-wrap items-center justify-end gap-2">
+                {book.voice_extraction_status !== "running" && (
+                  <button
+                    type="button"
+                    disabled={nothingToResetVoice || resetVoice.isPending}
+                    title={nothingToResetVoice ? "No voice data to clear." : undefined}
+                    onClick={() => {
+                      if (
+                        !window.confirm(
+                          "This will permanently delete all character voice profiles, the extraction notepad, and your review progress (accept/reject) for this book. You can run extraction again afterward. This cannot be undone. Continue?",
+                        )
+                      ) {
+                        return;
+                      }
+                      resetVoice.mutate();
+                    }}
+                    className={cn(
+                      "inline-flex items-center gap-2 rounded-md border border-danger-border px-3 py-1.5",
+                      "font-mono text-xs uppercase tracking-wider text-danger",
+                      "hover:bg-danger-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger",
+                      "disabled:cursor-not-allowed disabled:opacity-40",
+                    )}
+                  >
+                    {resetVoice.isPending ? "Resetting…" : "Reset"}
+                  </button>
                 )}
-              >
-                {continueVoice.isPending ? "Continuing…" : "Continue"}
-              </button>
-            )}
-            <button
-              type="button"
-              disabled={book.voice_extraction_status === "running" || startVoice.isPending}
-              onClick={() => startVoice.mutate()}
-              className={cn(
-                "inline-flex items-center gap-2 rounded-md border border-accent px-3 py-1.5",
-                "font-mono text-xs uppercase tracking-wider text-accent",
-                "bg-accent-soft hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                "disabled:cursor-not-allowed disabled:opacity-40",
-              )}
-            >
-              {book.voice_extraction_status === "running"
-                ? "Running…"
-                : startVoice.isPending
-                  ? "Starting…"
-                  : "Start extraction"}
-            </button>
+                {book.voice_extraction_status === "running" && (
+                  <button
+                    type="button"
+                    disabled={stopVoice.isPending}
+                    onClick={() => stopVoice.mutate()}
+                    className={cn(
+                      "inline-flex items-center gap-2 rounded-md border border-ink-600 px-3 py-1.5",
+                      "font-mono text-xs uppercase tracking-wider text-ink-200",
+                      "hover:border-danger-border hover:bg-danger-surface hover:text-danger",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger",
+                      "disabled:cursor-not-allowed disabled:opacity-40",
+                    )}
+                  >
+                    {stopVoice.isPending ? "Stopping…" : "Stop"}
+                  </button>
+                )}
+                {(book.voice_extraction_status === "failed" ||
+                  book.voice_extraction_status === "cancelled") && (
+                  <button
+                    type="button"
+                    disabled={continueVoice.isPending}
+                    onClick={() => continueVoice.mutate()}
+                    className={cn(
+                      "inline-flex items-center gap-2 rounded-md border border-success-border px-3 py-1.5",
+                      "font-mono text-xs uppercase tracking-wider text-success",
+                      "hover:bg-success-surface focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-success",
+                      "disabled:cursor-not-allowed disabled:opacity-40",
+                    )}
+                  >
+                    {continueVoice.isPending ? "Continuing…" : "Continue"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  disabled={book.voice_extraction_status === "running" || startVoice.isPending}
+                  onClick={() => startVoice.mutate()}
+                  className={cn(
+                    "inline-flex items-center gap-2 rounded-md border border-accent px-3 py-1.5",
+                    "font-mono text-xs uppercase tracking-wider text-accent",
+                    "bg-accent-soft hover:opacity-80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                    "disabled:cursor-not-allowed disabled:opacity-40",
+                  )}
+                >
+                  {book.voice_extraction_status === "running"
+                    ? "Running…"
+                    : startVoice.isPending
+                      ? "Starting…"
+                      : "Start Pass 2"}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

@@ -3,9 +3,12 @@
 Three phases, in order:
 
 1. **Voice extraction.** Iterative window-by-window calls to
-   ``extract_voices_chain``. Builds source_voice_observation and
-   target_voice_strategy per character and accumulates a
-   candidate-passage pool (cap 8). NO translation.
+   ``extract_voices_chain``. When Pass 1 (speaker identification)
+   is complete, each window only receives glossary characters who
+   speak in that window; windows with no speakers skip the LLM call.
+   Builds source_voice_observation and target_voice_strategy per
+   character and accumulates a candidate-passage pool (cap 8). NO
+   translation.
 
 2. **Passage selection.** After extraction completes, code-side
    percentile math determines how many passages each character gets.
@@ -43,9 +46,9 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.constants.glossary_extraction import (
-    GLOSSARY_EXTRACTION_OVERLAP_WORDS,
-    GLOSSARY_EXTRACTION_WINDOW_WORDS,
+from app.constants.voice_extraction import (
+    VOICE_EXTRACTION_OVERLAP_WORDS,
+    VOICE_EXTRACTION_WINDOW_WORDS,
 )
 from app.core.db import get_sessionmaker
 from app.core.logging import get_logger
@@ -78,7 +81,7 @@ from app.models.voice import (
     VoicePassageCandidate,
     VoiceSelectedPassage,
 )
-from app.services import voice_validation
+from app.services import speakers_service, voice_validation
 from app.services.glossary_service import (
     _load_book_plaintext,
     load_working_glossary_for_latest_run,
@@ -360,10 +363,17 @@ async def can_continue_voice_extraction(
 def make_windows(
     text: str,
     *,
-    window_words: int = GLOSSARY_EXTRACTION_WINDOW_WORDS,
-    overlap_words: int = GLOSSARY_EXTRACTION_OVERLAP_WORDS,
+    window_words: int = VOICE_EXTRACTION_WINDOW_WORDS,
+    overlap_words: int = VOICE_EXTRACTION_OVERLAP_WORDS,
 ) -> list[str]:
-    """Split a manuscript into overlapping windows. Same as glossary."""
+    """Split a manuscript into overlapping windows.
+
+    Voice extraction uses tighter windows than glossary (500 vs 1000
+    words) — closer reading, less working context for the model to
+    drift on, fewer identity leaks in the prose body. The underlying
+    word-splitting logic is shared with glossary; only the defaults
+    differ.
+    """
     return glossary_make_windows(
         text, window_words=window_words, overlap_words=overlap_words
     )
@@ -404,6 +414,38 @@ async def load_glossary_characters(
             )
         )
     return out
+
+
+async def load_glossary_characters_for_voice_window(
+    session: AsyncSession,
+    *,
+    book_id: UUID,
+    window_number: int,
+    use_speaker_map: bool,
+) -> list[GlossaryCharacterRef]:
+    """Glossary characters eligible for voice work in one window.
+
+    When ``use_speaker_map`` is True (Pass 1 completed), returns only
+    characters with a ``WindowSpeaker`` row for ``window_number``.
+    Otherwise returns the full character list (legacy / soft-gate path).
+    """
+    all_chars = await load_glossary_characters(session, book_id=book_id)
+    if not use_speaker_map:
+        return all_chars
+    speakers = await speakers_service.load_speakers_for_window(
+        session,
+        book_id=book_id,
+        window_number=window_number,
+    )
+    allowed = {str(s.glossary_entry_id) for s in speakers}
+    return [c for c in all_chars if c.glossary_entry_id in allowed]
+
+
+def _filter_profiles_to_glossary_ids(
+    profiles: list[CharacterVoiceCompact],
+    glossary_entry_ids: set[str],
+) -> list[CharacterVoiceCompact]:
+    return [p for p in profiles if p.glossary_entry_id in glossary_entry_ids]
 
 
 async def load_compact_voice_profiles(
@@ -475,6 +517,7 @@ async def apply_delta(
     book_id: UUID,
     delta: VoiceUpdate,
     window_number: int,
+    glossary_characters: list[GlossaryCharacterRef] | None = None,
 ) -> None:
     """Apply a chain's delta to the persisted state.
 
@@ -504,10 +547,22 @@ async def apply_delta(
 
     All as one transaction. Retryable on failure without state
     corruption.
+
+    When ``glossary_characters`` is passed (speaker-scoped window), only
+    operations targeting those glossary entries are accepted; profiles
+    in the cross-check map are limited to the same scope.
     """
-    chars = await load_glossary_characters(session, book_id=book_id)
+    chars = (
+        glossary_characters
+        if glossary_characters is not None
+        else await load_glossary_characters(session, book_id=book_id)
+    )
     glossary_name_by_id = {c.glossary_entry_id: c.canonical_name for c in chars}
-    profiles = await load_compact_voice_profiles(session, book_id=book_id)
+    allowed_glossary_ids = set(glossary_name_by_id)
+    profiles = _filter_profiles_to_glossary_ids(
+        await load_compact_voice_profiles(session, book_id=book_id),
+        allowed_glossary_ids,
+    )
     profile_name_by_id = {p.id: p.canonical_name for p in profiles}
 
     new_p = voice_validation.filter_new_profiles(
@@ -1147,9 +1202,24 @@ async def extract_book_voices(
                         )
                         cancelled = True
                         break
-                    characters = await load_glossary_characters(
-                        session, book_id=book_id
+                    use_speaker_map = book.speakers_extraction_status == "completed"
+                    characters = await load_glossary_characters_for_voice_window(
+                        session,
+                        book_id=book_id,
+                        window_number=n,
+                        use_speaker_map=use_speaker_map,
                     )
+                    if use_speaker_map and not characters:
+                        book.voice_extraction_windows_completed = n
+                        await session.commit()
+                        if n % 5 == 0 or n == total:
+                            log.info(
+                                "voice_extraction_window_skipped_no_speakers",
+                                book_id=str(book_id),
+                                window=n,
+                                total_windows=total,
+                            )
+                        continue
                     if not characters:
                         msg = "No character glossary entries available for this book."
                         book.voice_extraction_status = "failed"
@@ -1157,8 +1227,12 @@ async def extract_book_voices(
                         book.voice_extraction_cancel_requested = False
                         await session.commit()
                         return
-                    current = await load_compact_voice_profiles(
-                        session, book_id=book_id
+                    allowed_ids = {c.glossary_entry_id for c in characters}
+                    current = _filter_profiles_to_glossary_ids(
+                        await load_compact_voice_profiles(
+                            session, book_id=book_id
+                        ),
+                        allowed_ids,
                     )
                     previous = await load_previous_notepad(
                         session, book_id=book_id
@@ -1173,12 +1247,14 @@ async def extract_book_voices(
                         source_language=book.source_language,
                         target_language=book.target_language,
                         settings=settings,
+                        speakers_scoped=use_speaker_map,
                     )
                     await apply_delta(
                         session,
                         book_id=book_id,
                         delta=delta,
                         window_number=n,
+                        glossary_characters=characters,
                     )
                     book.voice_extraction_windows_completed = n
                     await session.commit()

@@ -41,6 +41,7 @@ from app.generation.prompt_manager.models.extract_voices_model import (
 from app.generation.prompt_manager.prompts.extract_voices_prompt import (
     FIRST_PASS_NOTE,
     PROMPT,
+    SPEAKER_SCOPE_NOTE,
     render_glossary_characters_table,
     render_notepad,
     render_voice_profiles_table,
@@ -70,6 +71,7 @@ async def extract_voices_window(
     source_language: str,
     target_language: str,
     settings: Settings,
+    speakers_scoped: bool = False,
 ) -> VoiceUpdate:
     """Run one voice-extraction pass over a window of text.
 
@@ -84,6 +86,7 @@ async def extract_voices_window(
 
     rendered = PROMPT.format(
         first_pass_note=FIRST_PASS_NOTE if is_first_pass else "",
+        speaker_scope_note=SPEAKER_SCOPE_NOTE if speakers_scoped else "",
         window_number=window_number,
         total_windows=total_windows,
         n_characters=len(glossary_characters),

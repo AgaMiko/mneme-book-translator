@@ -53,7 +53,12 @@ from app.schemas.voice import (
     VoiceWorkingProfilePatchIn,
     WorkingVoicesResponse,
 )
-from app.services import book_service, glossary_service, voice_service
+from app.services import (
+    book_service,
+    glossary_service,
+    speakers_service,
+    voice_service,
+)
 from app.services.glossary_extraction_estimate import estimate_glossary_extraction
 from app.services.manuscript_parser import ParsedManuscript, parse_docx
 
@@ -724,6 +729,235 @@ async def reset_voice_extraction(
         )
     await voice_service.reset_book_voice_data(session, book=book)
     log.info("voice_extraction_reset", book_id=str(book_id))
+
+
+# ─── Speaker identification (Pass 1, runs before voice extraction) ──
+
+
+def _schedule_extract_book_speakers(
+    book_id: UUID,
+    settings: Settings,
+    *,
+    continue_extraction: bool = False,
+) -> None:
+    """Fire-and-forget Pass 1. Same scheduling shape as voices."""
+    task = asyncio.create_task(
+        speakers_service.extract_book_speakers(
+            book_id=book_id,
+            settings=settings,
+            continue_extraction=continue_extraction,
+        )
+    )
+
+    def _on_done(t: asyncio.Task[object]) -> None:
+        try:
+            t.result()
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            log.exception(
+                "speakers_extraction_background_unhandled",
+                book_id=str(book_id),
+            )
+
+    task.add_done_callback(_on_done)
+
+
+def _speakers_extraction_has_partial_progress(book: Book) -> bool:
+    tw = book.speakers_extraction_windows_total
+    done = book.speakers_extraction_windows_completed
+    return tw is not None and done is not None and tw > 0 and 0 < done < tw
+
+
+@router.post(
+    "/{book_id}/speaker-extraction/run",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=GlossaryExtractionStartResponse,
+    summary="Start speaker identification (Pass 1, background)",
+)
+async def run_speakers_extraction(
+    book_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> GlossaryExtractionStartResponse:
+    if not settings.GEMINI_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="GEMINI_API_KEY is not configured.",
+        )
+
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Book not found",
+        )
+    if book.speakers_extraction_status == "running":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Speaker identification is already running for this book.",
+        )
+    if book.speakers_extraction_status == "completed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Speaker identification already completed for this book.",
+        )
+    if _speakers_extraction_has_partial_progress(book):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="An interrupted speaker identification exists — use Continue to resume.",
+        )
+
+    ok, reason = await speakers_service.can_run_speakers_extraction(
+        session, book_id=book_id
+    )
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=reason or "Speaker identification cannot start.",
+        )
+
+    result = await session.execute(
+        update(Book)
+        .where(
+            Book.id == book_id,
+            Book.speakers_extraction_status != "running",
+        )
+        .values(
+            speakers_extraction_status="running",
+            speakers_extraction_cancel_requested=False,
+            speakers_extraction_windows_total=None,
+            speakers_extraction_windows_completed=None,
+            speakers_extraction_last_error=None,
+        ),
+    )
+    await session.commit()
+    if result.rowcount == 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Speaker identification is already running for this book.",
+        )
+
+    _schedule_extract_book_speakers(book_id, settings, continue_extraction=False)
+    log.info("speakers_extraction_scheduled", book_id=str(book_id))
+    return GlossaryExtractionStartResponse(book_id=book_id)
+
+
+@router.post(
+    "/{book_id}/speaker-extraction/continue",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=GlossaryExtractionStartResponse,
+    summary="Resume speaker identification after failure or cancel",
+)
+async def continue_speakers_extraction(
+    book_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> GlossaryExtractionStartResponse:
+    if not settings.GEMINI_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="GEMINI_API_KEY is not configured.",
+        )
+
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Book not found",
+        )
+    if book.speakers_extraction_status == "running":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Speaker identification is already running for this book.",
+        )
+    if not await speakers_service.can_continue_speakers_extraction(
+        session, book_id=book_id
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "No interrupted speaker identification to continue, the manuscript "
+                "changed since that run, or the run is already complete."
+            ),
+        )
+
+    result = await session.execute(
+        update(Book)
+        .where(Book.id == book_id, Book.speakers_extraction_status != "running")
+        .values(
+            speakers_extraction_status="running",
+            speakers_extraction_cancel_requested=False,
+        ),
+    )
+    await session.commit()
+    if result.rowcount == 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Speaker identification is already running for this book.",
+        )
+
+    _schedule_extract_book_speakers(book_id, settings, continue_extraction=True)
+    log.info("speakers_extraction_continue_scheduled", book_id=str(book_id))
+    return GlossaryExtractionStartResponse(book_id=book_id)
+
+
+@router.post(
+    "/{book_id}/speaker-extraction/stop",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=GlossaryExtractionStopResponse,
+    summary="Request cooperative cancel of speaker identification",
+)
+async def stop_speakers_extraction(
+    book_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> GlossaryExtractionStopResponse:
+    result = await session.execute(
+        update(Book)
+        .where(
+            Book.id == book_id,
+            Book.speakers_extraction_status == "running",
+        )
+        .values(speakers_extraction_cancel_requested=True),
+    )
+    await session.commit()
+    if result.rowcount == 0:
+        book = await session.get(Book, book_id)
+        if book is None:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Book not found",
+            )
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Speaker identification is not running for this book.",
+        )
+    log.info("speakers_extraction_stop_requested", book_id=str(book_id))
+    return GlossaryExtractionStopResponse(book_id=book_id)
+
+
+@router.post(
+    "/{book_id}/speaker-extraction/reset",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete all speaker identification data and reset extraction state",
+)
+async def reset_speakers_extraction(
+    book_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> None:
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Book not found",
+        )
+    if book.speakers_extraction_status == "running":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Stop speaker identification before resetting.",
+        )
+    await speakers_service.reset_book_speakers_data(session, book=book)
+    log.info("speakers_extraction_reset", book_id=str(book_id))
 
 
 @router.delete("/{book_id}", status_code=status.HTTP_204_NO_CONTENT)

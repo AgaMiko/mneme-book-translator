@@ -75,6 +75,18 @@ function computeHint(book: BookDetail, activeTab: BookTab): Hint | null {
       };
     }
     if (glossaryStatus === "completed") {
+      if (book.speakers_extraction_status === "running") {
+        return {
+          text: "Speaker identification is running — mapping who speaks in each window.",
+          action: { label: "Watch progress", tab: "voices" },
+        };
+      }
+      if (book.speakers_extraction_status !== "completed") {
+        return {
+          text: "Glossary is ready — identify speakers per window first, then run voice extraction.",
+          action: { label: "Open voices", tab: "voices" },
+        };
+      }
       if (book.voice_extraction_status === "running") {
         return {
           text: "Voice extraction is running in the background.",
@@ -83,7 +95,7 @@ function computeHint(book: BookDetail, activeTab: BookTab): Hint | null {
       }
       if (book.voice_extraction_status !== "completed") {
         return {
-          text: "Glossary is ready — run character voice extraction next (same windows as the glossary pass).",
+          text: "Speakers are mapped — run character voice extraction next.",
           action: { label: "Open voices", tab: "voices" },
         };
       }
@@ -131,9 +143,24 @@ function computeHint(book: BookDetail, activeTab: BookTab): Hint | null {
         action: { label: "Open glossary", tab: "glossary" },
       };
     }
+    if (book.speakers_extraction_status === "idle") {
+      return {
+        text: "Pass 1: identify which glossary characters speak in each window (quoted lines only).",
+      };
+    }
+    if (book.speakers_extraction_status === "running") {
+      return {
+        text: "Pass 1 in flight — one window at a time, with verbatim evidence per speaker.",
+      };
+    }
+    if (book.speakers_extraction_status !== "completed") {
+      return {
+        text: "Finish or reset speaker identification before voice extraction for best grounding.",
+      };
+    }
     if (book.voice_extraction_status === "idle") {
       return {
-        text: "Start extraction to scan the manuscript in windows and build profiles.",
+        text: "Pass 2: extract voice observations and strategies for characters that speak.",
       };
     }
     if (book.voice_extraction_status === "running") {

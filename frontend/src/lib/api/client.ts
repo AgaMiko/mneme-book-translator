@@ -22,6 +22,9 @@ export type GlossaryExtractionStatus = z.infer<typeof GlossaryExtractionStatusSc
 export const VoiceExtractionStatusSchema = GlossaryExtractionStatusSchema;
 export type VoiceExtractionStatus = z.infer<typeof VoiceExtractionStatusSchema>;
 
+export const SpeakersExtractionStatusSchema = GlossaryExtractionStatusSchema;
+export type SpeakersExtractionStatus = z.infer<typeof SpeakersExtractionStatusSchema>;
+
 export const ParagraphSchema = z.object({
   id: z.string().uuid(),
   position: z.number().int(),
@@ -55,6 +58,10 @@ export const BookSummarySchema = z.object({
   voice_extraction_windows_total: z.number().int().nullable().optional(),
   voice_extraction_windows_completed: z.number().int().nullable().optional(),
   voice_extraction_last_error: z.string().nullable().optional(),
+  speakers_extraction_status: SpeakersExtractionStatusSchema,
+  speakers_extraction_windows_total: z.number().int().nullable().optional(),
+  speakers_extraction_windows_completed: z.number().int().nullable().optional(),
+  speakers_extraction_last_error: z.string().nullable().optional(),
   original_filename: z.string(),
   word_count: z.number().int(),
   created_at: z.string(),
@@ -279,6 +286,40 @@ export const api = {
 
   resetVoiceExtraction: async (id: string): Promise<void> => {
     const res = await fetch(`${API_URL}/books/${id}/voice-extraction/reset`, { method: "POST" });
+    if (!res.ok) {
+      let detail = `${res.status} ${res.statusText}`;
+      try {
+        const body = (await res.json()) as { detail?: unknown };
+        if (body?.detail != null) detail = String(body.detail);
+      } catch {
+        // keep default
+      }
+      throw new ApiError(res.status, detail);
+    }
+  },
+
+  startSpeakersExtraction: async (id: string): Promise<GlossaryExtractionStartResponse> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/speaker-extraction/run`, { method: "POST" }),
+      GlossaryExtractionStartResponseSchema,
+    ),
+
+  continueSpeakersExtraction: async (id: string): Promise<GlossaryExtractionStartResponse> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/speaker-extraction/continue`, { method: "POST" }),
+      GlossaryExtractionStartResponseSchema,
+    ),
+
+  stopSpeakersExtraction: async (id: string): Promise<GlossaryExtractionStopResponse> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/speaker-extraction/stop`, { method: "POST" }),
+      GlossaryExtractionStopResponseSchema,
+    ),
+
+  resetSpeakersExtraction: async (id: string): Promise<void> => {
+    const res = await fetch(`${API_URL}/books/${id}/speaker-extraction/reset`, {
+      method: "POST",
+    });
     if (!res.ok) {
       let detail = `${res.status} ${res.statusText}`;
       try {

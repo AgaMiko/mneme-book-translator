@@ -52,7 +52,7 @@ dialogue, but they're written *in* {target_language}.
 system cross-checks them. If you put one character's voice traits \
 under another character's ID, the operation is dropped.
 
-{first_pass_note}\
+{first_pass_note}{speaker_scope_note}\
 ## The two voice fields, and what each one does
 
 A character's voice is captured in two fields. They have different \
@@ -444,6 +444,13 @@ character with a glossary entry needs a fresh profile, including \
 source_voice_observation, target_voice_strategy, AND one or more \
 starting candidate passages. Establish from the dialogue you can see; \
 later passes will refine. The notepad starts empty too.
+
+"""
+
+SPEAKER_SCOPE_NOTE = """\
+The glossary list below is limited to characters Pass 1 identified as \
+speaking in **this window** (quoted lines with evidence). Profile only \
+those characters — do not add operations for anyone not listed.
 
 """
 

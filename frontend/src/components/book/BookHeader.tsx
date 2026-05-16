@@ -4,6 +4,7 @@ import type {
   BookDetail,
   GlossaryExtractionStatus,
   MetadataStatus,
+  SpeakersExtractionStatus,
   VoiceExtractionStatus,
 } from "@/lib/api/client";
 import { cn, formatNumber } from "@/lib/utils";
@@ -42,11 +43,18 @@ export function BookHeader({ book, activeTab, onSelectTab }: Props) {
             windowsTotal={book.glossary_extraction_windows_total ?? null}
           />
           {!voicesLocked && (
-            <VoiceExtractionPill
-              status={book.voice_extraction_status}
-              windowsCompleted={book.voice_extraction_windows_completed ?? null}
-              windowsTotal={book.voice_extraction_windows_total ?? null}
-            />
+            <>
+              <SpeakersExtractionPill
+                status={book.speakers_extraction_status}
+                windowsCompleted={book.speakers_extraction_windows_completed ?? null}
+                windowsTotal={book.speakers_extraction_windows_total ?? null}
+              />
+              <VoiceExtractionPill
+                status={book.voice_extraction_status}
+                windowsCompleted={book.voice_extraction_windows_completed ?? null}
+                windowsTotal={book.voice_extraction_windows_total ?? null}
+              />
+            </>
           )}
         </div>
         <h1 className="mt-2 font-serif text-3xl font-semibold text-ink-50">
@@ -208,6 +216,76 @@ function GlossaryExtractionPill({
     >
       <AlertCircle className="h-3 w-3" aria-hidden />
       glossary failed
+    </span>
+  );
+}
+
+function SpeakersExtractionPill({
+  status,
+  windowsCompleted,
+  windowsTotal,
+}: {
+  status: SpeakersExtractionStatus;
+  windowsCompleted: number | null;
+  windowsTotal: number | null;
+}) {
+  if (status === "idle") return null;
+
+  if (status === "running") {
+    const progress =
+      windowsTotal != null && windowsTotal > 0
+        ? ` ${windowsCompleted ?? 0}/${windowsTotal}`
+        : "";
+    return (
+      <span className={cn(pillBase, "bg-ink-800 text-ink-300")}>
+        <span
+          className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent"
+          aria-hidden
+        />
+        speakers…{progress}
+      </span>
+    );
+  }
+
+  if (status === "completed") {
+    return (
+      <span
+        className={cn(
+          pillBase,
+          "border border-success-border bg-success-surface text-success",
+        )}
+      >
+        speakers mapped
+      </span>
+    );
+  }
+
+  if (status === "cancelled") {
+    const tail =
+      windowsTotal != null && windowsTotal > 0
+        ? ` after ${windowsCompleted ?? 0}/${windowsTotal}`
+        : "";
+    return (
+      <span
+        className={cn(
+          pillBase,
+          "border border-warning-border bg-warning-surface text-warning",
+        )}
+      >
+        speakers stopped{tail}
+      </span>
+    );
+  }
+
+  return (
+    <span
+      className={cn(
+        pillBase,
+        "border border-danger-border bg-danger-surface text-danger",
+      )}
+    >
+      <AlertCircle className="h-3 w-3" aria-hidden />
+      speakers failed
     </span>
   );
 }

@@ -70,6 +70,24 @@ class Book(Base):
         Integer, default=None
     )
 
+    speakers_extraction_status: Mapped[str] = mapped_column(
+        String(16),
+        default="idle",
+        server_default="idle",
+    )
+    speakers_extraction_cancel_requested: Mapped[bool] = mapped_column(
+        Boolean,
+        default=False,
+        server_default="false",
+    )
+    speakers_extraction_windows_total: Mapped[int | None] = mapped_column(
+        Integer, default=None
+    )
+    speakers_extraction_windows_completed: Mapped[int | None] = mapped_column(
+        Integer, default=None
+    )
+    speakers_extraction_last_error: Mapped[str | None] = mapped_column(Text, default=None)
+
     voice_extraction_status: Mapped[str] = mapped_column(
         String(16),
         default="idle",
@@ -144,6 +162,13 @@ class Book(Base):
     )
     character_voices: Mapped[list["CharacterVoice"]] = relationship(  # noqa: F821
         "CharacterVoice",
+        back_populates="book",
+        cascade="all, delete-orphan",
+        default_factory=list,
+        init=False,
+    )
+    window_speakers: Mapped[list["WindowSpeaker"]] = relationship(  # noqa: F821
+        "WindowSpeaker",
         back_populates="book",
         cascade="all, delete-orphan",
         default_factory=list,

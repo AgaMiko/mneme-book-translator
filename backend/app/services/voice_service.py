@@ -617,19 +617,31 @@ async def apply_delta(
         voice_row = await session.get(CharacterVoice, pid)
         if voice_row is None or voice_row.book_id != book_id:
             continue
-        c_stmt = select(VoicePassageCandidate).where(
-            VoicePassageCandidate.voice_id == voice_row.id,
-            VoicePassageCandidate.why_representative == op.remove_candidate_reason,
+        c_stmt = (
+            select(VoicePassageCandidate)
+            .where(
+                VoicePassageCandidate.voice_id == voice_row.id,
+                VoicePassageCandidate.why_representative == op.remove_candidate_reason,
+            )
+            .order_by(VoicePassageCandidate.created_at.asc(), VoicePassageCandidate.id.asc())
         )
-        old = (await session.execute(c_stmt)).scalar_one_or_none()
-        if old is None:
+        to_remove = list((await session.execute(c_stmt)).scalars().all())
+        if not to_remove:
             log.warning(
                 "ReplaceCandidate: no candidate with why %r for profile %s",
                 (op.remove_candidate_reason[:80] if op.remove_candidate_reason else ""),
                 op.profile_id,
             )
             continue
-        await session.delete(old)
+        if len(to_remove) > 1:
+            log.warning(
+                "ReplaceCandidate: %d candidates share why %r for profile %s; removing all",
+                len(to_remove),
+                (op.remove_candidate_reason[:80] if op.remove_candidate_reason else ""),
+                op.profile_id,
+            )
+        for old in to_remove:
+            await session.delete(old)
         rep = VoicePassageCandidate(
             source_text=op.new_candidate.source_text,
             why_representative=op.new_candidate.why_representative,

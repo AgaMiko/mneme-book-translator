@@ -1,11 +1,11 @@
-import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useQueryClient, type UseQueryResult } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 
 import {
   VOICE_EXTRACTION_OVERLAP_WORDS,
   VOICE_EXTRACTION_WINDOW_WORDS,
 } from "@/constants/voiceExtraction";
-import type { BookDetail, VoiceWorkingProfile } from "@/lib/api/client";
+import type { BookDetail, VoiceWorkingProfile, WorkingSpeakersResponse } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/client";
 import {
   bookKeys,
@@ -18,12 +18,84 @@ import {
   useStartVoiceExtraction,
   useStopSpeakersExtraction,
   useStopVoiceExtraction,
+  useWorkingSpeakers,
   useWorkingVoices,
 } from "@/lib/api/hooks";
 import { cn, formatNumber, formatRelativeDate } from "@/lib/utils";
 
 interface Props {
   book: BookDetail;
+}
+
+function formatWindowList(windows: number[], maxVisible = 28): string {
+  if (windows.length === 0) return "—";
+  if (windows.length <= maxVisible) return windows.join(", ");
+  return `${windows.slice(0, maxVisible).join(", ")} … +${windows.length - maxVisible}`;
+}
+
+function SpeakerMapPanel({
+  book,
+  speakers,
+}: {
+  book: BookDetail;
+  speakers: UseQueryResult<WorkingSpeakersResponse, Error>;
+}) {
+  const done = book.speakers_extraction_windows_completed;
+  const total = book.speakers_extraction_windows_total;
+  const progress =
+    book.speakers_extraction_status === "running" && total != null && total > 0
+      ? ` · scanning window ${done ?? 0}/${total}`
+      : "";
+
+  if (speakers.isLoading && !speakers.data) {
+    return (
+      <p className="mt-4 text-sm text-ink-400" aria-busy="true">
+        Loading speaker map…
+      </p>
+    );
+  }
+  if (speakers.isError) {
+    return <p className="mt-4 text-sm text-danger">Could not load speaker map.</p>;
+  }
+  if (!speakers.data || speakers.data.entries.length === 0) {
+    return (
+      <p className="mt-4 text-sm text-ink-500">
+        {book.speakers_extraction_status === "running"
+          ? `Waiting for first window…${progress}`
+          : "No speakers mapped yet."}
+      </p>
+    );
+  }
+
+  const { entries, windows_mapped, edges_total } = speakers.data;
+
+  return (
+    <div className="mt-4">
+      <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
+        {entries.length} character{entries.length === 1 ? "" : "s"} · {windows_mapped} window
+        {windows_mapped === 1 ? "" : "s"} · {edges_total} appearance
+        {edges_total === 1 ? "" : "s"}
+        {progress}
+      </p>
+      <ul
+        className="mt-3 max-h-72 space-y-2 overflow-y-auto rounded-md border border-ink-800/80 bg-ink-900/40 p-2"
+        aria-live="polite"
+        aria-label="Characters and window numbers where they speak"
+      >
+        {entries.map((entry) => (
+          <li
+            key={entry.glossary_entry_id}
+            className="grid gap-1 rounded px-2 py-1.5 text-sm sm:grid-cols-[minmax(8rem,11rem)_1fr]"
+          >
+            <span className="font-medium text-ink-100">{entry.canonical_name}</span>
+            <span className="font-mono text-xs leading-relaxed text-ink-400">
+              {formatWindowList(entry.windows)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 function ProfileBlock({
@@ -47,12 +119,14 @@ function VoiceProfileCard({
   v,
   book,
   patchPending,
+  speakerWindows,
   onAccept,
   onReject,
 }: {
   v: VoiceWorkingProfile;
   book: BookDetail;
   patchPending: boolean;
+  speakerWindows?: number[];
   onAccept: () => void;
   onReject: () => void;
 }) {
@@ -71,11 +145,16 @@ function VoiceProfileCard({
         <div className="min-w-0 flex-1">
           <p className="font-serif text-base font-medium text-ink-50">{v.canonical_name}</p>
           <p className="mt-1 font-mono text-[10px] uppercase tracking-wider text-ink-500">
-            {v.status} · windows {v.first_seen_window}→{v.last_observed_window}
+            {v.status} · voice windows {v.first_seen_window}→{v.last_observed_window}
             {hasMulti
               ? ` · ${selected.length} reference passage${selected.length === 1 ? "" : "es"}`
               : ` · dialogue scans ${formatNumber(v.dialogue_volume_observed)}`}
           </p>
+          {speakerWindows && speakerWindows.length > 0 ? (
+            <p className="mt-1 font-mono text-[10px] leading-relaxed text-accent/90">
+              speaks in windows {formatWindowList(speakerWindows)}
+            </p>
+          ) : null}
           <p className="mt-1.5 break-all font-mono text-[10px] leading-relaxed text-ink-600">
             glossary entry · {v.glossary_entry_id}
           </p>
@@ -223,10 +302,28 @@ function VoiceProfileCard({
 export function VoiceView({ book }: Props) {
   const queryClient = useQueryClient();
   const listRef = useRef<HTMLDivElement | null>(null);
+  const glossaryReady = book.glossary_extraction_status === "completed";
+  const speakersPoll =
+    book.speakers_extraction_status === "running" ||
+    book.voice_extraction_status === "running";
+  const speakers = useWorkingSpeakers(book.id, {
+    enabled:
+      glossaryReady &&
+      (book.speakers_extraction_status !== "idle" ||
+        (book.speakers_extraction_windows_completed ?? 0) > 0),
+    refetchIntervalMs: speakersPoll ? 1500 : false,
+  });
   const voices = useWorkingVoices(book.id, {
-    enabled: book.glossary_extraction_status === "completed",
+    enabled: glossaryReady,
     refetchIntervalMs: book.voice_extraction_status === "running" ? 1500 : false,
   });
+  const speakerWindowsByGlossaryId = useMemo(() => {
+    const map = new Map<string, number[]>();
+    for (const e of speakers.data?.entries ?? []) {
+      map.set(e.glossary_entry_id, e.windows);
+    }
+    return map;
+  }, [speakers.data?.entries]);
   const startSpeakers = useStartSpeakersExtraction(book.id);
   const continueSpeakers = useContinueSpeakersExtraction(book.id);
   const stopSpeakers = useStopSpeakersExtraction(book.id);
@@ -238,6 +335,7 @@ export function VoiceView({ book }: Props) {
   const patchVoice = usePatchVoiceWorkingProfile(book.id);
 
   const prevVoice = useRef<string | null>(null);
+  const prevSpeakers = useRef<string | null>(null);
   useEffect(() => {
     const prev = prevVoice.current;
     prevVoice.current = book.voice_extraction_status;
@@ -245,6 +343,13 @@ export function VoiceView({ book }: Props) {
       void queryClient.invalidateQueries({ queryKey: bookKeys.workingVoices(book.id) });
     }
   }, [book.voice_extraction_status, book.id, queryClient]);
+  useEffect(() => {
+    const prev = prevSpeakers.current;
+    prevSpeakers.current = book.speakers_extraction_status;
+    if (prev === "running" && book.speakers_extraction_status !== "running") {
+      void queryClient.invalidateQueries({ queryKey: bookKeys.workingSpeakers(book.id) });
+    }
+  }, [book.speakers_extraction_status, book.id, queryClient]);
 
   const actionEnabled = book.word_count > 0 && book.glossary_extraction_status === "completed";
   const speakersIncomplete = book.speakers_extraction_status !== "completed";
@@ -324,6 +429,8 @@ export function VoiceView({ book }: Props) {
                     : "Could not reset speaker data."}
                 </p>
               )}
+
+              <SpeakerMapPanel book={book} speakers={speakers} />
             </div>
 
             {book.glossary_extraction_status !== "completed" && (
@@ -409,6 +516,7 @@ export function VoiceView({ book }: Props) {
                 v={v}
                 book={book}
                 patchPending={patchVoice.isPending}
+                speakerWindows={speakerWindowsByGlossaryId.get(v.glossary_entry_id)}
                 onAccept={() => patchVoice.mutate({ voiceId: v.id, body: { accept: true } })}
                 onReject={() => patchVoice.mutate({ voiceId: v.id, body: { reject: true } })}
               />

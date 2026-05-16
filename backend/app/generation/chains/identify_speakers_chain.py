@@ -25,10 +25,12 @@ known-narrow candidate pool, which tightens its grounding too.
 
 from __future__ import annotations
 
+import asyncio
 from typing import TYPE_CHECKING
 
 from langfuse import observe
 
+from app.core.logging import get_logger
 from app.generation.prompt_manager.models.identify_speakers_model import (
     GlossaryCharacterRef,
     SpeakerNote,
@@ -40,15 +42,34 @@ from app.generation.prompt_manager.prompts.identify_speakers_prompt import (
     render_notepad,
 )
 from app.generation.providers.gemini import generate as gemini_generate
+from app.generation.structured_output import EmptyGeminiResponseError, parse_gemini_model
 
 if TYPE_CHECKING:
     from app.core.config import Settings
 
+log = get_logger(__name__)
 
-# Pass 1 outputs are short — a list of speakers with one quote each
-# plus an optional one-line notepad. 8k tokens is comfortable
-# headroom; we still pay only for what's generated.
 _IDENTIFY_SPEAKERS_MAX_OUTPUT_TOKENS = 8_192
+_PARSE_ATTEMPTS = 3
+
+
+def _empty_window_fallback(
+    *,
+    window_number: int,
+    previous_notepad: list[SpeakerNote],
+    detail: str,
+) -> SpeakersInWindow:
+    """Continue the run without speakers for this window."""
+    log.warning(
+        "speakers_window_empty_fallback",
+        window_number=window_number,
+        detail=detail,
+    )
+    return SpeakersInWindow(
+        window_summary=f"(no model output for window {window_number})",
+        speakers=[],
+        notepad=previous_notepad[:1],
+    )
 
 
 @observe(name="identify_speakers_window", as_type="generation")
@@ -68,7 +89,18 @@ async def identify_speakers_window(
     The chain is stateless — all iteration state lives in
     ``previous_notepad``, which the caller threads forward from the
     previous call (or an empty list for window 1).
+
+    If Gemini returns no parseable JSON after several attempts, returns
+    an empty speaker list for this window so a single bad window does
+    not abort a 200+ window run. The notepad is carried forward unchanged.
     """
+    if len(window_text) > 80_000:
+        log.warning(
+            "speakers_window_text_large",
+            window_number=window_number,
+            chars=len(window_text),
+        )
+
     rendered = PROMPT.format(
         window_number=window_number,
         total_windows=total_windows,
@@ -79,23 +111,31 @@ async def identify_speakers_window(
         source_language=source_language,
     )
 
-    # Temperature 0.1 — Pass 1 is a near-deterministic attribution
-    # task. Slight room for the model to break attribution ties when
-    # context is genuinely ambiguous, but lower than voice extraction
-    # (0.3) which benefits from expressive room in the voice fields.
-    response = await gemini_generate(
-        prompt=rendered,
-        schema=SpeakersInWindow,
-        model=settings.GEMINI_MODEL,
-        settings=settings,
-        temperature=0.1,
-        max_output_tokens=_IDENTIFY_SPEAKERS_MAX_OUTPUT_TOKENS,
-    )
+    last_detail = ""
+    for attempt in range(_PARSE_ATTEMPTS):
+        response = await gemini_generate(
+            prompt=rendered,
+            schema=SpeakersInWindow,
+            model=settings.GEMINI_MODEL,
+            settings=settings,
+            temperature=0.1,
+            max_output_tokens=_IDENTIFY_SPEAKERS_MAX_OUTPUT_TOKENS,
+        )
+        try:
+            return parse_gemini_model(response, SpeakersInWindow)
+        except EmptyGeminiResponseError as exc:
+            last_detail = exc.detail
+            log.warning(
+                "speakers_parse_attempt_failed",
+                window_number=window_number,
+                attempt=attempt + 1,
+                detail=last_detail,
+            )
+            if attempt + 1 < _PARSE_ATTEMPTS:
+                await asyncio.sleep(1.5 * (attempt + 1))
 
-    if isinstance(response.parsed, SpeakersInWindow):
-        return response.parsed
-    if response.text:
-        return SpeakersInWindow.model_validate_json(response.text)
-    raise RuntimeError(
-        f"Gemini returned an empty speakers response for window {window_number}."
+    return _empty_window_fallback(
+        window_number=window_number,
+        previous_notepad=previous_notepad,
+        detail=last_detail,
     )

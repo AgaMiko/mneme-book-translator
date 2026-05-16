@@ -84,6 +84,23 @@ async def _finalize_glossary_cancelled(
     await session.commit()
 
 
+# Manuscripts sometimes contain huge space-free runs (URLs, artifacts).
+# Without chunking, a single "word" can blow one window to megabytes and
+# break structured-output calls on that window only.
+_MAX_WORD_CHARS = 512
+
+
+def _split_manuscript_words(text: str) -> list[str]:
+    words: list[str] = []
+    for raw in text.split():
+        if len(raw) <= _MAX_WORD_CHARS:
+            words.append(raw)
+            continue
+        for i in range(0, len(raw), _MAX_WORD_CHARS):
+            words.append(raw[i : i + _MAX_WORD_CHARS])
+    return words
+
+
 def make_windows(
     text: str,
     *,
@@ -91,7 +108,7 @@ def make_windows(
     overlap_words: int = GLOSSARY_EXTRACTION_OVERLAP_WORDS,
 ) -> list[str]:
     """Split full manuscript text into overlapping word windows."""
-    words = text.split()
+    words = _split_manuscript_words(text)
     if not words:
         return []
     if len(words) <= window_words:

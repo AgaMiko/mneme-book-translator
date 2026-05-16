@@ -45,6 +45,11 @@ from app.generation.prompt_manager.models.identify_speakers_model import (
 from app.models.book import Book
 from app.models.glossary import GlossaryEntry
 from app.models.speakers import SpeakerNotepad, WindowSpeaker
+from app.schemas.speakers import (
+    CharacterSpeakerMapOut,
+    SpeakerWindowOut,
+    WorkingSpeakersResponse,
+)
 from app.services import speakers_validation
 from app.services.glossary_service import (
     _load_book_plaintext,
@@ -354,6 +359,70 @@ async def load_speakers_for_character(
         .order_by(WindowSpeaker.window_number)
     )
     return list(rows.scalars().all())
+
+
+async def speaker_window_counts_by_glossary(
+    session: AsyncSession,
+    *,
+    book_id: UUID,
+) -> dict[UUID, int]:
+    """Distinct window count per glossary character (Pass 1 map)."""
+    rows = await session.execute(
+        select(
+            WindowSpeaker.glossary_entry_id,
+            func.count(WindowSpeaker.window_number),
+        )
+        .where(WindowSpeaker.book_id == book_id)
+        .group_by(WindowSpeaker.glossary_entry_id)
+    )
+    return {gid: int(n) for gid, n in rows.all()}
+
+
+async def build_working_speakers_response(
+    session: AsyncSession,
+    *,
+    book_id: UUID,
+) -> WorkingSpeakersResponse:
+    """Read-only speaker map grouped by character for the review UI."""
+    stmt = (
+        select(WindowSpeaker, GlossaryEntry)
+        .join(GlossaryEntry, GlossaryEntry.id == WindowSpeaker.glossary_entry_id)
+        .where(WindowSpeaker.book_id == book_id)
+        .order_by(GlossaryEntry.canonical_form.asc(), WindowSpeaker.window_number.asc())
+    )
+    rows = (await session.execute(stmt)).all()
+    if not rows:
+        return WorkingSpeakersResponse()
+
+    by_character: dict[UUID, CharacterSpeakerMapOut] = {}
+    windows_seen: set[int] = set()
+    for ws, ge in rows:
+        windows_seen.add(ws.window_number)
+        entry = by_character.get(ge.id)
+        appearance = SpeakerWindowOut(
+            window_number=ws.window_number,
+            quoted_evidence=ws.quoted_evidence,
+        )
+        if entry is None:
+            by_character[ge.id] = CharacterSpeakerMapOut(
+                glossary_entry_id=ge.id,
+                canonical_name=ge.canonical_form,
+                windows=[ws.window_number],
+                appearances=[appearance],
+            )
+        else:
+            entry.windows.append(ws.window_number)
+            entry.appearances.append(appearance)
+
+    entries = sorted(
+        by_character.values(),
+        key=lambda e: (-len(e.windows), e.canonical_name.casefold()),
+    )
+    return WorkingSpeakersResponse(
+        entries=entries,
+        windows_mapped=len(windows_seen),
+        edges_total=len(rows),
+    )
 
 
 # ─── The extraction loop ────────────────────────────────

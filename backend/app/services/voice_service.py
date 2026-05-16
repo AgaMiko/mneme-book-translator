@@ -222,11 +222,25 @@ async def build_working_voices_response(
             selectinload(CharacterVoice.glossary_entry),
             selectinload(CharacterVoice.selected_passages),
         )
-        .order_by(GlossaryEntry.canonical_form.asc())
     )
     result = await session.execute(stmt)
     voices = result.scalars().all()
     entries = [_character_voice_to_working_out(v) for v in voices]
+    scene_counts = await speakers_service.speaker_window_counts_by_glossary(
+        session, book_id=book_id
+    )
+
+    def _scene_count(entry: VoiceWorkingProfileOut) -> int:
+        n = scene_counts.get(entry.glossary_entry_id, 0)
+        if n > 0:
+            return n
+        if entry.last_observed_window >= entry.first_seen_window:
+            return entry.last_observed_window - entry.first_seen_window + 1
+        return 0
+
+    entries.sort(
+        key=lambda e: (-_scene_count(e), e.canonical_name.casefold()),
+    )
     return WorkingVoicesResponse(entries=entries)
 
 

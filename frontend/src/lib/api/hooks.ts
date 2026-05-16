@@ -19,6 +19,7 @@ import {
   type VoiceProfilePatchBody,
   type VoiceWorkingProfile,
   type WorkingGlossaryResponse,
+  type WorkingSpeakersResponse,
   type WorkingVoicesResponse,
 } from "./client";
 
@@ -30,6 +31,7 @@ export const bookKeys = {
   glossaryEstimate: (id: string) => [...bookKeys.all, "glossary-estimate", id] as const,
   workingGlossary: (id: string) => [...bookKeys.all, "working-glossary", id] as const,
   workingVoices: (id: string) => [...bookKeys.all, "working-voices", id] as const,
+  workingSpeakers: (id: string) => [...bookKeys.all, "working-speakers", id] as const,
 };
 
 // How often to re-fetch a book while it's still being enriched. Short
@@ -180,6 +182,19 @@ export function useStopGlossaryExtraction(
   });
 }
 
+export function useWorkingSpeakers(
+  bookId: string,
+  opts: { enabled: boolean; refetchIntervalMs: number | false },
+): UseQueryResult<WorkingSpeakersResponse, Error> {
+  return useQuery({
+    queryKey: bookKeys.workingSpeakers(bookId),
+    queryFn: () => api.getWorkingSpeakers(bookId),
+    enabled: opts.enabled,
+    refetchInterval:
+      opts.refetchIntervalMs === false ? false : opts.refetchIntervalMs,
+  });
+}
+
 export function useWorkingVoices(
   bookId: string,
   opts: { enabled: boolean; refetchIntervalMs: number | false },
@@ -274,6 +289,7 @@ export function useStartSpeakersExtraction(
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
       void qc.invalidateQueries({ queryKey: bookKeys.lists() });
+      void qc.invalidateQueries({ queryKey: bookKeys.workingSpeakers(bookId) });
     },
   });
 }
@@ -287,6 +303,7 @@ export function useContinueSpeakersExtraction(
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
       void qc.invalidateQueries({ queryKey: bookKeys.lists() });
+      void qc.invalidateQueries({ queryKey: bookKeys.workingSpeakers(bookId) });
     },
   });
 }
@@ -300,6 +317,7 @@ export function useStopSpeakersExtraction(
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
       void qc.invalidateQueries({ queryKey: bookKeys.lists() });
+      void qc.invalidateQueries({ queryKey: bookKeys.workingSpeakers(bookId) });
     },
   });
 }
@@ -313,6 +331,7 @@ export function useResetSpeakersExtraction(
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
       void qc.invalidateQueries({ queryKey: bookKeys.lists() });
+      void qc.invalidateQueries({ queryKey: bookKeys.workingSpeakers(bookId) });
     },
   });
 }

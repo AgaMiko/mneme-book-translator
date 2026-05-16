@@ -48,6 +48,7 @@ from app.schemas.glossary import (
     GlossaryWorkingEntryPatchIn,
     WorkingGlossaryResponse,
 )
+from app.schemas.speakers import WorkingSpeakersResponse
 from app.schemas.voice import (
     VoiceWorkingProfileOut,
     VoiceWorkingProfilePatchIn,
@@ -486,6 +487,26 @@ def _voice_extraction_has_partial_progress(book: Book) -> bool:
     tw = book.voice_extraction_windows_total
     done = book.voice_extraction_windows_completed
     return tw is not None and done is not None and tw > 0 and 0 < done < tw
+
+
+@router.get(
+    "/{book_id}/speakers-working",
+    response_model=WorkingSpeakersResponse,
+    summary="Pass 1 speaker map (characters × window numbers)",
+)
+async def get_working_speakers(
+    book_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> WorkingSpeakersResponse:
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Book not found",
+        )
+    return await speakers_service.build_working_speakers_response(
+        session, book_id=book_id
+    )
 
 
 @router.get(

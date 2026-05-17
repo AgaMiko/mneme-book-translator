@@ -93,8 +93,8 @@ async def enrich_book_metadata(
     polling, then re-raises nothing. The user-visible error path is the
     failed pill in the reader UI plus the structured log line here.
     """
-    SessionLocal = get_sessionmaker()
-    async with SessionLocal() as session:
+    session_local = get_sessionmaker()
+    async with session_local() as session:
         book = await session.get(Book, book_id)
         if book is None:
             log.warning("book_not_found_for_enrichment", book_id=str(book_id))

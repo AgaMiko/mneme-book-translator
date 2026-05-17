@@ -71,7 +71,7 @@ def gemini_response_text(response: Any) -> str | None:
     return joined or None
 
 
-def parse_gemini_model(response: Any, schema: type[T]) -> T:
+def parse_gemini_model[T: BaseModel](response: Any, schema: type[T]) -> T:
     """Return a validated model from ``response`` or raise with diagnostics."""
     parsed = getattr(response, "parsed", None)
     if isinstance(parsed, schema):

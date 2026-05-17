@@ -27,13 +27,12 @@ from uuid import UUID
 from langfuse import propagate_attributes
 from pydantic import TypeAdapter
 from sqlalchemy import delete, func, select, update
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.voice_extraction import (
     VOICE_EXTRACTION_OVERLAP_WORDS,
     VOICE_EXTRACTION_WINDOW_WORDS,
 )
-from app.core.db import get_sessionmaker
+from app.core.db import get_sessionmaker, rowcount
 from app.core.logging import get_logger
 from app.generation.chains.identify_speakers_chain import identify_speakers_window
 from app.generation.client import GenerationDisabledError
@@ -54,10 +53,14 @@ from app.services import speakers_validation
 from app.services.glossary_service import (
     _load_book_plaintext,
     load_working_glossary_for_latest_run,
+)
+from app.services.glossary_service import (
     make_windows as glossary_make_windows,
 )
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
     from app.core.config import Settings
 
 log = get_logger(__name__)
@@ -113,7 +116,7 @@ async def reconcile_stale_speakers_runs_on_startup() -> None:
             )
         )
         await session.commit()
-        n = int(result.rowcount or 0)
+        n = rowcount(result)
     if n:
         log.info("reconciled_stale_speakers_runs", count=n)
 
@@ -435,8 +438,8 @@ async def extract_book_speakers(
     stages feel identical to operate.
     """
     if not settings.GEMINI_API_KEY:
-        SessionLocal = get_sessionmaker()
-        async with SessionLocal() as session:
+        session_local = get_sessionmaker()
+        async with session_local() as session:
             b = await session.get(Book, book_id)
             if b is not None:
                 b.speakers_extraction_status = "failed"
@@ -447,9 +450,9 @@ async def extract_book_speakers(
         log.warning("speakers_skipped_no_key", book_id=str(book_id))
         return
 
-    SessionLocal = get_sessionmaker()
+    session_local = get_sessionmaker()
     try:
-        async with SessionLocal() as session:
+        async with session_local() as session:
             plaintext = await _load_book_plaintext(session, book_id)
             book = await session.get(Book, book_id)
             if book is None:
@@ -474,7 +477,7 @@ async def extract_book_speakers(
                 start_window = done + 1
 
         if total == 0:
-            async with SessionLocal() as s2:
+            async with session_local() as s2:
                 b = await s2.get(Book, book_id)
                 if b is not None:
                     b.speakers_extraction_status = "completed"
@@ -486,7 +489,7 @@ async def extract_book_speakers(
             return
 
         if start_window > total:
-            async with SessionLocal() as s3:
+            async with session_local() as s3:
                 b = await s3.get(Book, book_id)
                 if b is not None:
                     b.speakers_extraction_status = "completed"
@@ -496,7 +499,7 @@ async def extract_book_speakers(
                 await s3.commit()
             return
 
-        async with SessionLocal() as s4:
+        async with session_local() as s4:
             b0 = await s4.get(Book, book_id)
             if b0 is not None:
                 b0.speakers_extraction_cancel_requested = False
@@ -511,7 +514,7 @@ async def extract_book_speakers(
         ):
             for n in range(start_window, total + 1):
                 wtext = win_list[n - 1]
-                async with SessionLocal() as session:
+                async with session_local() as session:
                     book = await session.get(Book, book_id)
                     if book is None:
                         raise RuntimeError("book disappeared during speakers extraction")
@@ -563,7 +566,7 @@ async def extract_book_speakers(
         if cancelled:
             return
 
-        async with SessionLocal() as s6:
+        async with session_local() as s6:
             b3 = await s6.get(Book, book_id)
             if b3 is not None:
                 b3.speakers_extraction_status = "completed"
@@ -574,7 +577,7 @@ async def extract_book_speakers(
         log.info("speakers_extraction_completed", book_id=str(book_id))
 
     except GenerationDisabledError:
-        async with SessionLocal() as session:
+        async with session_local() as session:
             bb = await session.get(Book, book_id)
             if bb is not None:
                 bb.speakers_extraction_status = "failed"
@@ -583,7 +586,7 @@ async def extract_book_speakers(
             await session.commit()
     except Exception as exc:
         log.exception("speakers_extraction_failed", book_id=str(book_id))
-        async with SessionLocal() as session:
+        async with session_local() as session:
             b = await session.get(Book, book_id)
             if b is not None:
                 b.speakers_extraction_status = "failed"

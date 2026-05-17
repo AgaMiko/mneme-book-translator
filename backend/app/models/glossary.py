@@ -24,8 +24,7 @@ The LLM never sees ``status`` on working entries — that stays FE/BE territory.
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -45,6 +44,8 @@ from sqlalchemy.sql import func
 from app.core.db import Base
 
 if TYPE_CHECKING:
+    from datetime import datetime
+
     from app.models.book import Book
 
 
@@ -124,8 +125,8 @@ class GlossaryWindowGeneration(Base):
         index=True,
     )
     window_number: Mapped[int] = mapped_column(Integer)
-    raw_response: Mapped[dict] = mapped_column(JSONB)
-    usage_metadata: Mapped[dict | None] = mapped_column(JSONB, default=None)
+    raw_response: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    usage_metadata: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
 
     id: Mapped[UUID] = mapped_column(
         SA_UUID(as_uuid=True), primary_key=True, default=uuid4, init=False
@@ -166,14 +167,14 @@ class GlossaryEntry(Base):
     term_type: Mapped[str] = mapped_column(String(32))
     meaning: Mapped[str] = mapped_column(Text)
 
-    translation_recommendation: Mapped[dict] = mapped_column(JSONB)
+    translation_recommendation: Mapped[dict[str, Any]] = mapped_column(JSONB)
+
+    first_seen_window: Mapped[int] = mapped_column(Integer)
+    occurrence_count: Mapped[int] = mapped_column(Integer, default=0)
 
     variants: Mapped[list[str]] = mapped_column(ARRAY(String(200)), default=list)
 
     status: Mapped[str] = mapped_column(String(16), default="proposed", server_default="proposed")
-
-    first_seen_window: Mapped[int] = mapped_column(Integer)
-    occurrence_count: Mapped[int] = mapped_column(Integer, default=0)
 
     id: Mapped[UUID] = mapped_column(
         SA_UUID(as_uuid=True), primary_key=True, default=uuid4, init=False
@@ -204,7 +205,7 @@ class GlossaryNotepad(Base):
         ForeignKey("glossary_extraction_runs.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    notes: Mapped[list[dict]] = mapped_column(JSONB, default=list)
+    notes: Mapped[list[Any]] = mapped_column(JSONB, default=list)
     last_window_number: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -278,19 +279,19 @@ class FinalGlossaryEntry(Base):
         ForeignKey("final_glossaries.id", ondelete="CASCADE"),
         index=True,
     )
+
+    canonical_form: Mapped[str] = mapped_column(String(200))
+    term_type: Mapped[str] = mapped_column(String(32))
+    meaning: Mapped[str] = mapped_column(Text)
+    # Author-approved translation decision (same JSON shape as working
+    # ``translation_recommendation`` — suggestion / proposed_target / rationale).
+    translation: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    variants: Mapped[list[str]] = mapped_column(ARRAY(String(200)), default=list)
     source_glossary_entry_id: Mapped[UUID | None] = mapped_column(
         SA_UUID(as_uuid=True),
         ForeignKey("glossary_entries.id", ondelete="SET NULL"),
         default=None,
     )
-
-    canonical_form: Mapped[str] = mapped_column(String(200))
-    term_type: Mapped[str] = mapped_column(String(32))
-    meaning: Mapped[str] = mapped_column(Text)
-    variants: Mapped[list[str]] = mapped_column(ARRAY(String(200)), default=list)
-    # Author-approved translation decision (same JSON shape as working
-    # ``translation_recommendation`` — suggestion / proposed_target / rationale).
-    translation: Mapped[dict] = mapped_column(JSONB)
 
     id: Mapped[UUID] = mapped_column(
         SA_UUID(as_uuid=True), primary_key=True, default=uuid4, init=False

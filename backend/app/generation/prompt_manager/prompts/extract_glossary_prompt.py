@@ -6,6 +6,8 @@ Structured output carries the response shape. This text only frames the task,
 languages, and behavior that JSON field descriptions cannot replace.
 """
 
+from typing import Any
+
 PROMPT = """\
 You are building a translator's glossary for a {source_language} fiction \
 manuscript that will be translated into {target_language}. Each pass you read \
@@ -109,7 +111,7 @@ truly demands it.
 """
 
 
-def render_glossary_table(entries: list) -> str:
+def render_glossary_table(entries: list[Any]) -> str:
     """Render compact glossary entries as a tabular block for the prompt.
 
     Format keeps the model's attention on the fields that matter for

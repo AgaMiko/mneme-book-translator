@@ -43,7 +43,6 @@ from typing import Literal, Self
 
 from pydantic import BaseModel, Field, model_validator
 
-
 # ─── Closed enums ───────────────────────────────────────
 
 SpeakerNoteCategory = Literal[

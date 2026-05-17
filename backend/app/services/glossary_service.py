@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING
+from datetime import UTC, datetime
+from typing import TYPE_CHECKING, Any
 from uuid import UUID
 
 from langfuse import propagate_attributes
 from pydantic import ValidationError
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.constants.glossary_extraction import (
@@ -47,6 +46,8 @@ from app.schemas.glossary import (
 )
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
     from app.core.config import Settings
 
 log = get_logger(__name__)
@@ -75,7 +76,7 @@ async def _finalize_glossary_cancelled(
     run_row = await session.get(GlossaryExtractionRun, run_id)
     if run_row:
         run_row.status = "cancelled"
-        run_row.completed_at = datetime.now(timezone.utc)
+        run_row.completed_at = datetime.now(UTC)
         run_row.error_message = "Cancelled by user"
     b = await session.get(Book, book_id)
     if b:
@@ -157,7 +158,7 @@ def enrich_glossary_entries_for_review(
         )
         fs = _first_seen_window(windows, e.canonical_form, variants)
         base = GlossaryWorkingEntryOut.model_validate(e)
-        patch: dict = {
+        patch: dict[str, Any] = {
             "translation_recommendation": rec,
             "occurrence_count": occ,
             "term_type": normalize_stored_term_type(e.term_type),
@@ -350,9 +351,11 @@ async def patch_working_glossary_entry(
 
     if patch.accept:
         entry.status = "accepted"
-    elif patch.proposed_target is not None or patch.suggestion is not None:
-        if entry.status in ("proposed", "accepted", "adjusted", "rejected"):
-            entry.status = "adjusted"
+    elif (
+        (patch.proposed_target is not None or patch.suggestion is not None)
+        and entry.status in ("proposed", "accepted", "adjusted", "rejected")
+    ):
+        entry.status = "adjusted"
 
     await session.commit()
     await session.refresh(entry)
@@ -413,12 +416,7 @@ async def can_continue_glossary_extraction(
     done = await _max_stored_glossary_window(session, extraction_run_id=run.id)
     if done >= total:
         return False
-    if (
-        book.glossary_extraction_windows_total is not None
-        and book.glossary_extraction_windows_total != total
-    ):
-        return False
-    return True
+    return not (book.glossary_extraction_windows_total is not None and book.glossary_extraction_windows_total != total)
 
 
 def _dedupe_new_terms_in_delta(entries: list[NewTerm]) -> list[NewTerm]:
@@ -473,7 +471,7 @@ def _first_seen_window(
     return None
 
 
-def _normalize_translation_recommendation(rec: dict, canonical_form: str) -> dict:
+def _normalize_translation_recommendation(rec: dict[str, Any], canonical_form: str) -> dict[str, Any]:
     """Ensure ``proposed_target`` is always a concrete string for review UIs."""
     out = dict(rec) if isinstance(rec, dict) else {}
     suggestion = out.get("suggestion")
@@ -586,16 +584,16 @@ async def load_compact_glossary(
                 id=str(e.id),
                 canonical_form=e.canonical_form,
                 variants=list(e.variants or []),
-                term_type=normalize_stored_term_type(e.term_type),  # type: ignore[arg-type]
+                term_type=normalize_stored_term_type(e.term_type),
                 meaning=e.meaning,
-                translation_suggestion=suggestion,  # type: ignore[arg-type]
+                translation_suggestion=suggestion,
                 alternative_targets=alts,
             ),
         )
     return out
 
 
-def _hydrate_notepad_from_json(notes: list) -> list[str]:
+def _hydrate_notepad_from_json(notes: list[Any]) -> list[str]:
     """Persisted JSON → prompt strings (max three; legacy rows used ``content``)."""
     out: list[str] = []
     for item in notes:
@@ -784,8 +782,8 @@ async def extract_book_glossary(
     window progress remains on the book if extraction fails.
     """
     if not settings.GEMINI_API_KEY:
-        SessionLocal = get_sessionmaker()
-        async with SessionLocal() as session:
+        session_local = get_sessionmaker()
+        async with session_local() as session:
             book = await session.get(Book, book_id)
             if book is not None:
                 book.glossary_extraction_status = "failed"
@@ -795,13 +793,13 @@ async def extract_book_glossary(
         log.warning("glossary_skipped_no_key", book_id=str(book_id))
         return
 
-    SessionLocal = get_sessionmaker()
+    session_local = get_sessionmaker()
     run_id: UUID | None = None
     windows: list[str] = []
     start_window = 1
 
     try:
-        async with SessionLocal() as session:
+        async with session_local() as session:
             plaintext = await _load_book_plaintext(session, book_id)
             book = await session.get(Book, book_id)
             if book is None:
@@ -868,11 +866,11 @@ async def extract_book_glossary(
 
         total = len(windows)
         if total == 0:
-            async with SessionLocal() as session:
+            async with session_local() as session:
                 run_row = await session.get(GlossaryExtractionRun, run_id)
                 if run_row:
                     run_row.status = "completed"
-                    run_row.completed_at = datetime.now(timezone.utc)
+                    run_row.completed_at = datetime.now(UTC)
                 b = await session.get(Book, book_id)
                 if b:
                     b.glossary_extraction_status = "completed"
@@ -883,11 +881,11 @@ async def extract_book_glossary(
             return
 
         if start_window > total:
-            async with SessionLocal() as session:
+            async with session_local() as session:
                 run_row = await session.get(GlossaryExtractionRun, run_id)
                 if run_row:
                     run_row.status = "completed"
-                    run_row.completed_at = datetime.now(timezone.utc)
+                    run_row.completed_at = datetime.now(UTC)
                 b = await session.get(Book, book_id)
                 if b:
                     b.glossary_extraction_status = "completed"
@@ -901,7 +899,7 @@ async def extract_book_glossary(
             )
             return
 
-        async with SessionLocal() as session:
+        async with session_local() as session:
             b0 = await session.get(Book, book_id)
             if b0:
                 b0.glossary_extraction_cancel_requested = False
@@ -916,7 +914,7 @@ async def extract_book_glossary(
         ):
             for n in range(start_window, total + 1):
                 window = windows[n - 1]
-                async with SessionLocal() as session:
+                async with session_local() as session:
                     book = await session.get(Book, book_id)
                     if book is None:
                         raise RuntimeError("book disappeared during glossary extraction")
@@ -977,7 +975,7 @@ async def extract_book_glossary(
             log.info("glossary_extraction_cancelled", book_id=str(book_id), run_id=str(run_id))
             return
 
-        async with SessionLocal() as session:
+        async with session_local() as session:
             plaintext = await _load_book_plaintext(session, book_id)
             wins = make_windows(plaintext) if plaintext else []
             await recompute_glossary_entry_metrics(
@@ -990,7 +988,7 @@ async def extract_book_glossary(
             run_row = await session.get(GlossaryExtractionRun, run_id)
             if run_row:
                 run_row.status = "completed"
-                run_row.completed_at = datetime.now(timezone.utc)
+                run_row.completed_at = datetime.now(UTC)
             b = await session.get(Book, book_id)
             if b:
                 b.glossary_extraction_status = "completed"
@@ -1001,7 +999,7 @@ async def extract_book_glossary(
         log.info("glossary_extraction_completed", book_id=str(book_id), run_id=str(run_id))
 
     except GenerationDisabledError:
-        async with SessionLocal() as session:
+        async with session_local() as session:
             if run_id:
                 rr = await session.get(GlossaryExtractionRun, run_id)
                 if rr:
@@ -1016,7 +1014,7 @@ async def extract_book_glossary(
 
     except Exception as exc:
         log.exception("glossary_extraction_failed", book_id=str(book_id), run_id=str(run_id))
-        async with SessionLocal() as session:
+        async with session_local() as session:
             if run_id:
                 plaintext = await _load_book_plaintext(session, book_id)
                 wins = make_windows(plaintext) if plaintext else []

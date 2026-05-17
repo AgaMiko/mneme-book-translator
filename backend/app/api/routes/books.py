@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from fastapi import (
@@ -29,12 +30,12 @@ from fastapi import (
 )
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import NoResultFound
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import Settings, get_settings
-from app.core.db import get_session
+from app.core.db import get_session, rowcount
 from app.core.logging import get_logger
 from app.models.book import Book
+from app.models.glossary import GlossaryEntry
 from app.schemas.book import (
     BookDetail,
     BookSummary,
@@ -62,13 +63,15 @@ from app.services import (
     speakers_service,
     voice_service,
 )
-from app.models.glossary import GlossaryEntry
 from app.services.glossary_extraction_estimate import estimate_glossary_extraction
+from app.services.manuscript_parser import ParsedManuscript, parse_docx
 from app.services.voice_extraction_estimate import (
     VoicePassEstimate,
     estimate_voice_extraction,
 )
-from app.services.manuscript_parser import ParsedManuscript, parse_docx
+
+if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter(prefix="/books", tags=["books"])
 
@@ -381,7 +384,7 @@ async def run_glossary_extraction(
         ),
     )
     await session.commit()
-    if result.rowcount == 0:
+    if rowcount(result) == 0:
         book = await session.get(Book, book_id)
         if book is None:
             raise HTTPException(
@@ -452,7 +455,7 @@ async def continue_glossary_extraction(
         ),
     )
     await session.commit()
-    if result.rowcount == 0:
+    if rowcount(result) == 0:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Glossary extraction is already running for this book.",
@@ -487,7 +490,7 @@ async def stop_glossary_extraction(
         .values(glossary_extraction_cancel_requested=True),
     )
     await session.commit()
-    if result.rowcount == 0:
+    if rowcount(result) == 0:
         book = await session.get(Book, book_id)
         if book is None:
             raise HTTPException(
@@ -546,7 +549,7 @@ def _voice_extraction_has_partial_progress(book: Book) -> bool:
 @router.get(
     "/{book_id}/speakers-working",
     response_model=WorkingSpeakersResponse,
-    summary="Pass 1 speaker map (characters × window numbers)",
+    summary="Pass 1 speaker map (characters x window numbers)",
 )
 async def get_working_speakers(
     book_id: UUID,
@@ -678,7 +681,7 @@ async def run_voice_extraction(
         ),
     )
     await session.commit()
-    if result.rowcount == 0:
+    if rowcount(result) == 0:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Voice extraction is already running for this book.",
@@ -735,7 +738,7 @@ async def continue_voice_extraction(
         ),
     )
     await session.commit()
-    if result.rowcount == 0:
+    if rowcount(result) == 0:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Voice extraction is already running for this book.",
@@ -765,7 +768,7 @@ async def stop_voice_extraction(
         .values(voice_extraction_cancel_requested=True),
     )
     await session.commit()
-    if result.rowcount == 0:
+    if rowcount(result) == 0:
         book = await session.get(Book, book_id)
         if book is None:
             raise HTTPException(
@@ -903,7 +906,7 @@ async def run_speakers_extraction(
         ),
     )
     await session.commit()
-    if result.rowcount == 0:
+    if rowcount(result) == 0:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Speaker identification is already running for this book.",
@@ -960,7 +963,7 @@ async def continue_speakers_extraction(
         ),
     )
     await session.commit()
-    if result.rowcount == 0:
+    if rowcount(result) == 0:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Speaker identification is already running for this book.",
@@ -990,7 +993,7 @@ async def stop_speakers_extraction(
         .values(speakers_extraction_cancel_requested=True),
     )
     await session.commit()
-    if result.rowcount == 0:
+    if rowcount(result) == 0:
         book = await session.get(Book, book_id)
         if book is None:
             raise HTTPException(

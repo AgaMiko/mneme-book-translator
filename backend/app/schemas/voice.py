@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Self
-from uuid import UUID
+from typing import TYPE_CHECKING, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+if TYPE_CHECKING:
+    from datetime import datetime
+    from uuid import UUID
 
 
 class VoiceSelectedPassageOut(BaseModel):
@@ -52,7 +54,7 @@ class WorkingVoicesResponse(BaseModel):
 class VoiceWorkingProfilePatchIn(BaseModel):
     """Author review: accept, reject, or send edits (adjust).
 
-    - **accept** — approve both summary and the model’s translation; authoritative
+    - **accept** — approve both summary and the model's translation; authoritative
       translation is set to the proposed text.
     - **reject** — dismiss the profile; no authoritative translation.
     - **Edits** — provide ``source_voice_observation`` and/or

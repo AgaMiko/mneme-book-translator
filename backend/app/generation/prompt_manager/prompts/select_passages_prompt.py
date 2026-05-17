@@ -7,6 +7,8 @@ voice strategy, the character's candidate pool, and the requested
 passage_count (computed code-side from glossary mention percentile).
 """
 
+from typing import Any
+
 PROMPT = """\
 You are picking the final reference passages for a character whose \
 voice has been extracted from a {source_language} fiction manuscript. \
@@ -98,7 +100,7 @@ You are picking {passage_count} of them.
 """
 
 
-def render_candidate_pool(candidates: list) -> str:
+def render_candidate_pool(candidates: list[Any]) -> str:
     """Render the candidate pool for the prompt.
 
     Each candidate gets a multi-line block with the full source text,

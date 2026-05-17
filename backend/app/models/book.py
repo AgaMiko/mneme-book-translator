@@ -15,7 +15,7 @@ its `chapters` list and never have to touch FKs by hand.
 
 from __future__ import annotations
 
-from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
@@ -25,6 +25,12 @@ from sqlalchemy.sql import func
 
 from app.core.db import Base
 from app.models.glossary import FinalGlossary, GlossaryEntry, GlossaryExtractionRun
+
+if TYPE_CHECKING:
+    from datetime import datetime
+
+    from app.models.speakers import WindowSpeaker
+    from app.models.voice import CharacterVoice
 
 
 class Book(Base):
@@ -150,14 +156,14 @@ class Book(Base):
         overlaps="book,final_glossaries",
         init=False,
     )
-    character_voices: Mapped[list["CharacterVoice"]] = relationship(  # noqa: F821
+    character_voices: Mapped[list[CharacterVoice]] = relationship(
         "CharacterVoice",
         back_populates="book",
         cascade="all, delete-orphan",
         default_factory=list,
         init=False,
     )
-    window_speakers: Mapped[list["WindowSpeaker"]] = relationship(  # noqa: F821
+    window_speakers: Mapped[list[WindowSpeaker]] = relationship(
         "WindowSpeaker",
         back_populates="book",
         cascade="all, delete-orphan",
@@ -186,8 +192,8 @@ class Chapter(Base):
         DateTime(timezone=True), server_default=func.now(), init=False
     )
 
-    book: Mapped["Book"] = relationship(back_populates="chapters", init=False)
-    paragraphs: Mapped[list["Paragraph"]] = relationship(
+    book: Mapped[Book] = relationship(back_populates="chapters", init=False)
+    paragraphs: Mapped[list[Paragraph]] = relationship(
         back_populates="chapter",
         cascade="all, delete-orphan",
         order_by="Paragraph.position",
@@ -213,4 +219,4 @@ class Paragraph(Base):
         SA_UUID(as_uuid=True), primary_key=True, default=uuid4, init=False
     )
 
-    chapter: Mapped["Chapter"] = relationship(back_populates="paragraphs", init=False)
+    chapter: Mapped[Chapter] = relationship(back_populates="paragraphs", init=False)

@@ -16,6 +16,8 @@ It does NOT translate. Translation runs as a separate later chain
 with the full accepted glossary in context.
 """
 
+from typing import Any
+
 PROMPT = """\
 You are building a translator's reference for character voices in a \
 {source_language} fiction manuscript that will be translated into \
@@ -455,7 +457,7 @@ those characters — do not add operations for anyone not listed.
 """
 
 
-def render_voice_profiles_table(profiles: list) -> str:
+def render_voice_profiles_table(profiles: list[Any]) -> str:
     """Render compact voice profiles for the prompt.
 
     Each profile gets a multi-line block with both voice fields, the
@@ -485,7 +487,7 @@ def render_voice_profiles_table(profiles: list) -> str:
     return "\n\n".join(blocks)
 
 
-def render_glossary_characters_table(characters: list) -> str:
+def render_glossary_characters_table(characters: list[Any]) -> str:
     """Render the glossary character list — all available targets for
     voice operations. canonical_name copied verbatim into the
     cross-checked ``canonical_name`` field on every operation."""
@@ -501,7 +503,7 @@ def render_glossary_characters_table(characters: list) -> str:
     return "\n".join(lines)
 
 
-def render_notepad(notes: list) -> str:
+def render_notepad(notes: list[Any]) -> str:
     if not notes:
         return "(empty)"
     return "\n".join(f"- [{n.category}] {n.content}" for n in notes)

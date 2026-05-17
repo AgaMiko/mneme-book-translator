@@ -25,6 +25,8 @@ the anti-Polglish patterns should be applied with that register's
 vocabulary and idioms in mind.
 """
 
+from typing import Any
+
 PROMPT = """\
 You are translating a single passage of {source_language} dialogue \
 into {target_language} for a fiction manuscript. The translation will \
@@ -206,7 +208,7 @@ selected_passage_id: {selected_passage_id}
 """
 
 
-def render_glossary_block(terms: list) -> str:
+def render_glossary_block(terms: list[Any]) -> str:
     """Render the accepted glossary terms as a tabular reference."""
     if not terms:
         return "(empty — no accepted glossary terms; translate freely but consistently)"

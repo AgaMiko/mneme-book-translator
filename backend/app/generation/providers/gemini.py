@@ -31,7 +31,7 @@ try:
 
     _langfuse_get_client()
     log.info("langfuse_enabled_for_gemini")
-except Exception:  # noqa: BLE001
+except Exception:
     _langfuse_get_client = None  # type: ignore[assignment]
     log.exception("langfuse_unavailable_for_gemini")
 
@@ -119,7 +119,7 @@ def _log_gemini_api_error(
                 if len(text) > 64_000:
                     text = f"{text[:64_000]}...<truncated>"
                 payload["http_response_text"] = text
-            except Exception:  # noqa: BLE001
+            except Exception:
                 payload["http_response_text"] = "<unavailable>"
     try:
         payload["details_json"] = json.dumps(exc.details, default=str, ensure_ascii=False)

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
-from uuid import UUID
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
+
+if TYPE_CHECKING:
+    from uuid import UUID
 
 
 class SpeakerWindowOut(BaseModel):
@@ -33,8 +36,10 @@ class WorkingSpeakersResponse(BaseModel):
 
     entries: list[CharacterSpeakerMapOut] = Field(default_factory=list)
     windows_mapped: int = Field(
+        default=0,
         description="Count of distinct windows with at least one speaker.",
     )
     edges_total: int = Field(
+        default=0,
         description="Total (character, window) edges stored.",
     )

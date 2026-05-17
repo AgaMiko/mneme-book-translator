@@ -46,7 +46,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-
 TranslationStrategy = Literal[
     "keep_original",
     "translate_literally",

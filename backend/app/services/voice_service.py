@@ -36,28 +36,26 @@ deployment-specific. The signatures and docstrings define the contract.
 from __future__ import annotations
 
 import math
-from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
 
 from langfuse import propagate_attributes
 from pydantic import TypeAdapter
 from sqlalchemy import delete, func, select, update
-from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.constants.voice_extraction import (
     VOICE_EXTRACTION_OVERLAP_WORDS,
     VOICE_EXTRACTION_WINDOW_WORDS,
 )
-from app.core.db import get_sessionmaker
+from app.core.db import get_sessionmaker, rowcount
 from app.core.logging import get_logger
 from app.generation.chains.extract_voices_chain import extract_voices_window
-from app.generation.client import GenerationDisabledError
 from app.generation.chains.select_passages_chain import (
     select_passages_for_character,
 )
 from app.generation.chains.translate_passage_chain import translate_passage
+from app.generation.client import GenerationDisabledError
 from app.generation.prompt_manager.models.extract_voices_model import (
     CharacterVoiceCompact,
     GlossaryCharacterRef,
@@ -81,20 +79,24 @@ from app.models.voice import (
     VoicePassageCandidate,
     VoiceSelectedPassage,
 )
-from app.services import speakers_service, voice_validation
-from app.services.glossary_service import (
-    _load_book_plaintext,
-    load_working_glossary_for_latest_run,
-    make_windows as glossary_make_windows,
-)
 from app.schemas.voice import (
     VoiceSelectedPassageOut,
     VoiceWorkingProfileOut,
     VoiceWorkingProfilePatchIn,
     WorkingVoicesResponse,
 )
+from app.services import speakers_service, voice_validation
+from app.services.glossary_service import (
+    _load_book_plaintext,
+    load_working_glossary_for_latest_run,
+)
+from app.services.glossary_service import (
+    make_windows as glossary_make_windows,
+)
 
 if TYPE_CHECKING:
+    from sqlalchemy.ext.asyncio import AsyncSession
+
     from app.core.config import Settings
 
 log = get_logger(__name__)
@@ -147,7 +149,7 @@ async def reconcile_stale_voice_runs_on_startup() -> None:
             )
         )
         await session.commit()
-        n = int(result.rowcount or 0)
+        n = rowcount(result)
     if n:
         log.info("reconciled_stale_voice_runs", count=n)
 
@@ -600,27 +602,27 @@ async def apply_delta(
         list(delta.candidate_additions), profile_name_by_id=profile_name_by_id
     )
 
-    for op in exts:
+    for ext_op in exts:
         try:
-            pid = UUID(str(op.profile_id))
+            pid = UUID(str(ext_op.profile_id))
         except ValueError:
-            log.warning("Voice extend: invalid profile_id %r", op.profile_id)
+            log.warning("Voice extend: invalid profile_id %r", ext_op.profile_id)
             continue
         voice_row = await session.get(CharacterVoice, pid)
         if voice_row is None or voice_row.book_id != book_id:
-            log.warning("Voice extend: missing profile %s", op.profile_id)
+            log.warning("Voice extend: missing profile %s", ext_op.profile_id)
             continue
-        if op.new_source_voice_observation is not None:
-            voice_row.source_voice_observation = op.new_source_voice_observation
-        if op.new_target_voice_strategy is not None:
-            voice_row.target_voice_strategy = op.new_target_voice_strategy
+        if ext_op.new_source_voice_observation is not None:
+            voice_row.source_voice_observation = ext_op.new_source_voice_observation
+        if ext_op.new_target_voice_strategy is not None:
+            voice_row.target_voice_strategy = ext_op.new_target_voice_strategy
         voice_row.last_observed_window = window_number
 
-    for op in repls:
+    for repl_op in repls:
         try:
-            pid = UUID(str(op.profile_id))
+            pid = UUID(str(repl_op.profile_id))
         except ValueError:
-            log.warning("ReplaceCandidate: invalid profile_id %r", op.profile_id)
+            log.warning("ReplaceCandidate: invalid profile_id %r", repl_op.profile_id)
             continue
         voice_row = await session.get(CharacterVoice, pid)
         if voice_row is None or voice_row.book_id != book_id:
@@ -629,7 +631,7 @@ async def apply_delta(
             select(VoicePassageCandidate)
             .where(
                 VoicePassageCandidate.voice_id == voice_row.id,
-                VoicePassageCandidate.why_representative == op.remove_candidate_reason,
+                VoicePassageCandidate.why_representative == repl_op.remove_candidate_reason,
             )
             .order_by(VoicePassageCandidate.created_at.asc(), VoicePassageCandidate.id.asc())
         )
@@ -637,33 +639,33 @@ async def apply_delta(
         if not to_remove:
             log.warning(
                 "ReplaceCandidate: no candidate with why %r for profile %s",
-                (op.remove_candidate_reason[:80] if op.remove_candidate_reason else ""),
-                op.profile_id,
+                (repl_op.remove_candidate_reason[:80] if repl_op.remove_candidate_reason else ""),
+                repl_op.profile_id,
             )
             continue
         if len(to_remove) > 1:
             log.warning(
                 "ReplaceCandidate: %d candidates share why %r for profile %s; removing all",
                 len(to_remove),
-                (op.remove_candidate_reason[:80] if op.remove_candidate_reason else ""),
-                op.profile_id,
+                (repl_op.remove_candidate_reason[:80] if repl_op.remove_candidate_reason else ""),
+                repl_op.profile_id,
             )
         for old in to_remove:
             await session.delete(old)
         rep = VoicePassageCandidate(
-            source_text=op.new_candidate.source_text,
-            why_representative=op.new_candidate.why_representative,
+            source_text=repl_op.new_candidate.source_text,
+            why_representative=repl_op.new_candidate.why_representative,
             first_seen_window=window_number,
         )
         rep.voice_id = voice_row.id
         session.add(rep)
         voice_row.last_observed_window = window_number
 
-    for op in adds:
+    for add_op in adds:
         try:
-            pid = UUID(str(op.profile_id))
+            pid = UUID(str(add_op.profile_id))
         except ValueError:
-            log.warning("AddCandidate: invalid profile_id %r", op.profile_id)
+            log.warning("AddCandidate: invalid profile_id %r", add_op.profile_id)
             continue
         voice_row = await session.get(CharacterVoice, pid)
         if voice_row is None or voice_row.book_id != book_id:
@@ -677,22 +679,22 @@ async def apply_delta(
             or 0
         )
         if n_cand >= 8:
-            log.warning("AddCandidate: pool full for profile %s", op.profile_id)
+            log.warning("AddCandidate: pool full for profile %s", add_op.profile_id)
             continue
         add_c = VoicePassageCandidate(
-            source_text=op.candidate.source_text,
-            why_representative=op.candidate.why_representative,
+            source_text=add_op.candidate.source_text,
+            why_representative=add_op.candidate.why_representative,
             first_seen_window=window_number,
         )
         add_c.voice_id = voice_row.id
         session.add(add_c)
         voice_row.last_observed_window = window_number
 
-    for op in new_p:
+    for new_op in new_p:
         try:
-            gid = UUID(str(op.glossary_entry_id))
+            gid = UUID(str(new_op.glossary_entry_id))
         except ValueError:
-            log.warning("NewVoiceProfile: invalid glossary_entry_id %r", op.glossary_entry_id)
+            log.warning("NewVoiceProfile: invalid glossary_entry_id %r", new_op.glossary_entry_id)
             continue
         dupe = (
             await session.execute(
@@ -704,12 +706,12 @@ async def apply_delta(
         ).scalar_one_or_none()
         if dupe is not None:
             log.warning(
-                "NewVoiceProfile: character already has a profile for %s", op.glossary_entry_id
+                "NewVoiceProfile: character already has a profile for %s", new_op.glossary_entry_id
             )
             continue
         nv = CharacterVoice(
-            source_voice_observation=op.source_voice_observation,
-            target_voice_strategy=op.target_voice_strategy,
+            source_voice_observation=new_op.source_voice_observation,
+            target_voice_strategy=new_op.target_voice_strategy,
             status="proposed",
             first_seen_window=window_number,
             last_observed_window=window_number,
@@ -718,7 +720,7 @@ async def apply_delta(
         nv.glossary_entry_id = gid
         session.add(nv)
         await session.flush()
-        for c in (op.initial_candidates)[:8]:
+        for c in (new_op.initial_candidates)[:8]:
             c_row = VoicePassageCandidate(
                 source_text=c.source_text,
                 why_representative=c.why_representative,
@@ -806,7 +808,7 @@ def compute_passage_counts(
     return counts
 
 
-def _strategy_from_recommendation(rec: dict) -> TranslationStrategy:
+def _strategy_from_recommendation(rec: dict[str, Any]) -> TranslationStrategy:
     """Map stored glossary `suggestion` to the translation contract literals."""
     raw = rec.get("suggestion")
     r = (raw if isinstance(raw, str) else "translate").lower()
@@ -1145,8 +1147,8 @@ async def extract_book_voices(
 ) -> None:
     """Background task: run voice windows, then selection and translation for a book."""
     if not settings.GEMINI_API_KEY:
-        SessionLocal = get_sessionmaker()
-        async with SessionLocal() as session:
+        session_local = get_sessionmaker()
+        async with session_local() as session:
             b = await session.get(Book, book_id)
             if b is not None:
                 b.voice_extraction_status = "failed"
@@ -1157,9 +1159,9 @@ async def extract_book_voices(
         log.warning("voice_skipped_no_key", book_id=str(book_id))
         return
 
-    SessionLocal = get_sessionmaker()
+    session_local = get_sessionmaker()
     try:
-        async with SessionLocal() as session:
+        async with session_local() as session:
             plaintext = await _load_book_plaintext(session, book_id)
             book = await session.get(Book, book_id)
             if book is None:
@@ -1184,7 +1186,7 @@ async def extract_book_voices(
                 start_window = done + 1
 
         if total == 0:
-            async with SessionLocal() as s2:
+            async with session_local() as s2:
                 b = await s2.get(Book, book_id)
                 if b is not None:
                     b.voice_extraction_status = "completed"
@@ -1196,7 +1198,7 @@ async def extract_book_voices(
             return
 
         if start_window > total:
-            async with SessionLocal() as s3:
+            async with session_local() as s3:
                 b = await s3.get(Book, book_id)
                 if b is not None:
                     b.voice_extraction_status = "completed"
@@ -1206,7 +1208,7 @@ async def extract_book_voices(
                 await s3.commit()
             return
 
-        async with SessionLocal() as s4:
+        async with session_local() as s4:
             b0 = await s4.get(Book, book_id)
             if b0 is not None:
                 b0.voice_extraction_cancel_requested = False
@@ -1221,7 +1223,7 @@ async def extract_book_voices(
         ):
             for n in range(start_window, total + 1):
                 wtext = win_list[n - 1]
-                async with SessionLocal() as session:
+                async with session_local() as session:
                     book = await session.get(Book, book_id)
                     if book is None:
                         raise RuntimeError("book disappeared during voice extraction")
@@ -1304,7 +1306,7 @@ async def extract_book_voices(
                 book_id=str(book_id),
                 err=str(exc2)[:2000],
             )
-            async with SessionLocal() as s5:
+            async with session_local() as s5:
                 b2 = await s5.get(Book, book_id)
                 if b2 is not None:
                     b2.voice_extraction_status = "failed"
@@ -1312,7 +1314,7 @@ async def extract_book_voices(
                 await s5.commit()
             return
 
-        async with SessionLocal() as s6:
+        async with session_local() as s6:
             b3 = await s6.get(Book, book_id)
             if b3 is not None:
                 b3.voice_extraction_status = "completed"
@@ -1323,7 +1325,7 @@ async def extract_book_voices(
         log.info("voice_pipeline_completed", book_id=str(book_id))
 
     except GenerationDisabledError:
-        async with SessionLocal() as session:
+        async with session_local() as session:
             bb = await session.get(Book, book_id)
             if bb is not None:
                 bb.voice_extraction_status = "failed"
@@ -1332,7 +1334,7 @@ async def extract_book_voices(
             await session.commit()
     except Exception as exc:
         log.exception("voice_extraction_failed", book_id=str(book_id))
-        async with SessionLocal() as session:
+        async with session_local() as session:
             b = await session.get(Book, book_id)
             if b is not None:
                 b.voice_extraction_status = "failed"

@@ -1,7 +1,9 @@
 """Async SQLAlchemy engine and session management."""
 
 from collections.abc import AsyncIterator
+from typing import Any, cast
 
+from sqlalchemy.engine import CursorResult, Result
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -31,7 +33,7 @@ class Base(MappedAsDataclass, DeclarativeBase, kw_only=True):
     lookup — none of our models override ``__mapper_args__``.
     """
 
-    __mapper_args__ = {"eager_defaults": True}
+    __mapper_args__ = {"eager_defaults": True}  # noqa: RUF012
 
 
 _engine: AsyncEngine | None = None
@@ -61,6 +63,11 @@ def get_sessionmaker() -> async_sessionmaker[AsyncSession]:
             autoflush=False,
         )
     return _sessionmaker
+
+
+def rowcount(result: Result[Any]) -> int:
+    """Affected row count from ``session.execute()`` (DML)."""
+    return int(cast("CursorResult[Any]", result).rowcount or 0)
 
 
 async def get_session() -> AsyncIterator[AsyncSession]:

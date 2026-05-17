@@ -17,6 +17,8 @@ This prompt is intentionally narrow. Voice profiling, translation,
 and new-character discovery are explicitly NOT in scope here.
 """
 
+from typing import Any
+
 PROMPT = """\
 You are running the first pass of a translator's reference pipeline \
 for a {source_language} fiction manuscript. Your single job in this \
@@ -136,7 +138,7 @@ Do NOT use the notepad for:
 """
 
 
-def render_glossary_characters_table(characters: list) -> str:
+def render_glossary_characters_table(characters: list[Any]) -> str:
     """Render the glossary character list — closed set of eligible speakers."""
     if not characters:
         return "(empty — no characters in the glossary; Pass 1 cannot proceed)"
@@ -148,7 +150,7 @@ def render_glossary_characters_table(characters: list) -> str:
     return "\n".join(lines)
 
 
-def render_notepad(notes: list) -> str:
+def render_notepad(notes: list[Any]) -> str:
     if not notes:
         return "(empty)"
     return "\n".join(f"- [{n.category}] {n.content}" for n in notes)

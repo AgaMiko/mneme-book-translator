@@ -17,6 +17,7 @@ from app.models.voice import CharacterVoice, VoiceNotepad
 __all__ = [
     "Book",
     "Chapter",
+    "CharacterVoice",
     "FinalGlossary",
     "FinalGlossaryEntry",
     "GlossaryEntry",
@@ -24,7 +25,6 @@ __all__ = [
     "GlossaryNotepad",
     "GlossaryWindowGeneration",
     "Paragraph",
-    "CharacterVoice",
     "SpeakerNotepad",
     "VoiceNotepad",
     "WindowSpeaker",

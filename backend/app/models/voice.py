@@ -39,6 +39,7 @@ database level.
 """
 
 from datetime import datetime
+from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
@@ -49,7 +50,8 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID as SA_UUID
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as SA_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
@@ -77,6 +79,10 @@ class CharacterVoice(Base):
     source_voice_observation: Mapped[str] = mapped_column(Text)
     target_voice_strategy: Mapped[str] = mapped_column(Text)
 
+    # Provenance — windows where this profile was active.
+    first_seen_window: Mapped[int] = mapped_column(Integer)
+    last_observed_window: Mapped[int] = mapped_column(Integer)
+
     # Workflow status — not in any LLM schema.
     status: Mapped[str] = mapped_column(String(16), default="proposed", server_default="proposed")
 
@@ -85,10 +91,6 @@ class CharacterVoice(Base):
         default=False,
         server_default="false",
     )
-
-    # Provenance — windows where this profile was active.
-    first_seen_window: Mapped[int] = mapped_column(Integer)
-    last_observed_window: Mapped[int] = mapped_column(Integer)
 
     # Foreign keys and relationships
     glossary_entry_id: Mapped[UUID] = mapped_column(
@@ -229,7 +231,7 @@ class VoiceNotepad(Base):
         ForeignKey("books.id", ondelete="CASCADE"),
         primary_key=True,
     )
-    notes: Mapped[list[dict]] = mapped_column(JSONB, default=list)
+    notes: Mapped[list[Any]] = mapped_column(JSONB, default=list)
     last_window_number: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

@@ -107,12 +107,11 @@
   /* Reader paper texture. A faint warm grain that evokes paper without
      imitating it. Variable-driven so it adapts to mode without ceremony. */
   .reader-surface {
-    background-image:
-      radial-gradient(
-        circle at 1px 1px,
-        var(--color-reader-grain) 1px,
-        transparent 0
-      );
+    background-image: radial-gradient(
+      circle at 1px 1px,
+      var(--color-reader-grain) 1px,
+      transparent 0
+    );
     background-size: 4px 4px;
   }
 

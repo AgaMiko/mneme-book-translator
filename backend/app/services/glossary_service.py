@@ -413,7 +413,10 @@ async def can_continue_glossary_extraction(
     done = await _max_stored_glossary_window(session, extraction_run_id=run.id)
     if done >= total:
         return False
-    if book.glossary_extraction_windows_total is not None and book.glossary_extraction_windows_total != total:
+    if (
+        book.glossary_extraction_windows_total is not None
+        and book.glossary_extraction_windows_total != total
+    ):
         return False
     return True
 
@@ -483,8 +486,7 @@ def _normalize_translation_recommendation(rec: dict, canonical_form: str) -> dic
         rationale = out.get("rationale")
         rat_str = rationale.strip() if isinstance(rationale, str) else ""
         note = (
-            "Provisional rendering uses the source form until you set "
-            "an explicit English target."
+            "Provisional rendering uses the source form until you set an explicit English target."
         )
         out["rationale"] = f"{rat_str} {note}".strip() if rat_str else note
     raw_alts = out.get("alternative_targets")
@@ -639,7 +641,10 @@ async def apply_delta(
         loser = await session.get(GlossaryEntry, UUID(m.loser_id))
         if winner is None or loser is None:
             raise ValueError("merge references unknown entry id")
-        if winner.extraction_run_id != extraction_run_id or loser.extraction_run_id != extraction_run_id:
+        if (
+            winner.extraction_run_id != extraction_run_id
+            or loser.extraction_run_id != extraction_run_id
+        ):
             raise ValueError("merge entries do not belong to this extraction run")
         w_var = list(winner.variants or [])
         l_var = list(loser.variants or [])
@@ -657,10 +662,7 @@ async def apply_delta(
 
         # Renaming onto an existing canonical would violate ``uq_glossary_run_canonical``.
         # Treat that as an implicit merge (same outcome the model would get from ``merges``).
-        if (
-            r.new_canonical_form is not None
-            and r.new_canonical_form != entry.canonical_form
-        ):
+        if r.new_canonical_form is not None and r.new_canonical_form != entry.canonical_form:
             stmt = select(GlossaryEntry).where(
                 GlossaryEntry.extraction_run_id == extraction_run_id,
                 GlossaryEntry.canonical_form == r.new_canonical_form,
@@ -928,7 +930,9 @@ async def extract_book_glossary(
                         break
 
                     current = await load_compact_glossary(session, extraction_run_id=run_id)
-                    previous_notepad = await load_previous_notepad(session, extraction_run_id=run_id)
+                    previous_notepad = await load_previous_notepad(
+                        session, extraction_run_id=run_id
+                    )
 
                     delta = await extract_glossary_window(
                         window_text=window,

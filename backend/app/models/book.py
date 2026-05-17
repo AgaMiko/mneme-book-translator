@@ -63,12 +63,8 @@ class Book(Base):
         default=False,
         server_default="false",
     )
-    glossary_extraction_windows_total: Mapped[int | None] = mapped_column(
-        Integer, default=None
-    )
-    glossary_extraction_windows_completed: Mapped[int | None] = mapped_column(
-        Integer, default=None
-    )
+    glossary_extraction_windows_total: Mapped[int | None] = mapped_column(Integer, default=None)
+    glossary_extraction_windows_completed: Mapped[int | None] = mapped_column(Integer, default=None)
 
     speakers_extraction_status: Mapped[str] = mapped_column(
         String(16),
@@ -80,12 +76,8 @@ class Book(Base):
         default=False,
         server_default="false",
     )
-    speakers_extraction_windows_total: Mapped[int | None] = mapped_column(
-        Integer, default=None
-    )
-    speakers_extraction_windows_completed: Mapped[int | None] = mapped_column(
-        Integer, default=None
-    )
+    speakers_extraction_windows_total: Mapped[int | None] = mapped_column(Integer, default=None)
+    speakers_extraction_windows_completed: Mapped[int | None] = mapped_column(Integer, default=None)
     speakers_extraction_last_error: Mapped[str | None] = mapped_column(Text, default=None)
 
     voice_extraction_status: Mapped[str] = mapped_column(
@@ -99,9 +91,7 @@ class Book(Base):
         server_default="false",
     )
     voice_extraction_windows_total: Mapped[int | None] = mapped_column(Integer, default=None)
-    voice_extraction_windows_completed: Mapped[int | None] = mapped_column(
-        Integer, default=None
-    )
+    voice_extraction_windows_completed: Mapped[int | None] = mapped_column(Integer, default=None)
     voice_extraction_last_error: Mapped[str | None] = mapped_column(Text, default=None)
 
     # Which published glossary downstream translation should use (immutable

@@ -42,9 +42,7 @@ export function GlossaryView({ book }: Props) {
     }
   }, [book.glossary_extraction_status, book.id, queryClient]);
 
-  const actionBarEnabled = Boolean(
-    estimate.data && estimate.data.window_count > 0,
-  );
+  const actionBarEnabled = Boolean(estimate.data && estimate.data.window_count > 0);
 
   return (
     <div className="flex h-full min-h-0 flex-col">

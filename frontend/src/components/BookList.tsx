@@ -18,31 +18,21 @@ export function BookList({ selectedId, onSelect, onDeleted }: Props) {
     return (
       <ul className="space-y-2" aria-busy="true">
         {Array.from({ length: 3 }).map((_, i) => (
-          <li
-            key={i}
-            className="h-16 animate-pulse rounded-md bg-ink-800"
-            aria-hidden
-          />
+          <li key={i} className="h-16 animate-pulse rounded-md bg-ink-800" aria-hidden />
         ))}
       </ul>
     );
   }
 
   if (isError) {
-    return (
-      <p className="text-xs text-danger">
-        Couldn't load library — is the API running?
-      </p>
-    );
+    return <p className="text-xs text-danger">Couldn't load library — is the API running?</p>;
   }
 
   if (!data || data.length === 0) {
     return (
       <div className="rounded-md border border-dashed border-ink-700 px-4 py-6 text-center">
         <BookOpen className="mx-auto h-5 w-5 text-ink-400" aria-hidden />
-        <p className="mt-2 text-xs text-ink-300">
-          No manuscripts yet. Upload one above.
-        </p>
+        <p className="mt-2 text-xs text-ink-300">No manuscripts yet. Upload one above.</p>
       </div>
     );
   }
@@ -69,17 +59,12 @@ export function BookList({ selectedId, onSelect, onDeleted }: Props) {
                 )}
                 aria-current={isSelected ? "true" : undefined}
               >
-                <div className="truncate text-sm font-medium text-ink-50">
-                  {book.title}
-                </div>
+                <div className="truncate text-sm font-medium text-ink-50">{book.title}</div>
                 {book.author && (
-                  <div className="truncate text-xs italic text-ink-300">
-                    {book.author}
-                  </div>
+                  <div className="truncate text-xs italic text-ink-300">{book.author}</div>
                 )}
                 <div className="mt-0.5 truncate text-xs text-ink-400">
-                  {formatNumber(book.word_count)} words ·{" "}
-                  {formatRelativeDate(book.created_at)}
+                  {formatNumber(book.word_count)} words · {formatRelativeDate(book.created_at)}
                 </div>
               </button>
               <Button

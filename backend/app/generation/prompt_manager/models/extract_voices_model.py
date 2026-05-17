@@ -320,9 +320,7 @@ class VoiceUpdate(BaseModel):
     """The full delta produced by one voice-extraction pass."""
 
     window_summary: str = Field(
-        description=(
-            "One short paragraph orienting on the window. Not persisted."
-        ),
+        description=("One short paragraph orienting on the window. Not persisted."),
     )
     new_profiles: list[NewVoiceProfile] = Field(default_factory=list)
     extensions: list[ExtendVoiceProfile] = Field(default_factory=list)

@@ -78,9 +78,7 @@ class CharacterVoice(Base):
     target_voice_strategy: Mapped[str] = mapped_column(Text)
 
     # Workflow status — not in any LLM schema.
-    status: Mapped[str] = mapped_column(
-        String(16), default="proposed", server_default="proposed"
-    )
+    status: Mapped[str] = mapped_column(String(16), default="proposed", server_default="proposed")
 
     # Provenance — windows where this profile was active.
     first_seen_window: Mapped[int] = mapped_column(Integer)
@@ -160,9 +158,7 @@ class VoicePassageCandidate(Base):
         DateTime(timezone=True), server_default=func.now(), init=False
     )
 
-    voice: Mapped[CharacterVoice] = relationship(
-        back_populates="candidates", init=False
-    )
+    voice: Mapped[CharacterVoice] = relationship(back_populates="candidates", init=False)
 
 
 class VoiceSelectedPassage(Base):
@@ -175,7 +171,8 @@ class VoiceSelectedPassage(Base):
     __tablename__ = "voice_selected_passages"
     __table_args__ = (
         UniqueConstraint(
-            "voice_id", "selection_rank",
+            "voice_id",
+            "selection_rank",
             name="uq_voice_selected_passage_rank",
         ),
     )
@@ -187,9 +184,7 @@ class VoiceSelectedPassage(Base):
     translation_proposed: Mapped[str | None] = mapped_column(Text, default=None)
     translation_authoritative: Mapped[str | None] = mapped_column(Text, default=None)
 
-    status: Mapped[str] = mapped_column(
-        String(16), default="proposed", server_default="proposed"
-    )
+    status: Mapped[str] = mapped_column(String(16), default="proposed", server_default="proposed")
 
     source_candidate_id: Mapped[UUID | None] = mapped_column(
         SA_UUID(as_uuid=True),
@@ -215,9 +210,7 @@ class VoiceSelectedPassage(Base):
         init=False,
     )
 
-    voice: Mapped[CharacterVoice] = relationship(
-        back_populates="selected_passages", init=False
-    )
+    voice: Mapped[CharacterVoice] = relationship(back_populates="selected_passages", init=False)
 
 
 class VoiceNotepad(Base):

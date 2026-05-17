@@ -8,4 +8,3 @@ For the style note, be concrete: name the register, the voice, and any texture a
 Opening sample:
 {sample}
 """
-

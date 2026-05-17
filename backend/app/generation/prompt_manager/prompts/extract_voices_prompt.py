@@ -496,8 +496,7 @@ def render_glossary_characters_table(characters: list) -> str:
     for c in characters:
         variants = ", ".join(c.variants) if c.variants else "—"
         lines.append(
-            f"{c.glossary_entry_id} | {c.canonical_name} | {variants} | "
-            f"{c.has_voice_profile}"
+            f"{c.glossary_entry_id} | {c.canonical_name} | {variants} | {c.has_voice_profile}"
         )
     return "\n".join(lines)
 

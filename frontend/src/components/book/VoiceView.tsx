@@ -132,8 +132,7 @@ function VoiceProfileCard({
 }) {
   const selected = v.selected_passages ?? [];
   const hasMulti = selected.length > 0;
-  const showLegacyOnly =
-    !hasMulti && v.reference_passage_source.trim().length > 0;
+  const showLegacyOnly = !hasMulti && v.reference_passage_source.trim().length > 0;
   const sameTranslation =
     v.reference_passage_translation_authoritative != null &&
     v.reference_passage_translation_authoritative.trim() ===
@@ -200,22 +199,15 @@ function VoiceProfileCard({
               const pos = i + 1;
               const prop = p.translation_proposed?.trim() ?? "";
               const auth = p.translation_authoritative;
-              const same =
-                auth != null && auth.trim() === prop;
+              const same = auth != null && auth.trim() === prop;
               return (
-                <div
-                  key={p.id}
-                  className="rounded-md border border-ink-800/80 bg-ink-900/25 p-3"
-                >
+                <div key={p.id} className="rounded-md border border-ink-800/80 bg-ink-900/25 p-3">
                   <p className="font-mono text-[10px] uppercase tracking-wider text-accent">
                     Reference passage {pos} of {selected.length}
                     {p.selection_rank > 0 ? ` · rank ${p.selection_rank}` : ""} · {p.status}
                   </p>
                   <p className="mt-1 text-[10px] leading-relaxed text-ink-500">{p.why_selected}</p>
-                  <ProfileBlock
-                    label={`Source (${book.source_language})`}
-                    className="!mt-2"
-                  >
+                  <ProfileBlock label={`Source (${book.source_language})`} className="!mt-2">
                     <p className="whitespace-pre-wrap border-l-2 border-ink-600 pl-3 text-ink-200">
                       {p.source_text}
                     </p>
@@ -229,19 +221,18 @@ function VoiceProfileCard({
                     </p>
                   </ProfileBlock>
                   {auth != null && auth !== "" ? (
-                    <ProfileBlock
-                      label="Final translation (for downstream use)"
-                      className="!mt-2"
-                    >
+                    <ProfileBlock label="Final translation (for downstream use)" className="!mt-2">
                       <p className="whitespace-pre-wrap leading-relaxed text-ink-100">{auth}</p>
                       {same && prop ? (
-                        <p className="mt-2 text-[10px] font-mono text-ink-500">Same as model draft.</p>
+                        <p className="mt-2 text-[10px] font-mono text-ink-500">
+                          Same as model draft.
+                        </p>
                       ) : null}
                     </ProfileBlock>
                   ) : (
                     <p className="mt-2 text-[10px] text-ink-500">
-                      No final translation for this passage yet (accept the profile to lock
-                      the model draft on all passages, or reject).
+                      No final translation for this passage yet (accept the profile to lock the
+                      model draft on all passages, or reject).
                     </p>
                   )}
                 </div>
@@ -250,9 +241,7 @@ function VoiceProfileCard({
         </div>
       ) : showLegacyOnly ? (
         <>
-          <ProfileBlock
-            label={`Reference passage — source (${book.source_language})`}
-          >
+          <ProfileBlock label={`Reference passage — source (${book.source_language})`}>
             <p className="whitespace-pre-wrap border-l-2 border-ink-600 pl-3 text-ink-200">
               {v.reference_passage_source}
             </p>
@@ -279,16 +268,15 @@ function VoiceProfileCard({
             </ProfileBlock>
           ) : (
             <p className="mt-3 rounded border border-ink-800/80 bg-ink-900/30 px-3 py-2 text-xs text-ink-500">
-              No authoritative translation yet — accept the profile to lock in the model
-              draft, or reject to dismiss the profile.
+              No authoritative translation yet — accept the profile to lock in the model draft, or
+              reject to dismiss the profile.
             </p>
           )}
         </>
       ) : (
         <p className="mt-3 rounded border border-ink-800/80 bg-ink-900/30 px-3 py-2 text-xs text-ink-500">
-          No selected reference passages yet. They appear after the selection and
-          translation steps of the voice pipeline finish (1–4 per character from the
-          candidate pool).
+          No selected reference passages yet. They appear after the selection and translation steps
+          of the voice pipeline finish (1–4 per character from the candidate pool).
         </p>
       )}
     </article>
@@ -304,8 +292,7 @@ export function VoiceView({ book }: Props) {
   const listRef = useRef<HTMLDivElement | null>(null);
   const glossaryReady = book.glossary_extraction_status === "completed";
   const speakersPoll =
-    book.speakers_extraction_status === "running" ||
-    book.voice_extraction_status === "running";
+    book.speakers_extraction_status === "running" || book.voice_extraction_status === "running";
   const speakers = useWorkingSpeakers(book.id, {
     enabled:
       glossaryReady &&
@@ -369,12 +356,13 @@ export function VoiceView({ book }: Props) {
             <div>
               <h2 className="font-serif text-xl font-medium text-ink-50">Character voices</h2>
               <p className="mt-1 max-w-xl text-sm leading-relaxed text-ink-500">
-                Two passes over the same windows (~{formatNumber(VOICE_EXTRACTION_WINDOW_WORDS)} words, ~
-                {formatNumber(VOICE_EXTRACTION_OVERLAP_WORDS)} overlap).{" "}
-                <strong className="text-ink-400">Pass 1</strong> maps which glossary characters have quoted
-                speech in each window. <strong className="text-ink-400">Pass 2</strong> builds voice profiles,
-                then <strong className="text-ink-400">selects</strong> and{" "}
-                <strong className="text-ink-400">translates</strong> reference passages. Review profiles below.
+                Two passes over the same windows (~{formatNumber(VOICE_EXTRACTION_WINDOW_WORDS)}{" "}
+                words, ~{formatNumber(VOICE_EXTRACTION_OVERLAP_WORDS)} overlap).{" "}
+                <strong className="text-ink-400">Pass 1</strong> maps which glossary characters have
+                quoted speech in each window. <strong className="text-ink-400">Pass 2</strong>{" "}
+                builds voice profiles, then <strong className="text-ink-400">selects</strong> and{" "}
+                <strong className="text-ink-400">translates</strong> reference passages. Review
+                profiles below.
               </p>
             </div>
 
@@ -383,9 +371,9 @@ export function VoiceView({ book }: Props) {
                 Pass 1 · Speaker identification
               </h3>
               <p className="mt-2 text-sm leading-relaxed text-ink-500">
-                For each window, list glossary characters with at least one quoted speaking line and a
-                verbatim phrase as evidence. POV narration counts when the narrative voice is clearly
-                theirs. This map scopes Pass 2 and later translation prompts.
+                For each window, list glossary characters with at least one quoted speaking line and
+                a verbatim phrase as evidence. POV narration counts when the narrative voice is
+                clearly theirs. This map scopes Pass 2 and later translation prompts.
               </p>
 
               {book.speakers_extraction_last_error &&
@@ -439,12 +427,11 @@ export function VoiceView({ book }: Props) {
               </p>
             )}
 
-            {book.voice_extraction_last_error &&
-              book.voice_extraction_status !== "running" && (
-                <p className="rounded-md border border-danger-border bg-danger-surface px-3 py-2 text-sm text-danger">
-                  {book.voice_extraction_last_error}
-                </p>
-              )}
+            {book.voice_extraction_last_error && book.voice_extraction_status !== "running" && (
+              <p className="rounded-md border border-danger-border bg-danger-surface px-3 py-2 text-sm text-danger">
+                {book.voice_extraction_last_error}
+              </p>
+            )}
 
             {book.voice_extraction_status === "completed" && (
               <div className="rounded-md border border-success-border bg-success-surface px-3 py-2 text-sm text-success">
@@ -483,7 +470,9 @@ export function VoiceView({ book }: Props) {
 
             <button
               type="button"
-              onClick={() => listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })}
+              onClick={() =>
+                listRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+              }
               className={cn(
                 "rounded-md border border-ink-700 px-3 py-2 font-mono text-xs uppercase tracking-wider text-ink-200",
                 "hover:border-ink-600 hover:bg-ink-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
@@ -595,9 +584,7 @@ export function VoiceView({ book }: Props) {
               )}
               <button
                 type="button"
-                disabled={
-                  book.speakers_extraction_status === "running" || startSpeakers.isPending
-                }
+                disabled={book.speakers_extraction_status === "running" || startSpeakers.isPending}
                 onClick={() => startSpeakers.mutate()}
                 className={cn(
                   "inline-flex items-center gap-2 rounded-md border border-accent px-3 py-1.5",
@@ -620,8 +607,8 @@ export function VoiceView({ book }: Props) {
           <div className="mt-2.5 flex w-full min-w-0 flex-col gap-2">
             {speakersIncomplete && book.voice_extraction_status !== "running" && (
               <p className="text-center text-xs text-warning sm:text-left">
-                Speaker identification is not complete — Pass 2 will use the full glossary
-                character list per window until you finish Pass 1.
+                Speaker identification is not complete — Pass 2 will use the full glossary character
+                list per window until you finish Pass 1.
               </p>
             )}
             <div className="flex w-full min-w-0 flex-wrap items-center justify-between gap-2">

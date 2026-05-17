@@ -198,9 +198,7 @@ async def get_book(
     try:
         book = await book_service.get_book_detail(session, book_id)
     except NoResultFound as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Book not found"
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found") from exc
     return BookDetail.model_validate(book)
 
 
@@ -216,9 +214,7 @@ async def get_glossary_extraction_estimate(
 ) -> GlossaryExtractionEstimateResponse:
     book = await session.get(Book, book_id)
     if book is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Book not found"
-        )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
     result = estimate_glossary_extraction(word_count=book.word_count, settings=settings)
     return GlossaryExtractionEstimateResponse(
         model=result.model,
@@ -245,12 +241,8 @@ async def get_working_glossary(
 ) -> WorkingGlossaryResponse:
     book = await session.get(Book, book_id)
     if book is None:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Book not found"
-        )
-    return await glossary_service.build_working_glossary_response(
-        session, book_id=book_id
-    )
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
+    return await glossary_service.build_working_glossary_response(session, book_id=book_id)
 
 
 @router.patch(
@@ -504,9 +496,7 @@ async def get_working_speakers(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Book not found",
         )
-    return await speakers_service.build_working_speakers_response(
-        session, book_id=book_id
-    )
+    return await speakers_service.build_working_speakers_response(session, book_id=book_id)
 
 
 @router.get(
@@ -829,9 +819,7 @@ async def run_speakers_extraction(
             detail="An interrupted speaker identification exists — use Continue to resume.",
         )
 
-    ok, reason = await speakers_service.can_run_speakers_extraction(
-        session, book_id=book_id
-    )
+    ok, reason = await speakers_service.can_run_speakers_extraction(session, book_id=book_id)
     if not ok:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -892,9 +880,7 @@ async def continue_speakers_extraction(
             status_code=status.HTTP_409_CONFLICT,
             detail="Speaker identification is already running for this book.",
         )
-    if not await speakers_service.can_continue_speakers_extraction(
-        session, book_id=book_id
-    ):
+    if not await speakers_service.can_continue_speakers_extraction(session, book_id=book_id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -989,6 +975,4 @@ async def delete_book(
     try:
         await book_service.delete_book(session, book_id)
     except NoResultFound as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, detail="Book not found"
-        ) from exc
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found") from exc

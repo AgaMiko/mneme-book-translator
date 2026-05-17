@@ -92,6 +92,4 @@ async def extract_glossary_window(
         return response.parsed
     if response.text:
         return GlossaryUpdate.model_validate_json(response.text)
-    raise RuntimeError(
-        f"Gemini returned an empty glossary response for window {window_number}."
-    )
+    raise RuntimeError(f"Gemini returned an empty glossary response for window {window_number}.")

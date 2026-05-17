@@ -98,8 +98,7 @@ export function useWorkingGlossary(
     queryKey: bookKeys.workingGlossary(bookId),
     queryFn: () => api.getWorkingGlossary(bookId),
     enabled: opts.enabled,
-    refetchInterval:
-      opts.refetchIntervalMs === false ? false : opts.refetchIntervalMs,
+    refetchInterval: opts.refetchIntervalMs === false ? false : opts.refetchIntervalMs,
   });
 }
 
@@ -112,8 +111,7 @@ export function usePatchGlossaryWorkingEntry(
 > {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: ({ entryId, body }) =>
-      api.patchGlossaryWorkingEntry(bookId, entryId, body),
+    mutationFn: ({ entryId, body }) => api.patchGlossaryWorkingEntry(bookId, entryId, body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: bookKeys.workingGlossary(bookId) });
     },
@@ -190,8 +188,7 @@ export function useWorkingSpeakers(
     queryKey: bookKeys.workingSpeakers(bookId),
     queryFn: () => api.getWorkingSpeakers(bookId),
     enabled: opts.enabled,
-    refetchInterval:
-      opts.refetchIntervalMs === false ? false : opts.refetchIntervalMs,
+    refetchInterval: opts.refetchIntervalMs === false ? false : opts.refetchIntervalMs,
   });
 }
 
@@ -203,18 +200,13 @@ export function useWorkingVoices(
     queryKey: bookKeys.workingVoices(bookId),
     queryFn: () => api.getWorkingVoices(bookId),
     enabled: opts.enabled,
-    refetchInterval:
-      opts.refetchIntervalMs === false ? false : opts.refetchIntervalMs,
+    refetchInterval: opts.refetchIntervalMs === false ? false : opts.refetchIntervalMs,
   });
 }
 
 export function usePatchVoiceWorkingProfile(
   bookId: string,
-): UseMutationResult<
-  VoiceWorkingProfile,
-  Error,
-  { voiceId: string; body: VoiceProfilePatchBody }
-> {
+): UseMutationResult<VoiceWorkingProfile, Error, { voiceId: string; body: VoiceProfilePatchBody }> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: ({ voiceId, body }) => api.patchVoiceWorkingProfile(bookId, voiceId, body),
@@ -266,9 +258,7 @@ export function useStopVoiceExtraction(
   });
 }
 
-export function useResetVoiceExtraction(
-  bookId: string,
-): UseMutationResult<void, Error, void> {
+export function useResetVoiceExtraction(bookId: string): UseMutationResult<void, Error, void> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.resetVoiceExtraction(bookId),
@@ -322,9 +312,7 @@ export function useStopSpeakersExtraction(
   });
 }
 
-export function useResetSpeakersExtraction(
-  bookId: string,
-): UseMutationResult<void, Error, void> {
+export function useResetSpeakersExtraction(bookId: string): UseMutationResult<void, Error, void> {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: () => api.resetSpeakersExtraction(bookId),

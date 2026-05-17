@@ -42,4 +42,3 @@ class ManuscriptMetadata(BaseModel):
         if isinstance(value, str) and not value.strip():
             return None
         return value
-

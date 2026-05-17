@@ -26,12 +26,7 @@ interface Props extends Omit<SVGProps<SVGSVGElement>, "children"> {
  * Colors flow from CSS variables via Tailwind's `text-accent` / `text-current`.
  * That means the mark adapts to the active theme without prop changes.
  */
-export function BrandMark({
-  size = 24,
-  monochrome = false,
-  className,
-  ...props
-}: Props) {
+export function BrandMark({ size = 24, monochrome = false, className, ...props }: Props) {
   return (
     <svg
       viewBox="0 0 64 64"
@@ -61,15 +56,87 @@ export function BrandMark({
         strokeLinejoin="miter"
       />
       {/* Page-line decorations on the left */}
-      <line x1="16.5" y1="22" x2="22.5" y2="22" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.55" />
-      <line x1="16.5" y1="28" x2="22.5" y2="28" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.55" />
-      <line x1="16.5" y1="34" x2="22.5" y2="34" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.55" />
-      <line x1="16.5" y1="40" x2="22.5" y2="40" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.55" />
+      <line
+        x1="16.5"
+        y1="22"
+        x2="22.5"
+        y2="22"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        opacity="0.55"
+      />
+      <line
+        x1="16.5"
+        y1="28"
+        x2="22.5"
+        y2="28"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        opacity="0.55"
+      />
+      <line
+        x1="16.5"
+        y1="34"
+        x2="22.5"
+        y2="34"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        opacity="0.55"
+      />
+      <line
+        x1="16.5"
+        y1="40"
+        x2="22.5"
+        y2="40"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        opacity="0.55"
+      />
       {/* Page-line decorations on the right */}
-      <line x1="41.5" y1="22" x2="47.5" y2="22" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.55" />
-      <line x1="41.5" y1="28" x2="47.5" y2="28" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.55" />
-      <line x1="41.5" y1="34" x2="47.5" y2="34" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.55" />
-      <line x1="41.5" y1="40" x2="47.5" y2="40" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" opacity="0.55" />
+      <line
+        x1="41.5"
+        y1="22"
+        x2="47.5"
+        y2="22"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        opacity="0.55"
+      />
+      <line
+        x1="41.5"
+        y1="28"
+        x2="47.5"
+        y2="28"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        opacity="0.55"
+      />
+      <line
+        x1="41.5"
+        y1="34"
+        x2="47.5"
+        y2="34"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        opacity="0.55"
+      />
+      <line
+        x1="41.5"
+        y1="40"
+        x2="47.5"
+        y2="40"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        opacity="0.55"
+      />
       {/* The M — serif, slightly heavier than the brackets so it earns
           its place as the focal element. */}
       <text

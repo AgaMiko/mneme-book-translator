@@ -108,6 +108,4 @@ async def translate_passage(
         return response.parsed
     if response.text:
         return PassageTranslation.model_validate_json(response.text)
-    raise RuntimeError(
-        f"Translation returned empty for selected_passage_id={selected_passage_id}."
-    )
+    raise RuntimeError(f"Translation returned empty for selected_passage_id={selected_passage_id}.")

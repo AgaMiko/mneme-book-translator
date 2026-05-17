@@ -101,8 +101,7 @@ def filter_evidence_mismatches(
         evidence = s.quoted_evidence.strip()
         if not evidence:
             logger.warning(
-                "Speaker has empty quoted_evidence "
-                "(canonical_name=%r); dropping entry.",
+                "Speaker has empty quoted_evidence (canonical_name=%r); dropping entry.",
                 s.canonical_name,
             )
             continue

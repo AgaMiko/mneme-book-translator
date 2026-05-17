@@ -63,8 +63,7 @@ function labelSuggestion(raw: string, options: GlossarySelectOption[]): string {
 }
 
 function readTranslation(rec: Record<string, unknown>) {
-  const suggestion =
-    typeof rec.suggestion === "string" ? rec.suggestion : "translate";
+  const suggestion = typeof rec.suggestion === "string" ? rec.suggestion : "translate";
   const proposed_target =
     typeof rec.proposed_target === "string" || rec.proposed_target === null
       ? (rec.proposed_target as string | null)
@@ -72,7 +71,9 @@ function readTranslation(rec: Record<string, unknown>) {
   const rationale = typeof rec.rationale === "string" ? rec.rationale : "";
   const rawAlts = rec.alternative_targets;
   const fromApi: string[] = Array.isArray(rawAlts)
-    ? rawAlts.filter((x): x is string => typeof x === "string" && x.trim() !== "").map((x) => x.trim())
+    ? rawAlts
+        .filter((x): x is string => typeof x === "string" && x.trim() !== "")
+        .map((x) => x.trim())
     : [];
   const seen = new Set<string>();
   const ptKey = (proposed_target ?? "").trim().toLowerCase();
@@ -170,11 +171,7 @@ export function GlossaryReviewPanel({ bookId, pollWhileRunning }: Props) {
   const [pendingOnly, setPendingOnly] = useState(false);
 
   useEffect(() => {
-    if (
-      openId !== null &&
-      data?.entries &&
-      !data.entries.some((e) => e.id === openId)
-    ) {
+    if (openId !== null && data?.entries && !data.entries.some((e) => e.id === openId)) {
       setOpenId(null);
     }
   }, [data?.entries, openId]);
@@ -261,11 +258,11 @@ export function GlossaryReviewPanel({ bookId, pollWhileRunning }: Props) {
             Working glossary
           </h2>
           <p className="mt-1 max-w-prose text-xs leading-relaxed text-ink-500">
-            Occurrences and the first-window index are counted across the full manuscript
-            (not the model), using the same ~{formatNumber(GLOSSARY_EXTRACTION_WINDOW_WORDS)}
+            Occurrences and the first-window index are counted across the full manuscript (not the
+            model), using the same ~{formatNumber(GLOSSARY_EXTRACTION_WINDOW_WORDS)}
             -word windows (~{formatNumber(GLOSSARY_EXTRACTION_OVERLAP_WORDS)} overlap) as
-            extraction. Translation targets default to the source form when the model left
-            them blank.
+            extraction. Translation targets default to the source form when the model left them
+            blank.
           </p>
           <RunSubtitle run={data?.run ?? null} isLoading={isLoading} />
           {!isLoading && data && data.entries.length > 0 ? (
@@ -296,9 +293,7 @@ export function GlossaryReviewPanel({ bookId, pollWhileRunning }: Props) {
               className={cn(
                 "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition-colors",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
-                pendingOnly
-                  ? "border-accent/50 bg-accent-soft"
-                  : "border-ink-700 bg-ink-950/80",
+                pendingOnly ? "border-accent/50 bg-accent-soft" : "border-ink-700 bg-ink-950/80",
               )}
             >
               <span
@@ -331,18 +326,15 @@ export function GlossaryReviewPanel({ bookId, pollWhileRunning }: Props) {
             <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
               Term types
               {pendingOnly ? (
-                <span className="ml-1.5 font-sans normal-case text-ink-600">
-                  (pending list)
-                </span>
+                <span className="ml-1.5 font-sans normal-case text-ink-600">(pending list)</span>
               ) : null}
             </p>
             {isolatedTermType !== null && (
               <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
                 Showing only{" "}
                 <span className="text-accent">
-                  {(data.term_type_options ?? []).find(
-                    (o) => o.id === isolatedTermType,
-                  )?.label ?? isolatedTermType.replace(/_/g, " ")}
+                  {(data.term_type_options ?? []).find((o) => o.id === isolatedTermType)?.label ??
+                    isolatedTermType.replace(/_/g, " ")}
                 </span>
                 {" · "}
                 <button
@@ -394,9 +386,7 @@ export function GlossaryReviewPanel({ bookId, pollWhileRunning }: Props) {
                     aria-hidden
                   />
                   <span>{opt.label}</span>
-                  <span className="min-w-[1.25rem] tabular-nums opacity-70">
-                    {count}
-                  </span>
+                  <span className="min-w-[1.25rem] tabular-nums opacity-70">{count}</span>
                 </button>
               );
             })}
@@ -418,15 +408,14 @@ export function GlossaryReviewPanel({ bookId, pollWhileRunning }: Props) {
 
       {!isLoading && !isError && data && !data.run && (
         <p className="max-w-prose text-sm leading-relaxed text-ink-400">
-          No extraction run exists for this book yet. When you start a run, terms
-          will appear here as each pass finishes.
+          No extraction run exists for this book yet. When you start a run, terms will appear here
+          as each pass finishes.
         </p>
       )}
 
       {!isLoading && !isError && data?.run && data.entries.length === 0 && (
         <p className="max-w-prose text-sm leading-relaxed text-ink-400">
-          This run has no stored terms yet. If extraction is still running, check
-          back in a moment.
+          This run has no stored terms yet. If extraction is still running, check back in a moment.
         </p>
       )}
 
@@ -434,8 +423,8 @@ export function GlossaryReviewPanel({ bookId, pollWhileRunning }: Props) {
         <p className="mb-3 font-mono text-xs text-ink-500">
           {pendingOnly ? (
             <>
-              <span className="tabular-nums text-ink-200">{filtered.length}</span> pending
-              term{filtered.length === 1 ? "" : "s"}
+              <span className="tabular-nums text-ink-200">{filtered.length}</span> pending term
+              {filtered.length === 1 ? "" : "s"}
               {isolatedTermType !== null && (
                 <>
                   {" "}
@@ -471,9 +460,7 @@ export function GlossaryReviewPanel({ bookId, pollWhileRunning }: Props) {
                 translationSuggestionOptions={data.translation_suggestion_options}
                 termTypeOptionIds={termTypeOptionIds}
                 expanded={openId === entry.id}
-                onToggle={() =>
-                  setOpenId((prev) => (prev === entry.id ? null : entry.id))
-                }
+                onToggle={() => setOpenId((prev) => (prev === entry.id ? null : entry.id))}
               />
             ))}
           </ul>
@@ -493,13 +480,7 @@ export function GlossaryReviewPanel({ bookId, pollWhileRunning }: Props) {
   );
 }
 
-function RunSubtitle({
-  run,
-  isLoading,
-}: {
-  run: GlossaryRunMeta | null;
-  isLoading: boolean;
-}) {
+function RunSubtitle({ run, isLoading }: { run: GlossaryRunMeta | null; isLoading: boolean }) {
   if (isLoading) return null;
   if (!run) return null;
   return (
@@ -540,9 +521,7 @@ function TermTypeBadge({
     >
       <Icon className="h-3 w-3 shrink-0 text-accent" aria-hidden />
       <span>{label}</span>
-      {id !== termType && (
-        <span className="sr-only"> ({termType})</span>
-      )}
+      {id !== termType && <span className="sr-only"> ({termType})</span>}
     </span>
   );
 }
@@ -737,18 +716,14 @@ function GlossaryEntryRow({
   );
 
   const [draftTarget, setDraftTarget] = useState(() => tr.proposed_target ?? "");
-  const [draftSuggestion, setDraftSuggestion] = useState<
-    "keep_original" | "translate"
-  >(() =>
+  const [draftSuggestion, setDraftSuggestion] = useState<"keep_original" | "translate">(() =>
     tr.suggestion === "keep_original" || tr.suggestion === "translate"
       ? tr.suggestion
       : "translate",
   );
   const [mergeTargetId, setMergeTargetId] = useState("");
   const [reviewError, setReviewError] = useState<string | null>(null);
-  const [rowBusy, setRowBusy] = useState<
-    null | "save" | "accept" | "remove" | "merge"
-  >(null);
+  const [rowBusy, setRowBusy] = useState<null | "save" | "accept" | "remove" | "merge">(null);
 
   useEffect(() => {
     setDraftTarget(tr.proposed_target ?? "");
@@ -759,12 +734,7 @@ function GlossaryEntryRow({
     );
     setMergeTargetId("");
     setReviewError(null);
-  }, [
-    entry.id,
-    entry.updated_at,
-    tr.proposed_target,
-    tr.suggestion,
-  ]);
+  }, [entry.id, entry.updated_at, tr.proposed_target, tr.suggestion]);
 
   const runPatch = async (
     busyKind: "save" | "accept" | "remove" | "merge",
@@ -888,7 +858,10 @@ function GlossaryEntryRow({
                     )}
                   >
                     {rowBusy === "accept" ? (
-                      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-accent" aria-hidden />
+                      <Loader2
+                        className="h-3.5 w-3.5 shrink-0 animate-spin text-accent"
+                        aria-hidden
+                      />
                     ) : (
                       <Check className="h-3.5 w-3.5 shrink-0" aria-hidden />
                     )}
@@ -930,7 +903,10 @@ function GlossaryEntryRow({
           ) : null}
         </div>
         {reviewError && !expanded ? (
-          <p className="border-t border-ink-800/80 px-4 py-2 pl-11 pr-4 text-xs text-danger" role="alert">
+          <p
+            className="border-t border-ink-800/80 px-4 py-2 pl-11 pr-4 text-xs text-danger"
+            role="alert"
+          >
             {reviewError}
           </p>
         ) : null}
@@ -938,9 +914,7 @@ function GlossaryEntryRow({
           <div className="border-t border-ink-800/80 px-4 pb-4 pl-11 pr-4 pt-1">
             <div className="space-y-3 text-sm leading-relaxed text-ink-200">
               <div>
-                <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
-                  Gloss
-                </p>
+                <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">Gloss</p>
                 <p className="mt-1 font-serif text-base">{entry.meaning}</p>
               </div>
               {tr.alternative_targets.length > 0 && (
@@ -965,216 +939,215 @@ function GlossaryEntryRow({
               ) : null}
               {dimmed ? (
                 <p className="rounded-md border border-ink-800/60 bg-ink-900/40 px-3 py-2 text-xs leading-relaxed text-ink-400">
-                  This term is rejected and is skipped during glossary extraction and
-                  when building a final glossary snapshot.
+                  This term is rejected and is skipped during glossary extraction and when building
+                  a final glossary snapshot.
                 </p>
               ) : null}
               {!dimmed ? (
-              <>
-              <div className="rounded-md border border-ink-800 bg-ink-900/60 p-3">
-                <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
-                  Translation for review
-                </p>
-                <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-end">
-                  <label className="block min-w-0 flex-1 font-sans text-xs text-ink-400">
-                    <span className="mb-1 block text-ink-500">Target rendering</span>
-                    <input
-                      type="text"
-                      value={draftTarget}
-                      onChange={(e) => setDraftTarget(e.target.value)}
-                      disabled={rowBusy !== null}
-                      className={cn(
-                        "w-full rounded-md border border-ink-700 bg-ink-950 px-3 py-2 font-sans text-sm text-ink-100",
-                        "placeholder:text-ink-600",
-                        "focus:border-accent/50 focus:outline-none focus:ring-2 focus:ring-accent/25",
-                        "disabled:opacity-60",
-                      )}
-                      aria-label="Translation target"
-                    />
-                  </label>
-                  <label className="block shrink-0 font-sans text-xs text-ink-400 sm:w-44">
-                    <span className="mb-1 block text-ink-500">Approach</span>
-                    <select
-                      value={draftSuggestion}
-                      onChange={(e) =>
-                        setDraftSuggestion(
-                          e.target.value === "keep_original" ? "keep_original" : "translate",
-                        )
-                      }
-                      disabled={rowBusy !== null}
-                      className={cn(
-                        "w-full rounded-md border border-ink-700 bg-ink-950 px-2 py-2 font-sans text-sm text-ink-100",
-                        "focus:border-accent/50 focus:outline-none focus:ring-2 focus:ring-accent/25",
-                        "disabled:opacity-60",
-                      )}
-                      aria-label="Translation approach"
-                    >
-                      {translationSuggestionOptions.map((opt) => (
-                        <option key={opt.id} value={opt.id}>
-                          {opt.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-                <div className="mt-3 flex flex-wrap items-center gap-2">
-                  <button
-                    type="button"
-                    disabled={rowBusy !== null}
-                    onClick={() =>
-                      void runPatch("save", {
-                        proposed_target: draftTarget,
-                        suggestion: draftSuggestion,
-                      })
-                    }
-                    className={cn(
-                      "inline-flex items-center gap-1.5 rounded-md border border-ink-600 bg-ink-800 px-3 py-1.5",
-                      "font-mono text-[11px] font-medium text-ink-100",
-                      "hover:border-ink-500 hover:bg-ink-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
-                      "disabled:pointer-events-none disabled:opacity-50",
-                    )}
-                  >
-                    {rowBusy === "save" ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                    ) : null}
-                    Save translation
-                  </button>
-                  <button
-                    type="button"
-                    disabled={rowBusy !== null}
-                    onClick={() =>
-                      void runPatch("accept", {
-                        proposed_target: draftTarget,
-                        suggestion: draftSuggestion,
-                        accept: true,
-                      })
-                    }
-                    className={cn(
-                      "inline-flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent-soft px-3 py-1.5",
-                      "font-mono text-[11px] font-medium text-accent",
-                      "hover:border-accent/60 hover:bg-accent-soft/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
-                      "disabled:pointer-events-none disabled:opacity-50",
-                    )}
-                  >
-                    {rowBusy === "accept" ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" aria-hidden />
-                    ) : (
-                      <Check className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                    )}
-                    Accept
-                  </button>
-                  {isAwaitingAcceptance(entry) ? (
-                    <button
-                      type="button"
-                      disabled={rowBusy !== null}
-                      onClick={() => {
-                        if (
-                          !window.confirm(
-                            "Reject this term? It will be marked removed and ignored during extraction.",
-                          )
-                        ) {
-                          return;
+                <>
+                  <div className="rounded-md border border-ink-800 bg-ink-900/60 p-3">
+                    <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
+                      Translation for review
+                    </p>
+                    <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-end">
+                      <label className="block min-w-0 flex-1 font-sans text-xs text-ink-400">
+                        <span className="mb-1 block text-ink-500">Target rendering</span>
+                        <input
+                          type="text"
+                          value={draftTarget}
+                          onChange={(e) => setDraftTarget(e.target.value)}
+                          disabled={rowBusy !== null}
+                          className={cn(
+                            "w-full rounded-md border border-ink-700 bg-ink-950 px-3 py-2 font-sans text-sm text-ink-100",
+                            "placeholder:text-ink-600",
+                            "focus:border-accent/50 focus:outline-none focus:ring-2 focus:ring-accent/25",
+                            "disabled:opacity-60",
+                          )}
+                          aria-label="Translation target"
+                        />
+                      </label>
+                      <label className="block shrink-0 font-sans text-xs text-ink-400 sm:w-44">
+                        <span className="mb-1 block text-ink-500">Approach</span>
+                        <select
+                          value={draftSuggestion}
+                          onChange={(e) =>
+                            setDraftSuggestion(
+                              e.target.value === "keep_original" ? "keep_original" : "translate",
+                            )
+                          }
+                          disabled={rowBusy !== null}
+                          className={cn(
+                            "w-full rounded-md border border-ink-700 bg-ink-950 px-2 py-2 font-sans text-sm text-ink-100",
+                            "focus:border-accent/50 focus:outline-none focus:ring-2 focus:ring-accent/25",
+                            "disabled:opacity-60",
+                          )}
+                          aria-label="Translation approach"
+                        >
+                          {translationSuggestionOptions.map((opt) => (
+                            <option key={opt.id} value={opt.id}>
+                              {opt.label}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        disabled={rowBusy !== null}
+                        onClick={() =>
+                          void runPatch("save", {
+                            proposed_target: draftTarget,
+                            suggestion: draftSuggestion,
+                          })
                         }
-                        void runPatch("remove", { reject: true });
-                      }}
-                      className={cn(
-                        "inline-flex items-center gap-1.5 rounded-md border border-danger/40 bg-danger/5 px-3 py-1.5",
-                        "font-mono text-[11px] font-medium text-danger",
-                        "hover:border-danger/55 hover:bg-danger/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/30",
-                        "disabled:pointer-events-none disabled:opacity-50",
-                      )}
-                    >
-                      {rowBusy === "remove" ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                      ) : (
-                        <XCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
-                      )}
-                      Reject
-                    </button>
-                  ) : null}
-                </div>
-              </div>
-              <div className="rounded-md border border-ink-800/90 bg-ink-950/40 p-3">
-                <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
-                  Glossary upkeep
-                </p>
-                <p className="mt-1 max-w-prose text-xs leading-relaxed text-ink-500">
-                  Use <span className="font-medium text-ink-400">Reject</span> in translation
-                  above to drop a spurious line, or fold this heading into another row. Merging
-                  deletes this row and moves its surface form and variants onto the term you keep.
-                </p>
-                <div className="mt-3 space-y-3">
-                  {mergeTargets.length === 0 ? (
-                    <p className="text-xs text-ink-500">
-                      No other active terms in this run to merge into.
+                        className={cn(
+                          "inline-flex items-center gap-1.5 rounded-md border border-ink-600 bg-ink-800 px-3 py-1.5",
+                          "font-mono text-[11px] font-medium text-ink-100",
+                          "hover:border-ink-500 hover:bg-ink-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+                          "disabled:pointer-events-none disabled:opacity-50",
+                        )}
+                      >
+                        {rowBusy === "save" ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                        ) : null}
+                        Save translation
+                      </button>
+                      <button
+                        type="button"
+                        disabled={rowBusy !== null}
+                        onClick={() =>
+                          void runPatch("accept", {
+                            proposed_target: draftTarget,
+                            suggestion: draftSuggestion,
+                            accept: true,
+                          })
+                        }
+                        className={cn(
+                          "inline-flex items-center gap-1.5 rounded-md border border-accent/40 bg-accent-soft px-3 py-1.5",
+                          "font-mono text-[11px] font-medium text-accent",
+                          "hover:border-accent/60 hover:bg-accent-soft/80 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+                          "disabled:pointer-events-none disabled:opacity-50",
+                        )}
+                      >
+                        {rowBusy === "accept" ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin text-accent" aria-hidden />
+                        ) : (
+                          <Check className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                        )}
+                        Accept
+                      </button>
+                      {isAwaitingAcceptance(entry) ? (
+                        <button
+                          type="button"
+                          disabled={rowBusy !== null}
+                          onClick={() => {
+                            if (
+                              !window.confirm(
+                                "Reject this term? It will be marked removed and ignored during extraction.",
+                              )
+                            ) {
+                              return;
+                            }
+                            void runPatch("remove", { reject: true });
+                          }}
+                          className={cn(
+                            "inline-flex items-center gap-1.5 rounded-md border border-danger/40 bg-danger/5 px-3 py-1.5",
+                            "font-mono text-[11px] font-medium text-danger",
+                            "hover:border-danger/55 hover:bg-danger/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/30",
+                            "disabled:pointer-events-none disabled:opacity-50",
+                          )}
+                        >
+                          {rowBusy === "remove" ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                          ) : (
+                            <XCircle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                          )}
+                          Reject
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="rounded-md border border-ink-800/90 bg-ink-950/40 p-3">
+                    <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
+                      Glossary upkeep
+                    </p>
+                    <p className="mt-1 max-w-prose text-xs leading-relaxed text-ink-500">
+                      Use <span className="font-medium text-ink-400">Reject</span> in translation
+                      above to drop a spurious line, or fold this heading into another row. Merging
+                      deletes this row and moves its surface form and variants onto the term you
+                      keep.
+                    </p>
+                    <div className="mt-3 space-y-3">
+                      {mergeTargets.length === 0 ? (
+                        <p className="text-xs text-ink-500">
+                          No other active terms in this run to merge into.
+                        </p>
+                      ) : null}
+                      <label className="block font-sans text-xs text-ink-400">
+                        <span className="mb-1 block text-ink-500">Merge into</span>
+                        <select
+                          value={mergeTargetId}
+                          onChange={(e) => setMergeTargetId(e.target.value)}
+                          disabled={rowBusy !== null || mergeTargets.length === 0}
+                          className={cn(
+                            "w-full max-w-md rounded-md border border-ink-700 bg-ink-950 px-2 py-2 font-sans text-sm text-ink-100",
+                            "focus:border-accent/50 focus:outline-none focus:ring-2 focus:ring-accent/25",
+                            "disabled:opacity-60",
+                          )}
+                          aria-label="Merge into another glossary term"
+                        >
+                          <option value="">Select term to keep…</option>
+                          {mergeTargets.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.canonical_form}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={
+                            rowBusy !== null || mergeTargetId === "" || mergeTargets.length === 0
+                          }
+                          onClick={() => {
+                            const keep = mergeTargets.find((t) => t.id === mergeTargetId);
+                            if (
+                              !keep ||
+                              !window.confirm(
+                                `Merge “${entry.canonical_form}” into “${keep.canonical_form}”? This row will be removed.`,
+                              )
+                            ) {
+                              return;
+                            }
+                            void runPatch("merge", {
+                              merge_into_entry_id: mergeTargetId,
+                            });
+                          }}
+                          className={cn(
+                            "inline-flex items-center gap-1.5 rounded-md border border-ink-600 bg-ink-800 px-3 py-1.5",
+                            "font-mono text-[11px] font-medium text-ink-100",
+                            "hover:border-ink-500 hover:bg-ink-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+                            "disabled:pointer-events-none disabled:opacity-50",
+                          )}
+                        >
+                          {rowBusy === "merge" ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                          ) : (
+                            <GitMerge className="h-3.5 w-3.5 shrink-0 text-ink-300" aria-hidden />
+                          )}
+                          Merge into selected
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  {reviewError ? (
+                    <p className="text-xs text-danger" role="alert">
+                      {reviewError}
                     </p>
                   ) : null}
-                  <label className="block font-sans text-xs text-ink-400">
-                    <span className="mb-1 block text-ink-500">Merge into</span>
-                    <select
-                      value={mergeTargetId}
-                      onChange={(e) => setMergeTargetId(e.target.value)}
-                      disabled={rowBusy !== null || mergeTargets.length === 0}
-                      className={cn(
-                        "w-full max-w-md rounded-md border border-ink-700 bg-ink-950 px-2 py-2 font-sans text-sm text-ink-100",
-                        "focus:border-accent/50 focus:outline-none focus:ring-2 focus:ring-accent/25",
-                        "disabled:opacity-60",
-                      )}
-                      aria-label="Merge into another glossary term"
-                    >
-                      <option value="">Select term to keep…</option>
-                      {mergeTargets.map((t) => (
-                        <option key={t.id} value={t.id}>
-                          {t.canonical_form}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      disabled={
-                        rowBusy !== null ||
-                        mergeTargetId === "" ||
-                        mergeTargets.length === 0
-                      }
-                      onClick={() => {
-                        const keep = mergeTargets.find((t) => t.id === mergeTargetId);
-                        if (
-                          !keep ||
-                          !window.confirm(
-                            `Merge “${entry.canonical_form}” into “${keep.canonical_form}”? This row will be removed.`,
-                          )
-                        ) {
-                          return;
-                        }
-                        void runPatch("merge", {
-                          merge_into_entry_id: mergeTargetId,
-                        });
-                      }}
-                      className={cn(
-                        "inline-flex items-center gap-1.5 rounded-md border border-ink-600 bg-ink-800 px-3 py-1.5",
-                        "font-mono text-[11px] font-medium text-ink-100",
-                        "hover:border-ink-500 hover:bg-ink-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
-                        "disabled:pointer-events-none disabled:opacity-50",
-                      )}
-                    >
-                      {rowBusy === "merge" ? (
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                      ) : (
-                        <GitMerge className="h-3.5 w-3.5 shrink-0 text-ink-300" aria-hidden />
-                      )}
-                      Merge into selected
-                    </button>
-                  </div>
-                </div>
-              </div>
-              {reviewError ? (
-                <p className="text-xs text-danger" role="alert">
-                  {reviewError}
-                </p>
-              ) : null}
-              </>
+                </>
               ) : null}
               {entry.variants.length > 0 && (
                 <div>

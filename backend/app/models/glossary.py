@@ -76,9 +76,7 @@ class GlossaryExtractionRun(Base):
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), init=False
     )
-    completed_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), default=None
-    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     book: Mapped[Book] = relationship(back_populates="glossary_extraction_runs", init=False)
     window_generations: Mapped[list[GlossaryWindowGeneration]] = relationship(
@@ -172,9 +170,7 @@ class GlossaryEntry(Base):
 
     variants: Mapped[list[str]] = mapped_column(ARRAY(String(200)), default=list)
 
-    status: Mapped[str] = mapped_column(
-        String(16), default="proposed", server_default="proposed"
-    )
+    status: Mapped[str] = mapped_column(String(16), default="proposed", server_default="proposed")
 
     first_seen_window: Mapped[int] = mapped_column(Integer)
     occurrence_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -303,6 +299,4 @@ class FinalGlossaryEntry(Base):
         DateTime(timezone=True), server_default=func.now(), init=False
     )
 
-    final_glossary: Mapped[FinalGlossary] = relationship(
-        back_populates="entries", init=False
-    )
+    final_glossary: Mapped[FinalGlossary] = relationship(back_populates="entries", init=False)

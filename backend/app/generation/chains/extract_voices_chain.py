@@ -118,6 +118,4 @@ async def extract_voices_window(
         return response.parsed
     if response.text:
         return VoiceUpdate.model_validate_json(response.text)
-    raise RuntimeError(
-        f"Gemini returned an empty voice response for window {window_number}."
-    )
+    raise RuntimeError(f"Gemini returned an empty voice response for window {window_number}.")

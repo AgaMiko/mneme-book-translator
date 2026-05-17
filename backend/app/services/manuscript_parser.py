@@ -87,11 +87,7 @@ class ParsedManuscript:
 
     @property
     def word_count(self) -> int:
-        return sum(
-            len(p.text.split())
-            for c in self.chapters
-            for p in c.paragraphs
-        )
+        return sum(len(p.text.split()) for c in self.chapters for p in c.paragraphs)
 
     @property
     def paragraph_count(self) -> int:

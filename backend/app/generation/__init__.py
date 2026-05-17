@@ -6,6 +6,7 @@ Conventions:
 - **prompts/**: prompt templates
 - **chains/**: orchestration that wires provider + prompt + schema + model
 """
+
 from app.generation.chains.extract_metadata_chain import extract_manuscript_metadata
 from app.generation.client import GenerationDisabledError
 from app.generation.prompt_manager.models.extract_metadata_model import ManuscriptMetadata

@@ -34,9 +34,7 @@ export function ManuscriptView({ book }: Props) {
         className="hidden w-56 shrink-0 overflow-y-auto border-r border-ink-800 px-4 py-8 lg:block"
         aria-label="Chapters"
       >
-        <p className="mb-3 text-xs uppercase tracking-wider text-ink-400">
-          Chapters
-        </p>
+        <p className="mb-3 text-xs uppercase tracking-wider text-ink-400">Chapters</p>
         <ol className="space-y-1">
           {book.chapters.map((c, idx) => {
             const id = `chapter-${c.id}`;

@@ -43,21 +43,20 @@ from pydantic import BaseModel, Field, model_validator
 # ─── Closed enums ───────────────────────────────────────
 
 TermType = Literal[
-    "character_name",       # proper names of people (not creatures — those go to lore_term)
-    "place_name",           # proper names of places (incl. descriptive toponyms)
-    "organization",         # groups, factions, institutions
-    "lore_term",            # in-world coined: magic, sci-fi tech, artifacts, named creatures,
-                            # named in-world events, in-world religious concepts (sound vs meaning)
-    "cultural_term",        # real-world culture-specific (food, dress, customs readers may not share)
-    "specialized_usage",    # common words with a dedicated in-world sense (often the hardest bucket)
-    "other",                # escape hatch — use sparingly; reasoning must justify
+    "character_name",  # proper names of people (not creatures — those go to lore_term)
+    "place_name",  # proper names of places (incl. descriptive toponyms)
+    "organization",  # groups, factions, institutions
+    "lore_term",  # in-world coined: magic, sci-fi tech, artifacts, named creatures,
+    # named in-world events, in-world religious concepts (sound vs meaning)
+    "cultural_term",  # real-world culture-specific (food, dress, customs readers may not share)
+    "specialized_usage",  # common words with a dedicated in-world sense (often the hardest bucket)
+    "other",  # escape hatch — use sparingly; reasoning must justify
 ]
 
 TranslationSuggestion = Literal[
     "keep_original",
     "translate",
 ]
-
 
 
 # ─── Sub-models ─────────────────────────────────────────

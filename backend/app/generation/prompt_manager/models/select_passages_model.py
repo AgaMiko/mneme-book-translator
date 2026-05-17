@@ -60,10 +60,7 @@ class PassageSelection(BaseModel):
     """The selection output for one character's pool."""
 
     profile_id: str = Field(
-        description=(
-            "ID of the voice profile being selected for. Same string as "
-            "in the input."
-        ),
+        description=("ID of the voice profile being selected for. Same string as in the input."),
     )
     canonical_name: str = Field(
         description=(

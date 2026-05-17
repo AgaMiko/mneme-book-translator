@@ -106,9 +106,7 @@ def estimate_glossary_extraction(
     estimated_output_tokens_per_window: int = 2200,
 ) -> GlossaryExtractionEstimateResult:
     """Aggregate token and cost prediction for one book."""
-    n = glossary_window_count(
-        word_count, window_words=window_words, overlap_words=overlap_words
-    )
+    n = glossary_window_count(word_count, window_words=window_words, overlap_words=overlap_words)
     model = settings.GEMINI_MODEL
 
     if settings.GEMINI_INPUT_PRICE_USD_PER_MTOK is not None:

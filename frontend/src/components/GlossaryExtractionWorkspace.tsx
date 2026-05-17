@@ -44,9 +44,10 @@ export function GlossaryExtractionWorkspace({
         <div>
           <h2 className="font-serif text-xl font-medium text-ink-50">Run extraction</h2>
           <p className="mt-1 max-w-xl text-sm leading-relaxed text-ink-500">
-            One model pass per overlapping text window (~{formatNumber(GLOSSARY_EXTRACTION_WINDOW_WORDS)}{" "}
-            words, ~{formatNumber(GLOSSARY_EXTRACTION_OVERLAP_WORDS)} overlap). Extracted terms appear
-            below as the run progresses.
+            One model pass per overlapping text window (~
+            {formatNumber(GLOSSARY_EXTRACTION_WINDOW_WORDS)} words, ~
+            {formatNumber(GLOSSARY_EXTRACTION_OVERLAP_WORDS)} overlap). Extracted terms appear below
+            as the run progresses.
           </p>
         </div>
         <button
@@ -67,7 +68,9 @@ export function GlossaryExtractionWorkspace({
         </p>
       )}
       {estimate.isError && (
-        <p className="text-sm text-danger">Could not load the estimate. Check the API and try again.</p>
+        <p className="text-sm text-danger">
+          Could not load the estimate. Check the API and try again.
+        </p>
       )}
       {estimate.data && estimate.data.window_count === 0 && (
         <p className="text-sm text-ink-300">
@@ -160,7 +163,9 @@ export function GlossaryExtractionWorkspace({
                   ${estimate.data.pricing_output_usd_per_mtok.toFixed(3)}
                 </span>{" "}
                 per M in/out), about{" "}
-                <span className="font-mono text-accent">{formatUsd(estimate.data.estimated_cost_usd)}</span>
+                <span className="font-mono text-accent">
+                  {formatUsd(estimate.data.estimated_cost_usd)}
+                </span>
                 .
               </p>
               <p className="text-xs text-ink-500">
@@ -173,8 +178,7 @@ export function GlossaryExtractionWorkspace({
                 >
                   Google pricing
                 </a>
-                . Override with{" "}
-                <span className="font-mono">GEMINI_INPUT_PRICE_USD_PER_MTOK</span> /{" "}
+                . Override with <span className="font-mono">GEMINI_INPUT_PRICE_USD_PER_MTOK</span> /{" "}
                 <span className="font-mono">GEMINI_OUTPUT_PRICE_USD_PER_MTOK</span>.
               </p>
             </div>
@@ -195,8 +199,8 @@ export function GlossaryExtractionWorkspace({
             )}
             {book.glossary_extraction_status === "failed" && (
               <p className="text-danger">
-                Extraction failed. Fix the issue (API key, quota), then Continue to resume or
-                start a new run.
+                Extraction failed. Fix the issue (API key, quota), then Continue to resume or start
+                a new run.
               </p>
             )}
             {book.glossary_extraction_status === "cancelled" && (

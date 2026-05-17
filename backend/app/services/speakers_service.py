@@ -127,12 +127,8 @@ async def reset_book_speakers_data(
     book: Book,
 ) -> None:
     """Clear all Pass 1 state for a book — table rows + status fields."""
-    await session.execute(
-        delete(SpeakerNotepad).where(SpeakerNotepad.book_id == book.id)
-    )
-    await session.execute(
-        delete(WindowSpeaker).where(WindowSpeaker.book_id == book.id)
-    )
+    await session.execute(delete(SpeakerNotepad).where(SpeakerNotepad.book_id == book.id))
+    await session.execute(delete(WindowSpeaker).where(WindowSpeaker.book_id == book.id))
     book.speakers_extraction_status = "idle"
     book.speakers_extraction_cancel_requested = False
     book.speakers_extraction_windows_total = None
@@ -216,9 +212,7 @@ def make_windows(
     numbers in ``WindowSpeaker`` directly index Pass 2's windows —
     no alignment math.
     """
-    return glossary_make_windows(
-        text, window_words=window_words, overlap_words=overlap_words
-    )
+    return glossary_make_windows(text, window_words=window_words, overlap_words=overlap_words)
 
 
 # ─── Loading helpers ───────────────────────────────────
@@ -535,9 +529,7 @@ async def extract_book_speakers(
                         book.speakers_extraction_cancel_requested = False
                         await session.commit()
                         return
-                    previous = await load_previous_speakers_notepad(
-                        session, book_id=book_id
-                    )
+                    previous = await load_previous_speakers_notepad(session, book_id=book_id)
                     delta = await identify_speakers_window(
                         window_text=wtext,
                         glossary_characters=characters,
@@ -586,9 +578,7 @@ async def extract_book_speakers(
             bb = await session.get(Book, book_id)
             if bb is not None:
                 bb.speakers_extraction_status = "failed"
-                bb.speakers_extraction_last_error = (
-                    "LLM generation disabled (missing API key)."
-                )
+                bb.speakers_extraction_last_error = "LLM generation disabled (missing API key)."
                 bb.speakers_extraction_cancel_requested = False
             await session.commit()
     except Exception as exc:

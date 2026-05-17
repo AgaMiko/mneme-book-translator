@@ -57,22 +57,12 @@ export function BookHeader({ book, activeTab, onSelectTab }: Props) {
             </>
           )}
         </div>
-        <h1 className="mt-2 font-serif text-3xl font-semibold text-ink-50">
-          {book.title}
-        </h1>
-        {book.author && (
-          <p className="mt-0.5 font-serif italic text-ink-300">by {book.author}</p>
-        )}
-        <p className="mt-1 font-mono text-xs text-ink-500">
-          {book.original_filename}
-        </p>
+        <h1 className="mt-2 font-serif text-3xl font-semibold text-ink-50">{book.title}</h1>
+        {book.author && <p className="mt-0.5 font-serif italic text-ink-300">by {book.author}</p>}
+        <p className="mt-1 font-mono text-xs text-ink-500">{book.original_filename}</p>
 
         {/* Tab strip */}
-        <nav
-          className="-mb-px mt-6 flex gap-1"
-          role="tablist"
-          aria-label="Book sections"
-        >
+        <nav className="-mb-px mt-6 flex gap-1" role="tablist" aria-label="Book sections">
           {BOOK_TABS.map((t) => {
             const active = t.id === activeTab;
             const tabDisabled = t.disabled || (t.id === "voices" && voicesLocked);
@@ -128,22 +118,14 @@ function MetadataPill({ status }: { status: MetadataStatus }) {
   if (status === "pending") {
     return (
       <span className={cn(pillBase, "bg-ink-800 text-ink-300")}>
-        <span
-          className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent"
-          aria-hidden
-        />
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
         extracting metadata…
       </span>
     );
   }
 
   return (
-    <span
-      className={cn(
-        pillBase,
-        "border border-danger-border bg-danger-surface text-danger",
-      )}
-    >
+    <span className={cn(pillBase, "border border-danger-border bg-danger-surface text-danger")}>
       <AlertCircle className="h-3 w-3" aria-hidden />
       metadata extraction failed
     </span>
@@ -163,15 +145,10 @@ function GlossaryExtractionPill({
 
   if (status === "running") {
     const progress =
-      windowsTotal != null && windowsTotal > 0
-        ? ` ${windowsCompleted ?? 0}/${windowsTotal}`
-        : "";
+      windowsTotal != null && windowsTotal > 0 ? ` ${windowsCompleted ?? 0}/${windowsTotal}` : "";
     return (
       <span className={cn(pillBase, "bg-ink-800 text-ink-300")}>
-        <span
-          className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent"
-          aria-hidden
-        />
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
         glossary extraction…{progress}
       </span>
     );
@@ -180,10 +157,7 @@ function GlossaryExtractionPill({
   if (status === "completed") {
     return (
       <span
-        className={cn(
-          pillBase,
-          "border border-success-border bg-success-surface text-success",
-        )}
+        className={cn(pillBase, "border border-success-border bg-success-surface text-success")}
       >
         glossary saved
       </span>
@@ -197,10 +171,7 @@ function GlossaryExtractionPill({
         : "";
     return (
       <span
-        className={cn(
-          pillBase,
-          "border border-warning-border bg-warning-surface text-warning",
-        )}
+        className={cn(pillBase, "border border-warning-border bg-warning-surface text-warning")}
       >
         glossary stopped{tail}
       </span>
@@ -208,12 +179,7 @@ function GlossaryExtractionPill({
   }
 
   return (
-    <span
-      className={cn(
-        pillBase,
-        "border border-danger-border bg-danger-surface text-danger",
-      )}
-    >
+    <span className={cn(pillBase, "border border-danger-border bg-danger-surface text-danger")}>
       <AlertCircle className="h-3 w-3" aria-hidden />
       glossary failed
     </span>
@@ -233,15 +199,10 @@ function SpeakersExtractionPill({
 
   if (status === "running") {
     const progress =
-      windowsTotal != null && windowsTotal > 0
-        ? ` ${windowsCompleted ?? 0}/${windowsTotal}`
-        : "";
+      windowsTotal != null && windowsTotal > 0 ? ` ${windowsCompleted ?? 0}/${windowsTotal}` : "";
     return (
       <span className={cn(pillBase, "bg-ink-800 text-ink-300")}>
-        <span
-          className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent"
-          aria-hidden
-        />
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
         speakers…{progress}
       </span>
     );
@@ -250,10 +211,7 @@ function SpeakersExtractionPill({
   if (status === "completed") {
     return (
       <span
-        className={cn(
-          pillBase,
-          "border border-success-border bg-success-surface text-success",
-        )}
+        className={cn(pillBase, "border border-success-border bg-success-surface text-success")}
       >
         speakers mapped
       </span>
@@ -267,10 +225,7 @@ function SpeakersExtractionPill({
         : "";
     return (
       <span
-        className={cn(
-          pillBase,
-          "border border-warning-border bg-warning-surface text-warning",
-        )}
+        className={cn(pillBase, "border border-warning-border bg-warning-surface text-warning")}
       >
         speakers stopped{tail}
       </span>
@@ -278,12 +233,7 @@ function SpeakersExtractionPill({
   }
 
   return (
-    <span
-      className={cn(
-        pillBase,
-        "border border-danger-border bg-danger-surface text-danger",
-      )}
-    >
+    <span className={cn(pillBase, "border border-danger-border bg-danger-surface text-danger")}>
       <AlertCircle className="h-3 w-3" aria-hidden />
       speakers failed
     </span>
@@ -303,15 +253,10 @@ function VoiceExtractionPill({
 
   if (status === "running") {
     const progress =
-      windowsTotal != null && windowsTotal > 0
-        ? ` ${windowsCompleted ?? 0}/${windowsTotal}`
-        : "";
+      windowsTotal != null && windowsTotal > 0 ? ` ${windowsCompleted ?? 0}/${windowsTotal}` : "";
     return (
       <span className={cn(pillBase, "bg-ink-800 text-ink-300")}>
-        <span
-          className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent"
-          aria-hidden
-        />
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
         voice extraction…{progress}
       </span>
     );
@@ -320,10 +265,7 @@ function VoiceExtractionPill({
   if (status === "completed") {
     return (
       <span
-        className={cn(
-          pillBase,
-          "border border-success-border bg-success-surface text-success",
-        )}
+        className={cn(pillBase, "border border-success-border bg-success-surface text-success")}
       >
         voices saved
       </span>
@@ -337,10 +279,7 @@ function VoiceExtractionPill({
         : "";
     return (
       <span
-        className={cn(
-          pillBase,
-          "border border-warning-border bg-warning-surface text-warning",
-        )}
+        className={cn(pillBase, "border border-warning-border bg-warning-surface text-warning")}
       >
         voices stopped{tail}
       </span>
@@ -348,12 +287,7 @@ function VoiceExtractionPill({
   }
 
   return (
-    <span
-      className={cn(
-        pillBase,
-        "border border-danger-border bg-danger-surface text-danger",
-      )}
-    >
+    <span className={cn(pillBase, "border border-danger-border bg-danger-surface text-danger")}>
       <AlertCircle className="h-3 w-3" aria-hidden />
       voices failed
     </span>

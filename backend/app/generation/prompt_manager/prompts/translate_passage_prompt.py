@@ -214,7 +214,5 @@ def render_glossary_block(terms: list) -> str:
     lines = ["term_source | term_target | strategy | notes"]
     for t in terms:
         notes = t.notes if t.notes else "—"
-        lines.append(
-            f"{t.term_source} | {t.term_target} | {t.translation_strategy} | {notes}"
-        )
+        lines.append(f"{t.term_source} | {t.term_target} | {t.translation_strategy} | {notes}")
     return "\n".join(lines)

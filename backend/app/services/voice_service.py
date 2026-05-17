@@ -170,9 +170,7 @@ def _character_voice_to_working_out(
     if g is None:
         msg = f"CharacterVoice {voice.id} has no glossary entry loaded"
         raise RuntimeError(msg)
-    ordered = sorted(
-        list(voice.selected_passages), key=lambda p: (p.selection_rank, p.id)
-    )
+    ordered = sorted(list(voice.selected_passages), key=lambda p: (p.selection_rank, p.id))
     selected_out = [
         VoiceSelectedPassageOut(
             id=p.id,
@@ -302,12 +300,8 @@ async def reset_book_voice_data(
     *,
     book: Book,
 ) -> None:
-    await session.execute(
-        delete(VoiceNotepad).where(VoiceNotepad.book_id == book.id)
-    )
-    await session.execute(
-        delete(CharacterVoice).where(CharacterVoice.book_id == book.id)
-    )
+    await session.execute(delete(VoiceNotepad).where(VoiceNotepad.book_id == book.id))
+    await session.execute(delete(CharacterVoice).where(CharacterVoice.book_id == book.id))
     book.voice_extraction_status = "idle"
     book.voice_extraction_cancel_requested = False
     book.voice_extraction_windows_total = None
@@ -363,7 +357,10 @@ async def can_continue_voice_extraction(
     if not wins:
         return False
     total = len(wins)
-    if book.voice_extraction_windows_total is not None and book.voice_extraction_windows_total != total:
+    if (
+        book.voice_extraction_windows_total is not None
+        and book.voice_extraction_windows_total != total
+    ):
         return False
     done = book.voice_extraction_windows_completed
     if done is None:
@@ -388,9 +385,7 @@ def make_windows(
     word-splitting logic is shared with glossary; only the defaults
     differ.
     """
-    return glossary_make_windows(
-        text, window_words=window_words, overlap_words=overlap_words
-    )
+    return glossary_make_windows(text, window_words=window_words, overlap_words=overlap_words)
 
 
 # ─── Phase 1: voice extraction ──────────────────────────
@@ -495,9 +490,7 @@ async def load_compact_voice_profiles(
         g = v.glossary_entry
         if g is None:
             continue
-        cands = sorted(
-            list(v.candidates), key=lambda c: (c.created_at, c.id)
-        )
+        cands = sorted(list(v.candidates), key=lambda c: (c.created_at, c.id))
         result.append(
             CharacterVoiceCompact(
                 id=str(v.id),
@@ -861,9 +854,7 @@ async def persist_selection(
 ) -> list[UUID]:
     """Resolve selection output to ``voice_selected_passages`` rows."""
     await session.execute(
-        delete(VoiceSelectedPassage).where(
-            VoiceSelectedPassage.voice_id == voice_id
-        )
+        delete(VoiceSelectedPassage).where(VoiceSelectedPassage.voice_id == voice_id)
     )
     rank = 0
     inserted: list[UUID] = []
@@ -939,9 +930,7 @@ async def run_selection_for_book(
                 ge = voice.glossary_entry
                 if ge is None:
                     continue
-                cands = await load_candidates_for_voice(
-                    session, voice_id=voice.id
-                )
+                cands = await load_candidates_for_voice(session, voice_id=voice.id)
                 if not cands:
                     continue
                 n_want = counts.get(ge.id, 1)
@@ -957,7 +946,10 @@ async def run_selection_for_book(
                     target_language=book.target_language,
                     settings=settings,
                 )
-                if sel.profile_id != str(voice.id) or sel.canonical_name.strip() != ge.canonical_form.strip():
+                if (
+                    sel.profile_id != str(voice.id)
+                    or sel.canonical_name.strip() != ge.canonical_form.strip()
+                ):
                     log.warning(
                         "Selection mismatch for profile %s; expected name %r, got %r; skipping",
                         str(voice.id)[:8],
@@ -1013,21 +1005,15 @@ async def run_translation_for_book(
 ) -> None:
     """Phase 3: fill translation_proposed on each selected passage."""
     session_maker = get_sessionmaker()
-    with propagate_attributes(
-        session_id=str(book_id), trace_name="voice_translation"
-    ):
+    with propagate_attributes(session_id=str(book_id), trace_name="voice_translation"):
         async with session_maker() as session:
             book = await session.get(Book, book_id)
             if book is None:
                 return
-            terms = await load_accepted_glossary_terms(
-                session, book_id=book_id
-            )
+            terms = await load_accepted_glossary_terms(session, book_id=book_id)
             stmt = (
                 select(VoiceSelectedPassage)
-                .join(
-                    CharacterVoice, CharacterVoice.id == VoiceSelectedPassage.voice_id
-                )
+                .join(CharacterVoice, CharacterVoice.id == VoiceSelectedPassage.voice_id)
                 .where(
                     CharacterVoice.book_id == book_id,
                     VoiceSelectedPassage.translation_proposed.is_(None),
@@ -1169,7 +1155,10 @@ async def extract_book_voices(
             if not continue_extraction:
                 start_window = 1
             else:
-                if book.voice_extraction_windows_total is not None and book.voice_extraction_windows_total != total:
+                if (
+                    book.voice_extraction_windows_total is not None
+                    and book.voice_extraction_windows_total != total
+                ):
                     book.voice_extraction_status = "failed"
                     book.voice_extraction_last_error = (
                         "Manuscript windowing changed; cannot continue. Start a new run."
@@ -1255,14 +1244,10 @@ async def extract_book_voices(
                         return
                     allowed_ids = {c.glossary_entry_id for c in characters}
                     current = _filter_profiles_to_glossary_ids(
-                        await load_compact_voice_profiles(
-                            session, book_id=book_id
-                        ),
+                        await load_compact_voice_profiles(session, book_id=book_id),
                         allowed_ids,
                     )
-                    previous = await load_previous_notepad(
-                        session, book_id=book_id
-                    )
+                    previous = await load_previous_notepad(session, book_id=book_id)
                     delta = await extract_voices_window(
                         window_text=wtext,
                         glossary_characters=characters,
@@ -1385,6 +1370,4 @@ async def run_extraction_for_book(
     settings: Settings,
 ) -> None:
     """Run the full voice pipeline (same as ``extract_book_voices`` with no resume)."""
-    await extract_book_voices(
-        book_id=book_id, settings=settings, continue_extraction=False
-    )
+    await extract_book_voices(book_id=book_id, settings=settings, continue_extraction=False)

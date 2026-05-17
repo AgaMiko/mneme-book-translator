@@ -28,9 +28,7 @@ export function WorkflowHint({ book, activeTab, onSelectTab }: Props) {
   return (
     <div className="border-b border-ink-800 bg-ink-900">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-3 px-6 py-2.5">
-        <p className="font-serif text-sm italic leading-snug text-ink-400">
-          {text}
-        </p>
+        <p className="font-serif text-sm italic leading-snug text-ink-400">{text}</p>
         {action && (
           <button
             type="button"

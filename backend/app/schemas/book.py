@@ -112,6 +112,32 @@ class GlossaryExtractionEstimateResponse(BaseModel):
     pricing_output_usd_per_mtok: float
 
 
+class VoicePassEstimateResponse(BaseModel):
+    """Predicted LLM usage for one voice pipeline pass."""
+
+    window_count: int
+    character_count: int
+    estimated_input_tokens: int
+    estimated_output_tokens: int
+    estimated_total_tokens: int
+    estimated_cost_usd: float
+
+
+class VoiceExtractionEstimateResponse(BaseModel):
+    """Predicted LLM usage for speaker identification + voice extraction."""
+
+    model: str
+    window_words: int
+    overlap_words: int
+    character_count: int
+    pass1: VoicePassEstimateResponse
+    pass2: VoicePassEstimateResponse
+    estimated_total_tokens: int
+    estimated_cost_usd: float
+    pricing_input_usd_per_mtok: float
+    pricing_output_usd_per_mtok: float
+
+
 class UploadBookResponse(BaseModel):
     """Returned immediately after upload. The book's content is fully
     parsed and persisted at this point. Metadata extraction continues

@@ -16,6 +16,7 @@ import {
   type GlossaryExtractionStopResponse,
   type GlossaryWorkingEntry,
   type UploadBookResponse,
+  type VoiceExtractionEstimate,
   type VoiceProfilePatchBody,
   type VoiceWorkingProfile,
   type WorkingGlossaryResponse,
@@ -29,6 +30,7 @@ export const bookKeys = {
   lists: () => [...bookKeys.all, "list"] as const,
   detail: (id: string) => [...bookKeys.all, "detail", id] as const,
   glossaryEstimate: (id: string) => [...bookKeys.all, "glossary-estimate", id] as const,
+  voiceEstimate: (id: string) => [...bookKeys.all, "voice-estimate", id] as const,
   workingGlossary: (id: string) => [...bookKeys.all, "working-glossary", id] as const,
   workingVoices: (id: string) => [...bookKeys.all, "working-voices", id] as const,
   workingSpeakers: (id: string) => [...bookKeys.all, "working-speakers", id] as const,
@@ -86,6 +88,17 @@ export function useGlossaryExtractionEstimate(
   return useQuery({
     queryKey: id ? bookKeys.glossaryEstimate(id) : ["books", "glossary-estimate", "none"],
     queryFn: () => api.getGlossaryExtractionEstimate(id!),
+    enabled: id !== null && enabled,
+  });
+}
+
+export function useVoiceExtractionEstimate(
+  id: string | null,
+  enabled: boolean,
+): UseQueryResult<VoiceExtractionEstimate, Error> {
+  return useQuery({
+    queryKey: id ? bookKeys.voiceEstimate(id) : ["books", "voice-estimate", "none"],
+    queryFn: () => api.getVoiceExtractionEstimate(id!),
     enabled: id !== null && enabled,
   });
 }

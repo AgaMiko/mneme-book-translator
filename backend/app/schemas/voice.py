@@ -37,6 +37,7 @@ class VoiceWorkingProfileOut(BaseModel):
     reference_passage_translation_authoritative: str | None
     selected_passages: list[VoiceSelectedPassageOut] = Field(default_factory=list)
     status: str
+    needs_regeneration: bool = False
     dialogue_volume_observed: int
     first_seen_window: int
     last_observed_window: int
@@ -65,6 +66,9 @@ class VoiceWorkingProfilePatchIn(BaseModel):
     source_voice_observation: str | None = None
     target_voice_strategy: str | None = None
     reference_passage_translation: str | None = None
+    selected_passage_id: UUID | None = None
+    selected_passage_translation: str | None = None
+    needs_regeneration: bool | None = None
 
     @model_validator(mode="after")
     def _exclusive(self) -> Self:
@@ -77,8 +81,16 @@ class VoiceWorkingProfilePatchIn(BaseModel):
                 self.source_voice_observation,
                 self.target_voice_strategy,
                 self.reference_passage_translation,
+                self.selected_passage_translation,
+                self.needs_regeneration,
             )
         )
+        if self.selected_passage_id is not None and self.selected_passage_translation is None:
+            raise ValueError(
+                "selected_passage_id requires selected_passage_translation.",
+            )
+        if self.selected_passage_id is None and self.selected_passage_translation is not None:
+            raise ValueError("Passage edits require selected_passage_id.")
         if acc or rej:
             if has_edits:
                 raise ValueError("accept/reject cannot be combined with edit fields.")
@@ -87,5 +99,5 @@ class VoiceWorkingProfilePatchIn(BaseModel):
             return self
         raise ValueError(
             "Set accept, reject, or provide at least one of source_voice_observation, "
-            "target_voice_strategy, or reference_passage_translation.",
+            "target_voice_strategy, reference_passage_translation, or passage edits.",
         )

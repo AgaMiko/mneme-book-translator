@@ -199,6 +199,7 @@ def _character_voice_to_working_out(
         ),
         selected_passages=selected_out,
         status=voice.status,
+        needs_regeneration=voice.needs_regeneration,
         dialogue_volume_observed=0,
         first_seen_window=voice.first_seen_window,
         last_observed_window=voice.last_observed_window,
@@ -291,6 +292,20 @@ async def patch_working_voice_profile(
                 raise ValueError(msg)
             primary.translation_authoritative = patch.reference_passage_translation
             primary.status = "adjusted"
+        if patch.selected_passage_id is not None:
+            passage = next(
+                (p for p in voice.selected_passages if p.id == patch.selected_passage_id),
+                None,
+            )
+            if passage is None:
+                msg = "Selected passage not found on this profile."
+                raise ValueError(msg)
+            if patch.selected_passage_translation is not None:
+                passage.translation_authoritative = patch.selected_passage_translation
+                passage.status = "adjusted"
+                voice.status = "adjusted"
+        if patch.needs_regeneration is not None:
+            voice.needs_regeneration = patch.needs_regeneration
     await session.commit()
     return _character_voice_to_working_out(voice)
 

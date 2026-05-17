@@ -1,11 +1,18 @@
 import { useQueryClient, type UseQueryResult } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, type ReactNode } from "react";
+import { ChevronDown } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import {
   VOICE_EXTRACTION_OVERLAP_WORDS,
   VOICE_EXTRACTION_WINDOW_WORDS,
 } from "@/constants/voiceExtraction";
-import type { BookDetail, VoiceWorkingProfile, WorkingSpeakersResponse } from "@/lib/api/client";
+import type {
+  BookDetail,
+  VoiceProfilePatchBody,
+  VoiceSelectedPassage,
+  VoiceWorkingProfile,
+  WorkingSpeakersResponse,
+} from "@/lib/api/client";
 import { ApiError } from "@/lib/api/client";
 import {
   bookKeys,
@@ -18,19 +25,67 @@ import {
   useStartVoiceExtraction,
   useStopSpeakersExtraction,
   useStopVoiceExtraction,
+  useVoiceExtractionEstimate,
   useWorkingSpeakers,
   useWorkingVoices,
 } from "@/lib/api/hooks";
-import { cn, formatNumber, formatRelativeDate } from "@/lib/utils";
+import { cn, formatNumber } from "@/lib/utils";
 
 interface Props {
   book: BookDetail;
+}
+
+function formatUsd(n: number): string {
+  if (n > 0 && n < 0.01) return "under $0.01";
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: n < 1 ? 3 : 2,
+  }).format(n);
 }
 
 function formatWindowList(windows: number[], maxVisible = 28): string {
   if (windows.length === 0) return "—";
   if (windows.length <= maxVisible) return windows.join(", ");
   return `${windows.slice(0, maxVisible).join(", ")} … +${windows.length - maxVisible}`;
+}
+
+function isAwaitingVoiceReview(v: VoiceWorkingProfile): boolean {
+  return v.status === "proposed" || v.status === "adjusted";
+}
+
+function ReviewProgressLine({
+  awaiting,
+  accepted,
+  rejected,
+}: {
+  awaiting: number;
+  accepted: number;
+  rejected: number;
+}) {
+  if (awaiting + accepted + rejected === 0) return null;
+  return (
+    <div className="mt-2.5 flex flex-wrap gap-2">
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono text-[11px] tabular-nums",
+          awaiting > 0
+            ? "border-accent/35 bg-accent-soft/50 text-accent"
+            : "border-ink-700/80 bg-ink-900/50 text-ink-500",
+        )}
+      >
+        {awaiting} pending
+      </span>
+      <span className="inline-flex items-center gap-1 rounded-full border border-ink-700/80 bg-ink-900/40 px-2.5 py-0.5 font-mono text-[11px] tabular-nums text-ink-300">
+        {accepted} accepted
+      </span>
+      {rejected > 0 ? (
+        <span className="inline-flex items-center gap-1 rounded-full border border-ink-700/80 bg-ink-950/60 px-2.5 py-0.5 font-mono text-[11px] tabular-nums text-ink-500">
+          {rejected} rejected
+        </span>
+      ) : null}
+    </div>
+  );
 }
 
 function SpeakerMapPanel({
@@ -115,36 +170,157 @@ function ProfileBlock({
   );
 }
 
+function PassageBlock({
+  passage,
+  pos,
+  total,
+  book,
+  patchPending,
+  onPatch,
+}: {
+  passage: VoiceSelectedPassage;
+  pos: number;
+  total: number;
+  book: BookDetail;
+  patchPending: boolean;
+  onPatch: (body: VoiceProfilePatchBody) => void;
+}) {
+  const initialTranslation =
+    passage.translation_authoritative?.trim() || passage.translation_proposed?.trim() || "";
+  const [draftTranslation, setDraftTranslation] = useState(initialTranslation);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    setDraftTranslation(initialTranslation);
+  }, [
+    passage.id,
+    passage.translation_authoritative,
+    passage.translation_proposed,
+    initialTranslation,
+  ]);
+
+  const prop = passage.translation_proposed?.trim() ?? "";
+  const auth = passage.translation_authoritative;
+  const same = auth != null && auth.trim() === prop;
+
+  const saveTranslation = async () => {
+    setSaving(true);
+    try {
+      onPatch({
+        selected_passage_id: passage.id,
+        selected_passage_translation: draftTranslation,
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="rounded-md border border-ink-800/80 bg-ink-900/25 p-3">
+      <p className="font-mono text-[10px] uppercase tracking-wider text-accent">
+        Reference passage {pos} of {total}
+        {passage.selection_rank > 0 ? ` · rank ${passage.selection_rank}` : ""} · {passage.status}
+      </p>
+      <p className="mt-1 text-[10px] leading-relaxed text-ink-500">{passage.why_selected}</p>
+      <ProfileBlock label={`Source (${book.source_language})`} className="!mt-2">
+        <p className="whitespace-pre-wrap border-l-2 border-ink-600 pl-3 text-ink-200">
+          {passage.source_text}
+        </p>
+      </ProfileBlock>
+      <ProfileBlock label={`Model translation (${book.target_language})`} className="!mt-2">
+        <p className="whitespace-pre-wrap leading-relaxed text-ink-200">{prop || "—"}</p>
+      </ProfileBlock>
+      <ProfileBlock label={`Your translation (${book.target_language})`} className="!mt-2">
+        <textarea
+          value={draftTranslation}
+          onChange={(e) => setDraftTranslation(e.target.value)}
+          disabled={patchPending || saving}
+          rows={4}
+          className={cn(
+            "w-full rounded-md border border-ink-700 bg-ink-950 px-3 py-2 font-sans text-sm text-ink-100",
+            "placeholder:text-ink-600 focus:border-accent/50 focus:outline-none focus:ring-2 focus:ring-accent/25",
+            "disabled:opacity-60",
+          )}
+          aria-label={`Translation for reference passage ${pos}`}
+        />
+      </ProfileBlock>
+      {auth != null && auth !== "" && same && prop ? (
+        <p className="mt-2 text-[10px] font-mono text-ink-500">
+          Saved translation matches model draft.
+        </p>
+      ) : null}
+      <div className="mt-3 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          disabled={patchPending || saving}
+          onClick={() => void saveTranslation()}
+          className={cn(
+            "rounded border border-ink-600 px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-ink-200",
+            "hover:bg-ink-800 disabled:opacity-40",
+          )}
+        >
+          {saving ? "Saving…" : "Save translation"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function VoiceProfileCard({
   v,
   book,
   patchPending,
   speakerWindows,
-  onAccept,
-  onReject,
+  onPatch,
 }: {
   v: VoiceWorkingProfile;
   book: BookDetail;
   patchPending: boolean;
   speakerWindows?: number[];
-  onAccept: () => void;
-  onReject: () => void;
+  onPatch: (body: VoiceProfilePatchBody) => void;
 }) {
   const selected = v.selected_passages ?? [];
   const hasMulti = selected.length > 0;
   const showLegacyOnly = !hasMulti && v.reference_passage_source.trim().length > 0;
+  const [legacyDraft, setLegacyDraft] = useState(
+    v.reference_passage_translation_authoritative?.trim() ||
+      v.reference_passage_translation_proposed.trim() ||
+      "",
+  );
+
+  useEffect(() => {
+    setLegacyDraft(
+      v.reference_passage_translation_authoritative?.trim() ||
+        v.reference_passage_translation_proposed.trim() ||
+        "",
+    );
+  }, [
+    v.id,
+    v.updated_at,
+    v.reference_passage_translation_authoritative,
+    v.reference_passage_translation_proposed,
+  ]);
+
   const sameTranslation =
     v.reference_passage_translation_authoritative != null &&
     v.reference_passage_translation_authoritative.trim() ===
       v.reference_passage_translation_proposed.trim();
 
   return (
-    <article className="rounded-lg border border-ink-800 bg-ink-850/40 p-4 text-sm text-ink-200">
+    <article
+      className={cn(
+        "rounded-lg border bg-ink-850/40 p-4 text-sm text-ink-200",
+        v.needs_regeneration ? "border-warning/50" : "border-ink-800",
+      )}
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <p className="font-serif text-base font-medium text-ink-50">{v.canonical_name}</p>
           <p className="mt-1 font-mono text-[10px] uppercase tracking-wider text-ink-500">
             {v.status} · voice windows {v.first_seen_window}→{v.last_observed_window}
+            {v.needs_regeneration ? (
+              <span className="ml-2 text-warning">· flagged for regeneration</span>
+            ) : null}
             {hasMulti
               ? ` · ${selected.length} reference passage${selected.length === 1 ? "" : "es"}`
               : ` · dialogue scans ${formatNumber(v.dialogue_volume_observed)}`}
@@ -154,36 +330,42 @@ function VoiceProfileCard({
               speaks in windows {formatWindowList(speakerWindows)}
             </p>
           ) : null}
-          <p className="mt-1.5 break-all font-mono text-[10px] leading-relaxed text-ink-600">
-            glossary entry · {v.glossary_entry_id}
-          </p>
-          <p className="mt-1 font-mono text-[10px] text-ink-600">
-            created {formatRelativeDate(v.created_at)} · updated {formatRelativeDate(v.updated_at)}
-          </p>
         </div>
-        <div className="flex flex-shrink-0 flex-wrap gap-2">
-          <button
-            type="button"
-            disabled={patchPending || v.status === "accepted"}
-            onClick={onAccept}
-            className={cn(
-              "rounded border border-success-border px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-success",
-              "hover:bg-success-surface disabled:opacity-40",
-            )}
-          >
-            Accept
-          </button>
-          <button
-            type="button"
-            disabled={patchPending || v.status === "rejected"}
-            onClick={onReject}
-            className={cn(
-              "rounded border border-danger-border px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-danger",
-              "hover:bg-danger-surface disabled:opacity-40",
-            )}
-          >
-            Reject
-          </button>
+        <div className="flex flex-shrink-0 flex-col items-end gap-2">
+          <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-ink-400">
+            <input
+              type="checkbox"
+              checked={v.needs_regeneration}
+              disabled={patchPending}
+              onChange={(e) => onPatch({ needs_regeneration: e.target.checked })}
+              className="rounded border-ink-600 bg-ink-950 text-accent focus:ring-accent/40"
+            />
+            Flag profile for regeneration
+          </label>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={patchPending || v.status === "accepted"}
+              onClick={() => onPatch({ accept: true })}
+              className={cn(
+                "rounded border border-success-border px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-success",
+                "hover:bg-success-surface disabled:opacity-40",
+              )}
+            >
+              Accept
+            </button>
+            <button
+              type="button"
+              disabled={patchPending || v.status === "rejected"}
+              onClick={() => onPatch({ reject: true })}
+              className={cn(
+                "rounded border border-danger-border px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-danger",
+                "hover:bg-danger-surface disabled:opacity-40",
+              )}
+            >
+              Reject
+            </button>
+          </div>
         </div>
       </div>
 
@@ -195,49 +377,17 @@ function VoiceProfileCard({
           {selected
             .slice()
             .sort((a, b) => a.selection_rank - b.selection_rank)
-            .map((p, i) => {
-              const pos = i + 1;
-              const prop = p.translation_proposed?.trim() ?? "";
-              const auth = p.translation_authoritative;
-              const same = auth != null && auth.trim() === prop;
-              return (
-                <div key={p.id} className="rounded-md border border-ink-800/80 bg-ink-900/25 p-3">
-                  <p className="font-mono text-[10px] uppercase tracking-wider text-accent">
-                    Reference passage {pos} of {selected.length}
-                    {p.selection_rank > 0 ? ` · rank ${p.selection_rank}` : ""} · {p.status}
-                  </p>
-                  <p className="mt-1 text-[10px] leading-relaxed text-ink-500">{p.why_selected}</p>
-                  <ProfileBlock label={`Source (${book.source_language})`} className="!mt-2">
-                    <p className="whitespace-pre-wrap border-l-2 border-ink-600 pl-3 text-ink-200">
-                      {p.source_text}
-                    </p>
-                  </ProfileBlock>
-                  <ProfileBlock
-                    label={`Model translation (${book.target_language})`}
-                    className="!mt-2"
-                  >
-                    <p className="whitespace-pre-wrap leading-relaxed text-ink-200">
-                      {p.translation_proposed ?? "—"}
-                    </p>
-                  </ProfileBlock>
-                  {auth != null && auth !== "" ? (
-                    <ProfileBlock label="Final translation (for downstream use)" className="!mt-2">
-                      <p className="whitespace-pre-wrap leading-relaxed text-ink-100">{auth}</p>
-                      {same && prop ? (
-                        <p className="mt-2 text-[10px] font-mono text-ink-500">
-                          Same as model draft.
-                        </p>
-                      ) : null}
-                    </ProfileBlock>
-                  ) : (
-                    <p className="mt-2 text-[10px] text-ink-500">
-                      No final translation for this passage yet (accept the profile to lock the
-                      model draft on all passages, or reject).
-                    </p>
-                  )}
-                </div>
-              );
-            })}
+            .map((p, i) => (
+              <PassageBlock
+                key={p.id}
+                passage={p}
+                pos={i + 1}
+                total={selected.length}
+                book={book}
+                patchPending={patchPending}
+                onPatch={onPatch}
+              />
+            ))}
         </div>
       ) : showLegacyOnly ? (
         <>
@@ -246,40 +396,150 @@ function VoiceProfileCard({
               {v.reference_passage_source}
             </p>
           </ProfileBlock>
-
           <ProfileBlock label={`Translation — model (${book.target_language})`}>
             <p className="whitespace-pre-wrap leading-relaxed text-ink-200">
               {v.reference_passage_translation_proposed}
             </p>
           </ProfileBlock>
-
-          {v.reference_passage_translation_authoritative != null ? (
-            <ProfileBlock label="Translation — final (for downstream use)">
-              <p className="whitespace-pre-wrap leading-relaxed text-ink-100">
-                {v.reference_passage_translation_authoritative}
-              </p>
-              {sameTranslation ? (
-                <p className="mt-2 text-[10px] font-mono text-ink-500">Same as model draft.</p>
-              ) : (
-                <p className="mt-2 text-[10px] font-mono text-ink-500">
-                  Differs from model draft — your edits or accept workflow set this.
-                </p>
+          <ProfileBlock label={`Your translation (${book.target_language})`}>
+            <textarea
+              value={legacyDraft}
+              onChange={(e) => setLegacyDraft(e.target.value)}
+              disabled={patchPending}
+              rows={4}
+              className={cn(
+                "w-full rounded-md border border-ink-700 bg-ink-950 px-3 py-2 font-sans text-sm text-ink-100",
+                "focus:border-accent/50 focus:outline-none focus:ring-2 focus:ring-accent/25 disabled:opacity-60",
               )}
-            </ProfileBlock>
-          ) : (
-            <p className="mt-3 rounded border border-ink-800/80 bg-ink-900/30 px-3 py-2 text-xs text-ink-500">
-              No authoritative translation yet — accept the profile to lock in the model draft, or
-              reject to dismiss the profile.
-            </p>
-          )}
+            />
+            <button
+              type="button"
+              disabled={patchPending}
+              onClick={() => onPatch({ reference_passage_translation: legacyDraft })}
+              className={cn(
+                "mt-2 rounded border border-ink-600 px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-ink-200",
+                "hover:bg-ink-800 disabled:opacity-40",
+              )}
+            >
+              Save translation
+            </button>
+          </ProfileBlock>
+          {v.reference_passage_translation_authoritative != null && sameTranslation ? (
+            <p className="mt-2 text-[10px] font-mono text-ink-500">Same as model draft.</p>
+          ) : null}
         </>
       ) : (
         <p className="mt-3 rounded border border-ink-800/80 bg-ink-900/30 px-3 py-2 text-xs text-ink-500">
-          No selected reference passages yet. They appear after the selection and translation steps
-          of the voice pipeline finish (1–4 per character from the candidate pool).
+          No selected reference passages yet.
         </p>
       )}
     </article>
+  );
+}
+
+function VoiceCostEstimate({
+  book,
+  estimate,
+}: {
+  book: BookDetail;
+  estimate: ReturnType<typeof useVoiceExtractionEstimate>;
+}) {
+  if (estimate.isLoading) {
+    return (
+      <p className="text-sm text-ink-400" aria-busy="true">
+        Calculating cost estimate…
+      </p>
+    );
+  }
+  if (estimate.isError || !estimate.data) return null;
+  if (estimate.data.pass1.window_count === 0) return null;
+
+  const { data } = estimate;
+  const pass1Running =
+    book.speakers_extraction_status === "running" && book.speakers_extraction_windows_total;
+  const pass2Running =
+    book.voice_extraction_status === "running" && book.voice_extraction_windows_total;
+
+  return (
+    <details
+      className={cn(
+        "overflow-hidden rounded-lg border border-ink-800 bg-ink-800",
+        "[&[open]_summary_.voice-chevron]:rotate-180",
+      )}
+    >
+      <summary
+        className={cn(
+          "flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3",
+          "font-mono text-xs uppercase tracking-wider text-ink-300",
+          "hover:bg-ink-700 [&::-webkit-details-marker]:hidden",
+          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+        )}
+      >
+        <span className="min-w-0 flex-1 text-left leading-snug text-ink-200">
+          <span className="text-ink-400">Cost estimate</span>
+          <span className="mx-2 text-ink-600">·</span>
+          <span className="tabular-nums text-ink-100">
+            {formatNumber(data.estimated_total_tokens)} tok
+          </span>
+          <span className="mx-2 text-ink-600">·</span>
+          <span className="text-accent">{formatUsd(data.estimated_cost_usd)}</span>
+          <span className="mx-2 text-ink-600">·</span>
+          <span className="tabular-nums text-ink-400">
+            {formatNumber(data.character_count)} character
+            {data.character_count === 1 ? "" : "s"}
+          </span>
+        </span>
+        <ChevronDown
+          className="voice-chevron h-4 w-4 shrink-0 rotate-0 text-ink-500 transition-transform duration-200 ease-out"
+          aria-hidden
+        />
+      </summary>
+      <div className="space-y-4 border-t border-ink-700 px-4 py-4 text-sm leading-relaxed text-ink-300">
+        <p className="text-xs text-ink-500">
+          Windows ~{formatNumber(data.window_words)} words, ~{formatNumber(data.overlap_words)}{" "}
+          overlap · model {data.model}
+        </p>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="rounded-md border border-ink-700/80 bg-ink-900/50 p-3">
+            <p className="font-mono text-[10px] uppercase tracking-wider text-ink-400">
+              Pass 1 · Speaker identification
+              {pass1Running ? (
+                <span className="ml-2 text-accent">
+                  {book.speakers_extraction_windows_completed ?? 0}/
+                  {book.speakers_extraction_windows_total}
+                </span>
+              ) : null}
+            </p>
+            <p className="mt-2 tabular-nums text-ink-100">
+              {formatNumber(data.pass1.window_count)} windows ·{" "}
+              {formatNumber(data.pass1.estimated_total_tokens)} tok ·{" "}
+              <span className="text-accent">{formatUsd(data.pass1.estimated_cost_usd)}</span>
+            </p>
+          </div>
+          <div className="rounded-md border border-ink-700/80 bg-ink-900/50 p-3">
+            <p className="font-mono text-[10px] uppercase tracking-wider text-ink-400">
+              Pass 2 · Voices + passages
+              {pass2Running ? (
+                <span className="ml-2 text-accent">
+                  {book.voice_extraction_windows_completed ?? 0}/
+                  {book.voice_extraction_windows_total}
+                </span>
+              ) : null}
+            </p>
+            <p className="mt-2 tabular-nums text-ink-100">
+              {formatNumber(data.pass2.window_count)} extraction windows + selection/translation for{" "}
+              {formatNumber(data.character_count)} characters ·{" "}
+              {formatNumber(data.pass2.estimated_total_tokens)} tok ·{" "}
+              <span className="text-accent">{formatUsd(data.pass2.estimated_cost_usd)}</span>
+            </p>
+          </div>
+        </div>
+        <p className="text-xs text-ink-500">
+          Pricing: ${data.pricing_input_usd_per_mtok}/M input · ${data.pricing_output_usd_per_mtok}
+          /M output. Heuristic only — actual usage varies.
+        </p>
+      </div>
+    </details>
   );
 }
 
@@ -304,6 +564,9 @@ export function VoiceView({ book }: Props) {
     enabled: glossaryReady,
     refetchIntervalMs: book.voice_extraction_status === "running" ? 1500 : false,
   });
+  const estimate = useVoiceExtractionEstimate(book.id, glossaryReady);
+  const [pendingOnly, setPendingOnly] = useState(false);
+
   const speakerWindowsByGlossaryId = useMemo(() => {
     const map = new Map<string, number[]>();
     for (const e of speakers.data?.entries ?? []) {
@@ -311,6 +574,34 @@ export function VoiceView({ book }: Props) {
     }
     return map;
   }, [speakers.data?.entries]);
+
+  const pass2Started =
+    book.voice_extraction_status !== "idle" || (voices.data?.entries.length ?? 0) > 0;
+
+  const reviewStats = useMemo(() => {
+    const all = voices.data?.entries ?? [];
+    let awaiting = 0;
+    let accepted = 0;
+    let rejected = 0;
+    for (const v of all) {
+      if (isAwaitingVoiceReview(v)) awaiting += 1;
+      else if (v.status === "accepted") accepted += 1;
+      else if (v.status === "rejected") rejected += 1;
+    }
+    return { awaiting, accepted, rejected };
+  }, [voices.data?.entries]);
+
+  const flaggedProfileCount = useMemo(
+    () => (voices.data?.entries ?? []).filter((v) => v.needs_regeneration).length,
+    [voices.data?.entries],
+  );
+
+  const profilesInScope = useMemo(() => {
+    const all = voices.data?.entries ?? [];
+    if (!pendingOnly) return all;
+    return all.filter(isAwaitingVoiceReview);
+  }, [voices.data?.entries, pendingOnly]);
+
   const startSpeakers = useStartSpeakersExtraction(book.id);
   const continueSpeakers = useContinueSpeakersExtraction(book.id);
   const stopSpeakers = useStopSpeakersExtraction(book.id);
@@ -358,68 +649,53 @@ export function VoiceView({ book }: Props) {
               <p className="mt-1 max-w-xl text-sm leading-relaxed text-ink-500">
                 Two passes over the same windows (~{formatNumber(VOICE_EXTRACTION_WINDOW_WORDS)}{" "}
                 words, ~{formatNumber(VOICE_EXTRACTION_OVERLAP_WORDS)} overlap).{" "}
-                <strong className="text-ink-400">Pass 1</strong> maps which glossary characters have
-                quoted speech in each window. <strong className="text-ink-400">Pass 2</strong>{" "}
-                builds voice profiles, then <strong className="text-ink-400">selects</strong> and{" "}
-                <strong className="text-ink-400">translates</strong> reference passages. Review
-                profiles below.
+                <strong className="text-ink-400">Pass 1</strong> maps speakers per window.{" "}
+                <strong className="text-ink-400">Pass 2</strong> builds voice profiles and reference
+                passages. Review profiles below.
               </p>
             </div>
 
-            <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-4">
-              <h3 className="font-mono text-[10px] uppercase tracking-wider text-ink-400">
-                Pass 1 · Speaker identification
-              </h3>
-              <p className="mt-2 text-sm leading-relaxed text-ink-500">
-                For each window, list glossary characters with at least one quoted speaking line and
-                a verbatim phrase as evidence. POV narration counts when the narrative voice is
-                clearly theirs. This map scopes Pass 2 and later translation prompts.
-              </p>
+            {glossaryReady ? <VoiceCostEstimate book={book} estimate={estimate} /> : null}
 
-              {book.speakers_extraction_last_error &&
-                book.speakers_extraction_status !== "running" && (
-                  <p className="mt-3 rounded-md border border-danger-border bg-danger-surface px-3 py-2 text-sm text-danger">
-                    {book.speakers_extraction_last_error}
+            {!pass2Started ? (
+              <div className="rounded-lg border border-ink-800 bg-ink-850/30 p-4">
+                <h3 className="font-mono text-[10px] uppercase tracking-wider text-ink-400">
+                  Pass 1 · Speaker identification
+                </h3>
+                <p className="mt-2 text-sm leading-relaxed text-ink-500">
+                  For each window, list glossary characters with quoted speech. This map scopes Pass
+                  2.
+                </p>
+
+                {book.speakers_extraction_last_error &&
+                  book.speakers_extraction_status !== "running" && (
+                    <p className="mt-3 rounded-md border border-danger-border bg-danger-surface px-3 py-2 text-sm text-danger">
+                      {book.speakers_extraction_last_error}
+                    </p>
+                  )}
+
+                {book.speakers_extraction_status === "completed" && (
+                  <p className="mt-3 rounded-md border border-success-border bg-success-surface px-3 py-2 text-sm text-success">
+                    Speaker map complete. You can run Pass 2 below.
                   </p>
                 )}
 
-              {book.speakers_extraction_status === "completed" && (
-                <p className="mt-3 rounded-md border border-success-border bg-success-surface px-3 py-2 text-sm text-success">
-                  Speaker map complete. You can run Pass 2 below.
-                </p>
-              )}
+                {startSpeakers.isError && (
+                  <p className="mt-3 text-sm text-danger">
+                    {startSpeakers.error instanceof ApiError
+                      ? startSpeakers.error.detail
+                      : "Could not start speaker identification."}
+                  </p>
+                )}
 
-              {startSpeakers.isError && (
-                <p className="mt-3 text-sm text-danger">
-                  {startSpeakers.error instanceof ApiError
-                    ? startSpeakers.error.detail
-                    : "Could not start speaker identification."}
-                </p>
-              )}
-              {continueSpeakers.isError && (
-                <p className="mt-3 text-sm text-danger">
-                  {continueSpeakers.error instanceof ApiError
-                    ? continueSpeakers.error.detail
-                    : "Could not continue speaker identification."}
-                </p>
-              )}
-              {stopSpeakers.isError && (
-                <p className="mt-3 text-sm text-danger">
-                  {stopSpeakers.error instanceof ApiError
-                    ? stopSpeakers.error.detail
-                    : "Could not request stop."}
-                </p>
-              )}
-              {resetSpeakers.isError && (
-                <p className="mt-3 text-sm text-danger">
-                  {resetSpeakers.error instanceof ApiError
-                    ? resetSpeakers.error.detail
-                    : "Could not reset speaker data."}
-                </p>
-              )}
-
-              <SpeakerMapPanel book={book} speakers={speakers} />
-            </div>
+                <SpeakerMapPanel book={book} speakers={speakers} />
+              </div>
+            ) : (
+              <p className="rounded-md border border-ink-800/80 bg-ink-900/30 px-3 py-2 text-xs text-ink-500">
+                Pass 1 speaker map is hidden while Pass 2 results are in focus. Re-run Pass 1 from
+                the controls below if you need to refresh the map.
+              </p>
+            )}
 
             {book.glossary_extraction_status !== "completed" && (
               <p className="text-sm text-warning">
@@ -446,27 +722,6 @@ export function VoiceView({ book }: Props) {
                   : "Could not start voice extraction."}
               </p>
             )}
-            {continueVoice.isError && (
-              <p className="text-sm text-danger">
-                {continueVoice.error instanceof ApiError
-                  ? continueVoice.error.detail
-                  : "Could not continue voice extraction."}
-              </p>
-            )}
-            {stopVoice.isError && (
-              <p className="text-sm text-danger">
-                {stopVoice.error instanceof ApiError
-                  ? stopVoice.error.detail
-                  : "Could not request stop."}
-              </p>
-            )}
-            {resetVoice.isError && (
-              <p className="text-sm text-danger">
-                {resetVoice.error instanceof ApiError
-                  ? resetVoice.error.detail
-                  : "Could not reset voice data."}
-              </p>
-            )}
 
             <button
               type="button"
@@ -485,7 +740,79 @@ export function VoiceView({ book }: Props) {
           <div className="my-12 border-t border-ink-800" />
 
           <div ref={listRef} className="scroll-mt-6 space-y-6">
-            <h3 className="font-serif text-lg text-ink-100">Profiles</h3>
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+              <div>
+                <h3 className="font-serif text-lg text-ink-100">Profiles</h3>
+                {!voices.isLoading && voices.data && voices.data.entries.length > 0 ? (
+                  <ReviewProgressLine
+                    awaiting={reviewStats.awaiting}
+                    accepted={reviewStats.accepted}
+                    rejected={reviewStats.rejected}
+                  />
+                ) : null}
+              </div>
+              {voices.data && voices.data.entries.length > 0 ? (
+                <div
+                  className={cn("shrink-0 rounded-xl border border-ink-800/80 bg-ink-900/35 p-3")}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={pendingOnly}
+                      aria-label={
+                        pendingOnly ? "Showing pending profiles only" : "Showing all profiles"
+                      }
+                      onClick={() => setPendingOnly((v) => !v)}
+                      className={cn(
+                        "relative inline-flex h-7 w-12 shrink-0 items-center rounded-full border transition-colors",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/40",
+                        pendingOnly
+                          ? "border-accent/50 bg-accent-soft"
+                          : "border-ink-700 bg-ink-950/80",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "pointer-events-none absolute left-0.5 top-0.5 h-6 w-6 rounded-full bg-ink-100 shadow transition-transform duration-200 ease-out",
+                          pendingOnly ? "translate-x-[1.375rem] bg-accent" : "translate-x-0",
+                        )}
+                        aria-hidden
+                      />
+                    </button>
+                    <div>
+                      <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
+                        Pending only
+                      </p>
+                      <p className="text-[11px] text-ink-500">Hide accepted profiles</p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            {flaggedProfileCount > 0 ? (
+              <div className="flex flex-wrap items-center gap-3 rounded-md border border-warning/40 bg-warning/5 px-4 py-3">
+                <p className="text-sm text-ink-300">
+                  <span className="tabular-nums font-medium text-warning">
+                    {flaggedProfileCount}
+                  </span>{" "}
+                  profile{flaggedProfileCount === 1 ? "" : "s"} flagged for regeneration.
+                </p>
+                <button
+                  type="button"
+                  disabled
+                  title="Coming soon: re-run extraction only for flagged characters in their speaker windows."
+                  className={cn(
+                    "rounded-md border border-warning/50 px-3 py-1.5 font-mono text-xs uppercase tracking-wider text-warning",
+                    "cursor-not-allowed opacity-60",
+                  )}
+                >
+                  Run regeneration
+                </button>
+              </div>
+            ) : null}
+
             {voices.isLoading && (
               <p className="text-sm text-ink-400" aria-busy="true">
                 Loading…
@@ -499,15 +826,19 @@ export function VoiceView({ book }: Props) {
                 No profiles yet. Run extraction after glossary completes.
               </p>
             )}
-            {voices.data?.entries.map((v) => (
+            {voices.data && voices.data.entries.length > 0 && profilesInScope.length === 0 && (
+              <p className="text-sm text-ink-400">
+                No pending profiles — turn off “Pending only” to see accepted entries.
+              </p>
+            )}
+            {profilesInScope.map((v) => (
               <VoiceProfileCard
                 key={v.id}
                 v={v}
                 book={book}
                 patchPending={patchVoice.isPending}
                 speakerWindows={speakerWindowsByGlossaryId.get(v.glossary_entry_id)}
-                onAccept={() => patchVoice.mutate({ voiceId: v.id, body: { accept: true } })}
-                onReject={() => patchVoice.mutate({ voiceId: v.id, body: { reject: true } })}
+                onPatch={(body) => patchVoice.mutate({ voiceId: v.id, body })}
               />
             ))}
           </div>
@@ -533,7 +864,7 @@ export function VoiceView({ book }: Props) {
                   onClick={() => {
                     if (
                       !window.confirm(
-                        "This will delete the per-window speaker map and Pass 1 notepad for this book. You can run identification again afterward. Continue?",
+                        "This will delete the per-window speaker map and Pass 1 notepad for this book. Continue?",
                       )
                     ) {
                       return;
@@ -624,7 +955,7 @@ export function VoiceView({ book }: Props) {
                     onClick={() => {
                       if (
                         !window.confirm(
-                          "This will permanently delete all character voice profiles, the extraction notepad, and your review progress (accept/reject) for this book. You can run extraction again afterward. This cannot be undone. Continue?",
+                          "This will permanently delete all character voice profiles and review progress. Continue?",
                         )
                       ) {
                         return;

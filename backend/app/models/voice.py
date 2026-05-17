@@ -80,6 +80,12 @@ class CharacterVoice(Base):
     # Workflow status — not in any LLM schema.
     status: Mapped[str] = mapped_column(String(16), default="proposed", server_default="proposed")
 
+    # Author flagged the whole profile for a targeted re-extraction pass.
+    needs_regeneration: Mapped[bool] = mapped_column(
+        default=False,
+        server_default="false",
+    )
+
     # Provenance — windows where this profile was active.
     first_seen_window: Mapped[int] = mapped_column(Integer)
     last_observed_window: Mapped[int] = mapped_column(Integer)

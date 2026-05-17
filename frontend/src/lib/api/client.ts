@@ -169,6 +169,7 @@ export const VoiceWorkingProfileSchema = z.object({
   /** Always present on the API (v3); may be `[]` before selection runs. */
   selected_passages: z.array(VoiceSelectedPassageSchema),
   status: z.string(),
+  needs_regeneration: z.boolean(),
   dialogue_volume_observed: z.number().int(),
   first_seen_window: z.number().int(),
   last_observed_window: z.number().int(),
@@ -203,12 +204,39 @@ export const WorkingSpeakersResponseSchema = z.object({
 });
 export type WorkingSpeakersResponse = z.infer<typeof WorkingSpeakersResponseSchema>;
 
+export const VoicePassEstimateSchema = z.object({
+  window_count: z.number().int(),
+  character_count: z.number().int(),
+  estimated_input_tokens: z.number().int(),
+  estimated_output_tokens: z.number().int(),
+  estimated_total_tokens: z.number().int(),
+  estimated_cost_usd: z.number(),
+});
+export type VoicePassEstimate = z.infer<typeof VoicePassEstimateSchema>;
+
+export const VoiceExtractionEstimateSchema = z.object({
+  model: z.string(),
+  window_words: z.number().int(),
+  overlap_words: z.number().int(),
+  character_count: z.number().int(),
+  pass1: VoicePassEstimateSchema,
+  pass2: VoicePassEstimateSchema,
+  estimated_total_tokens: z.number().int(),
+  estimated_cost_usd: z.number(),
+  pricing_input_usd_per_mtok: z.number(),
+  pricing_output_usd_per_mtok: z.number(),
+});
+export type VoiceExtractionEstimate = z.infer<typeof VoiceExtractionEstimateSchema>;
+
 export type VoiceProfilePatchBody = {
   accept?: boolean;
   reject?: boolean;
   source_voice_observation?: string;
   target_voice_strategy?: string;
   reference_passage_translation?: string;
+  selected_passage_id?: string;
+  selected_passage_translation?: string;
+  needs_regeneration?: boolean;
 };
 
 export type GlossaryEntryPatchBody = {
@@ -259,6 +287,12 @@ export const api = {
     handleResponse(
       await fetch(`${API_URL}/books/${id}/glossary-extraction-estimate`),
       GlossaryExtractionEstimateSchema,
+    ),
+
+  getVoiceExtractionEstimate: async (id: string): Promise<VoiceExtractionEstimate> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/voice-extraction-estimate`),
+      VoiceExtractionEstimateSchema,
     ),
 
   getWorkingGlossary: async (id: string): Promise<WorkingGlossaryResponse> =>

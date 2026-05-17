@@ -27,7 +27,7 @@ from fastapi import (
     UploadFile,
     status,
 )
-from sqlalchemy import update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import NoResultFound
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,6 +42,8 @@ from app.schemas.book import (
     GlossaryExtractionStartResponse,
     GlossaryExtractionStopResponse,
     UploadBookResponse,
+    VoiceExtractionEstimateResponse,
+    VoicePassEstimateResponse,
 )
 from app.schemas.glossary import (
     GlossaryWorkingEntryOut,
@@ -60,7 +62,12 @@ from app.services import (
     speakers_service,
     voice_service,
 )
+from app.models.glossary import GlossaryEntry
 from app.services.glossary_extraction_estimate import estimate_glossary_extraction
+from app.services.voice_extraction_estimate import (
+    VoicePassEstimate,
+    estimate_voice_extraction,
+)
 from app.services.manuscript_parser import ParsedManuscript, parse_docx
 
 router = APIRouter(prefix="/books", tags=["books"])
@@ -223,6 +230,61 @@ async def get_glossary_extraction_estimate(
         overlap_words=result.overlap_words,
         estimated_input_tokens=result.estimated_input_tokens,
         estimated_output_tokens=result.estimated_output_tokens,
+        estimated_total_tokens=result.estimated_total_tokens,
+        estimated_cost_usd=result.estimated_cost_usd,
+        pricing_input_usd_per_mtok=result.pricing_input_usd_per_mtok,
+        pricing_output_usd_per_mtok=result.pricing_output_usd_per_mtok,
+    )
+
+
+def _pass_estimate_response(pe: VoicePassEstimate) -> VoicePassEstimateResponse:
+    return VoicePassEstimateResponse(
+        window_count=pe.window_count,
+        character_count=pe.character_count,
+        estimated_input_tokens=pe.estimated_input_tokens,
+        estimated_output_tokens=pe.estimated_output_tokens,
+        estimated_total_tokens=pe.estimated_total_tokens,
+        estimated_cost_usd=pe.estimated_cost_usd,
+    )
+
+
+@router.get(
+    "/{book_id}/voice-extraction-estimate",
+    response_model=VoiceExtractionEstimateResponse,
+    summary="Predict voice pipeline tokens and cost (Pass 1 + Pass 2)",
+)
+async def get_voice_extraction_estimate(
+    book_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> VoiceExtractionEstimateResponse:
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
+    character_count = int(
+        await session.scalar(
+            select(func.count())
+            .select_from(GlossaryEntry)
+            .where(
+                GlossaryEntry.book_id == book_id,
+                GlossaryEntry.term_type == "character_name",
+                GlossaryEntry.status != "rejected",
+            ),
+        )
+        or 0,
+    )
+    result = estimate_voice_extraction(
+        word_count=book.word_count,
+        character_count=character_count,
+        settings=settings,
+    )
+    return VoiceExtractionEstimateResponse(
+        model=result.model,
+        window_words=result.window_words,
+        overlap_words=result.overlap_words,
+        character_count=result.character_count,
+        pass1=_pass_estimate_response(result.pass1),
+        pass2=_pass_estimate_response(result.pass2),
         estimated_total_tokens=result.estimated_total_tokens,
         estimated_cost_usd=result.estimated_cost_usd,
         pricing_input_usd_per_mtok=result.pricing_input_usd_per_mtok,

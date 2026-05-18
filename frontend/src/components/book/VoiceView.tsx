@@ -19,6 +19,7 @@ import {
   useContinueSpeakersExtraction,
   useContinueVoiceExtraction,
   usePatchVoiceWorkingProfile,
+  useRegenerateFlaggedVoices,
   useResetSpeakersExtraction,
   useResetVoiceExtraction,
   useStartSpeakersExtraction,
@@ -610,6 +611,7 @@ export function VoiceView({ book }: Props) {
   const continueVoice = useContinueVoiceExtraction(book.id);
   const stopVoice = useStopVoiceExtraction(book.id);
   const resetVoice = useResetVoiceExtraction(book.id);
+  const regenerateFlagged = useRegenerateFlaggedVoices(book.id);
   const patchVoice = usePatchVoiceWorkingProfile(book.id);
 
   const prevVoice = useRef<string | null>(null);
@@ -801,14 +803,25 @@ export function VoiceView({ book }: Props) {
                 </p>
                 <button
                   type="button"
-                  disabled
-                  title="Coming soon: re-run extraction only for flagged characters in their speaker windows."
+                  disabled={
+                    book.voice_extraction_status === "running" ||
+                    book.speakers_extraction_status !== "completed" ||
+                    regenerateFlagged.isPending
+                  }
+                  title={
+                    book.speakers_extraction_status !== "completed"
+                      ? "Complete speaker identification first."
+                      : "Re-run extraction only for flagged characters in their speaker windows."
+                  }
+                  onClick={() => regenerateFlagged.mutate()}
                   className={cn(
                     "rounded-md border border-warning/50 px-3 py-1.5 font-mono text-xs uppercase tracking-wider text-warning",
-                    "cursor-not-allowed opacity-60",
+                    "hover:bg-warning/10 disabled:cursor-not-allowed disabled:opacity-60",
                   )}
                 >
-                  Run regeneration
+                  {regenerateFlagged.isPending || book.voice_extraction_status === "running"
+                    ? "Regenerating…"
+                    : "Run regeneration"}
                 </button>
               </div>
             ) : null}

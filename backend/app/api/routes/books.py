@@ -749,6 +749,93 @@ async def continue_voice_extraction(
     return GlossaryExtractionStartResponse(book_id=book_id)
 
 
+def _schedule_regenerate_flagged_voices(
+    book_id: UUID,
+    settings: Settings,
+) -> None:
+    task = asyncio.create_task(
+        voice_service.regenerate_flagged_voices(
+            book_id=book_id,
+            settings=settings,
+        )
+    )
+
+    def _on_done(t: asyncio.Task[object]) -> None:
+        try:
+            t.result()
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            log.exception(
+                "voice_regeneration_background_unhandled",
+                book_id=str(book_id),
+            )
+
+    task.add_done_callback(_on_done)
+
+
+@router.post(
+    "/{book_id}/voice-extraction/regenerate",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=GlossaryExtractionStartResponse,
+    summary="Re-extract flagged voice profiles in their speaker windows only",
+)
+async def regenerate_flagged_voice_profiles(
+    book_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> GlossaryExtractionStartResponse:
+    if not settings.GEMINI_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="GEMINI_API_KEY is not configured.",
+        )
+
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Book not found",
+        )
+    if book.voice_extraction_status == "running":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Voice extraction is already running for this book.",
+        )
+
+    ok, reason = await voice_service.can_regenerate_flagged_voices(session, book_id=book_id)
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=reason or "Voice regeneration cannot start.",
+        )
+
+    result = await session.execute(
+        update(Book)
+        .where(
+            Book.id == book_id,
+            Book.voice_extraction_status != "running",
+        )
+        .values(
+            voice_extraction_status="running",
+            voice_extraction_cancel_requested=False,
+            voice_extraction_windows_total=None,
+            voice_extraction_windows_completed=None,
+            voice_extraction_last_error=None,
+        ),
+    )
+    await session.commit()
+    if rowcount(result) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Voice extraction is already running for this book.",
+        )
+
+    _schedule_regenerate_flagged_voices(book_id, settings)
+    log.info("voice_regeneration_scheduled", book_id=str(book_id))
+    return GlossaryExtractionStartResponse(book_id=book_id)
+
+
 @router.post(
     "/{book_id}/voice-extraction/stop",
     status_code=status.HTTP_202_ACCEPTED,

@@ -257,6 +257,20 @@ export function useContinueVoiceExtraction(
   });
 }
 
+export function useRegenerateFlaggedVoices(
+  bookId: string,
+): UseMutationResult<GlossaryExtractionStartResponse, Error, void> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.regenerateFlaggedVoices(bookId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
+      void qc.invalidateQueries({ queryKey: bookKeys.lists() });
+      void qc.invalidateQueries({ queryKey: bookKeys.workingVoices(bookId) });
+    },
+  });
+}
+
 export function useStopVoiceExtraction(
   bookId: string,
 ): UseMutationResult<GlossaryExtractionStopResponse, Error, void> {

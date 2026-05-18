@@ -339,6 +339,12 @@ export const api = {
       GlossaryExtractionStartResponseSchema,
     ),
 
+  regenerateFlaggedVoices: async (id: string): Promise<GlossaryExtractionStartResponse> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/voice-extraction/regenerate`, { method: "POST" }),
+      GlossaryExtractionStartResponseSchema,
+    ),
+
   stopVoiceExtraction: async (id: string): Promise<GlossaryExtractionStopResponse> =>
     handleResponse(
       await fetch(`${API_URL}/books/${id}/voice-extraction/stop`, { method: "POST" }),

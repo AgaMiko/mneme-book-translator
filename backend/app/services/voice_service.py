@@ -535,6 +535,25 @@ async def load_previous_notepad(
     return TypeAdapter(list[VoiceNote]).validate_python(list(row.notes))
 
 
+def filter_delta_for_profile(
+    delta: VoiceUpdate,
+    *,
+    profile_id: str,
+    glossary_entry_id: str,
+) -> VoiceUpdate:
+    """Keep only operations targeting one voice profile."""
+    pid = str(profile_id)
+    gid = str(glossary_entry_id)
+    return VoiceUpdate(
+        window_summary=delta.window_summary,
+        new_profiles=[p for p in delta.new_profiles if p.glossary_entry_id == gid],
+        extensions=[e for e in delta.extensions if e.profile_id == pid],
+        candidate_additions=[a for a in delta.candidate_additions if a.profile_id == pid],
+        candidate_replacements=[r for r in delta.candidate_replacements if r.profile_id == pid],
+        notepad=list(delta.notepad),
+    )
+
+
 async def apply_delta(
     session: AsyncSession,
     *,
@@ -542,6 +561,7 @@ async def apply_delta(
     delta: VoiceUpdate,
     window_number: int,
     glossary_characters: list[GlossaryCharacterRef] | None = None,
+    update_notepad: bool = True,
 ) -> None:
     """Apply a chain's delta to the persisted state.
 
@@ -729,20 +749,217 @@ async def apply_delta(
             c_row.voice_id = nv.id
             session.add(c_row)
 
-    notes_as_dicts = [n.model_dump(mode="json") for n in delta.notepad]
-    n_row = await session.get(VoiceNotepad, book_id)
-    if n_row is None:
-        session.add(
-            VoiceNotepad(
-                book_id=book_id,
-                notes=notes_as_dicts,
-                last_window_number=window_number,
+    if update_notepad:
+        notes_as_dicts = [n.model_dump(mode="json") for n in delta.notepad]
+        n_row = await session.get(VoiceNotepad, book_id)
+        if n_row is None:
+            session.add(
+                VoiceNotepad(
+                    book_id=book_id,
+                    notes=notes_as_dicts,
+                    last_window_number=window_number,
+                )
             )
-        )
-    else:
-        n_row.notes = notes_as_dicts
-        n_row.last_window_number = window_number
+        else:
+            n_row.notes = notes_as_dicts
+            n_row.last_window_number = window_number
     await session.flush()
+
+
+async def _prepare_voice_for_regeneration(
+    session: AsyncSession,
+    *,
+    voice: CharacterVoice,
+) -> None:
+    """Clear passage pools and voice fields before a targeted re-extraction."""
+    await session.execute(
+        delete(VoicePassageCandidate).where(VoicePassageCandidate.voice_id == voice.id)
+    )
+    await session.execute(
+        delete(VoiceSelectedPassage).where(VoiceSelectedPassage.voice_id == voice.id)
+    )
+    voice.source_voice_observation = ""
+    voice.target_voice_strategy = ""
+    voice.status = "proposed"
+    await session.flush()
+
+
+async def can_regenerate_flagged_voices(
+    session: AsyncSession,
+    *,
+    book_id: UUID,
+) -> tuple[bool, str | None]:
+    """True when flagged profiles can be re-extracted in their speaker windows."""
+    book = await session.get(Book, book_id)
+    if book is None:
+        return (False, "Book not found.")
+    if book.voice_extraction_status == "running":
+        return (False, "Voice extraction is already running.")
+    if book.speakers_extraction_status != "completed":
+        return (False, "Complete speaker identification first.")
+    if book.voice_extraction_status != "completed":
+        return (False, "Complete voice extraction first.")
+    n = await session.scalar(
+        select(func.count())
+        .select_from(CharacterVoice)
+        .where(
+            CharacterVoice.book_id == book_id,
+            CharacterVoice.needs_regeneration.is_(True),
+        )
+    )
+    if not n:
+        return (False, "No profiles flagged for regeneration.")
+    return (True, None)
+
+
+async def _glossary_ref_for_voice(
+    session: AsyncSession,
+    *,
+    book_id: UUID,
+    glossary_entry_id: UUID,
+) -> GlossaryCharacterRef | None:
+    chars = await load_glossary_characters(session, book_id=book_id)
+    for c in chars:
+        if c.glossary_entry_id == str(glossary_entry_id):
+            return c
+    return None
+
+
+async def run_selection_for_voices(
+    *,
+    book_id: UUID,
+    voice_ids: list[UUID],
+    settings: Settings,
+) -> None:
+    """Phase 2 for a subset of voices (after targeted regeneration)."""
+    if not voice_ids:
+        return
+    session_maker = get_sessionmaker()
+    with propagate_attributes(session_id=str(book_id), trace_name="voice_selection"):
+        async with session_maker() as session:
+            v_stmt = (
+                select(CharacterVoice)
+                .join(
+                    GlossaryEntry,
+                    GlossaryEntry.id == CharacterVoice.glossary_entry_id,
+                )
+                .where(
+                    CharacterVoice.book_id == book_id,
+                    CharacterVoice.id.in_(voice_ids),
+                    CharacterVoice.status != "rejected",
+                )
+                .options(
+                    selectinload(CharacterVoice.glossary_entry),
+                    selectinload(CharacterVoice.candidates),
+                )
+            )
+            voices = (await session.execute(v_stmt)).scalars().all()
+            occurrence_counts: dict[UUID, int] = {}
+            for v in voices:
+                ge = v.glossary_entry
+                if ge is not None:
+                    occurrence_counts[ge.id] = ge.occurrence_count
+            if not occurrence_counts:
+                return
+            counts = compute_passage_counts(occurrence_counts=occurrence_counts)
+            book = await session.get(Book, book_id)
+            if book is None:
+                return
+            for voice in voices:
+                if not voice.candidates:
+                    continue
+                ge = voice.glossary_entry
+                if ge is None:
+                    continue
+                cands = await load_candidates_for_voice(session, voice_id=voice.id)
+                if not cands:
+                    continue
+                n_want = counts.get(ge.id, 1)
+                n_want = max(1, min(n_want, len(cands), 4))
+                sel = await select_passages_for_character(
+                    profile_id=str(voice.id),
+                    canonical_name=ge.canonical_form,
+                    source_voice_observation=voice.source_voice_observation,
+                    target_voice_strategy=voice.target_voice_strategy,
+                    candidates=cands,
+                    passage_count=n_want,
+                    source_language=book.source_language,
+                    target_language=book.target_language,
+                    settings=settings,
+                )
+                if (
+                    sel.profile_id != str(voice.id)
+                    or sel.canonical_name.strip() != ge.canonical_form.strip()
+                ):
+                    log.warning(
+                        "Selection mismatch for profile %s; expected name %r, got %r; skipping",
+                        str(voice.id)[:8],
+                        ge.canonical_form,
+                        sel.canonical_name,
+                    )
+                    continue
+                await persist_selection(session, voice_id=voice.id, selection=sel)
+            await session.commit()
+
+
+async def run_translation_for_voices(
+    *,
+    book_id: UUID,
+    voice_ids: list[UUID],
+    settings: Settings,
+) -> None:
+    """Phase 3 for selected passages belonging to the given voices."""
+    if not voice_ids:
+        return
+    session_maker = get_sessionmaker()
+    with propagate_attributes(session_id=str(book_id), trace_name="voice_translation"):
+        async with session_maker() as session:
+            book = await session.get(Book, book_id)
+            if book is None:
+                return
+            terms = await load_accepted_glossary_terms(session, book_id=book_id)
+            stmt = (
+                select(VoiceSelectedPassage)
+                .join(CharacterVoice, CharacterVoice.id == VoiceSelectedPassage.voice_id)
+                .where(
+                    CharacterVoice.book_id == book_id,
+                    CharacterVoice.id.in_(voice_ids),
+                    VoiceSelectedPassage.translation_proposed.is_(None),
+                )
+                .options(
+                    selectinload(VoiceSelectedPassage.voice).selectinload(
+                        CharacterVoice.glossary_entry
+                    ),
+                )
+            )
+            to_translate = (await session.execute(stmt)).scalars().all()
+            for sp in to_translate:
+                voice = sp.voice
+                if voice is None:
+                    log.warning("voice_selected_passage missing voice: %s", sp.id)
+                    continue
+                ge = voice.glossary_entry
+                name = ge.canonical_form if ge is not None else "—"
+                out = await translate_passage(
+                    selected_passage_id=str(sp.id),
+                    profile_id=str(voice.id),
+                    canonical_name=name,
+                    source_voice_observation=voice.source_voice_observation,
+                    target_voice_strategy=voice.target_voice_strategy,
+                    passage_source_text=sp.source_text,
+                    glossary_terms=terms,
+                    source_language=book.source_language,
+                    target_language=book.target_language,
+                    settings=settings,
+                )
+                if out.selected_passage_id != str(sp.id):
+                    log.warning("Translation id drift for passage %s", sp.id)
+                await persist_translation(
+                    session,
+                    selected_passage_id=sp.id,
+                    translation=out,
+                )
+            await session.commit()
 
 
 # ─── Phase 2: passage selection ─────────────────────────
@@ -1134,6 +1351,275 @@ async def set_voice_summary_authoritative(
         "Single UPDATE on character_voices. Validate edited_summary "
         "arg presence/absence per action."
     )
+
+
+# ─── Targeted regeneration ──────────────────────────────
+
+
+async def regenerate_flagged_voices(
+    *,
+    book_id: UUID,
+    settings: Settings,
+) -> None:
+    """Re-extract only profiles flagged ``needs_regeneration``, window by window.
+
+    For each flagged character, visits only windows where Pass 1 mapped
+    them as a speaker, updates that profile alone, then re-runs selection
+    and translation for those profiles.
+    """
+    if not settings.GEMINI_API_KEY:
+        session_local = get_sessionmaker()
+        async with session_local() as session:
+            b = await session.get(Book, book_id)
+            if b is not None:
+                b.voice_extraction_status = "failed"
+                b.voice_extraction_last_error = "GEMINI_API_KEY not configured."
+            await session.commit()
+        log.warning("voice_regeneration_skipped_no_key", book_id=str(book_id))
+        return
+
+    session_local = get_sessionmaker()
+    try:
+        async with session_local() as session:
+            plaintext = await _load_book_plaintext(session, book_id)
+            book = await session.get(Book, book_id)
+            if book is None:
+                log.warning("voice_regeneration_book_missing", book_id=str(book_id))
+                return
+            win_list = make_windows(plaintext)
+            total_manuscript_windows = len(win_list)
+            flagged = list(
+                (
+                    await session.execute(
+                        select(CharacterVoice)
+                        .where(
+                            CharacterVoice.book_id == book_id,
+                            CharacterVoice.needs_regeneration.is_(True),
+                        )
+                        .order_by(CharacterVoice.created_at.asc())
+                    )
+                ).scalars().all()
+            )
+            if not flagged:
+                return
+
+            work: list[tuple[CharacterVoice, list[int]]] = []
+            for voice in flagged:
+                speaker_rows = await speakers_service.load_speakers_for_character(
+                    session,
+                    book_id=book_id,
+                    glossary_entry_id=voice.glossary_entry_id,
+                )
+                windows = sorted({ws.window_number for ws in speaker_rows})
+                if not windows:
+                    log.warning(
+                        "voice_regeneration_no_speaker_windows",
+                        book_id=str(book_id),
+                        voice_id=str(voice.id),
+                    )
+                    voice.needs_regeneration = False
+                    continue
+                work.append((voice, windows))
+
+            await session.commit()
+
+            if not work:
+                async with session_local() as s_done:
+                    b_done = await s_done.get(Book, book_id)
+                    if b_done is not None:
+                        b_done.voice_extraction_status = "completed"
+                        b_done.voice_extraction_last_error = None
+                        _clear_voice_progress_fields(b_done)
+                    await s_done.commit()
+                return
+
+            total_steps = sum(len(windows) for _, windows in work)
+            regenerated_ids: list[UUID] = []
+
+        async with session_local() as s_init:
+            b0 = await s_init.get(Book, book_id)
+            if b0 is not None:
+                b0.voice_extraction_cancel_requested = False
+                b0.voice_extraction_windows_total = total_steps
+                b0.voice_extraction_windows_completed = 0
+            await s_init.commit()
+
+        cancelled = False
+        completed_steps = 0
+        regen_notepad: list[VoiceNote] = []
+
+        with propagate_attributes(
+            session_id=str(book_id),
+            trace_name="voice_regeneration",
+        ):
+            for voice, windows in work:
+                async with session_local() as session:
+                    book = await session.get(Book, book_id)
+                    if book is None:
+                        raise RuntimeError("book disappeared during voice regeneration")
+                    if book.voice_extraction_cancel_requested:
+                        await _finalize_voice_cancelled(session, book_id=book_id)
+                        cancelled = True
+                        break
+
+                    voice_row = await session.get(CharacterVoice, voice.id)
+                    if voice_row is None:
+                        continue
+                    await _prepare_voice_for_regeneration(session, voice=voice_row)
+                    await session.commit()
+
+                profile_id = str(voice.id)
+                glossary_entry_id = voice.glossary_entry_id
+                regenerated_ids.append(voice.id)
+
+                for step_idx, window_number in enumerate(windows):
+                    async with session_local() as session:
+                        book = await session.get(Book, book_id)
+                        if book is None:
+                            raise RuntimeError("book disappeared during voice regeneration")
+                        if book.voice_extraction_cancel_requested:
+                            await _finalize_voice_cancelled(session, book_id=book_id)
+                            cancelled = True
+                            break
+
+                        if window_number < 1 or window_number > total_manuscript_windows:
+                            log.warning(
+                                "voice_regeneration_window_out_of_range",
+                                book_id=str(book_id),
+                                window=window_number,
+                                total=total_manuscript_windows,
+                            )
+                            completed_steps += 1
+                            book.voice_extraction_windows_completed = completed_steps
+                            await session.commit()
+                            continue
+
+                        char_ref = await _glossary_ref_for_voice(
+                            session,
+                            book_id=book_id,
+                            glossary_entry_id=glossary_entry_id,
+                        )
+                        if char_ref is None:
+                            log.warning(
+                                "voice_regeneration_missing_glossary_character",
+                                book_id=str(book_id),
+                                glossary_entry_id=str(glossary_entry_id),
+                            )
+                            completed_steps += 1
+                            book.voice_extraction_windows_completed = completed_steps
+                            await session.commit()
+                            continue
+
+                        characters = [char_ref]
+                        allowed_ids = {char_ref.glossary_entry_id}
+                        current = _filter_profiles_to_glossary_ids(
+                            await load_compact_voice_profiles(session, book_id=book_id),
+                            allowed_ids,
+                        )
+                        wtext = win_list[window_number - 1]
+                        delta = await extract_voices_window(
+                            window_text=wtext,
+                            glossary_characters=characters,
+                            current_profiles=current,
+                            previous_notepad=regen_notepad,
+                            window_number=window_number,
+                            total_windows=total_manuscript_windows,
+                            source_language=book.source_language,
+                            target_language=book.target_language,
+                            settings=settings,
+                            speakers_scoped=True,
+                            regeneration_pass=step_idx == 0,
+                        )
+                        scoped = filter_delta_for_profile(
+                            delta,
+                            profile_id=profile_id,
+                            glossary_entry_id=str(glossary_entry_id),
+                        )
+                        regen_notepad = list(scoped.notepad)
+                        await apply_delta(
+                            session,
+                            book_id=book_id,
+                            delta=scoped,
+                            window_number=window_number,
+                            glossary_characters=characters,
+                            update_notepad=False,
+                        )
+                        completed_steps += 1
+                        book.voice_extraction_windows_completed = completed_steps
+                        await session.commit()
+
+                    if cancelled:
+                        break
+
+                if not cancelled:
+                    async with session_local() as session:
+                        voice_row = await session.get(CharacterVoice, voice.id)
+                        if voice_row is not None:
+                            voice_row.needs_regeneration = False
+                        await session.commit()
+
+                if cancelled:
+                    break
+
+        if cancelled:
+            return
+
+        try:
+            await run_selection_for_voices(
+                book_id=book_id,
+                voice_ids=regenerated_ids,
+                settings=settings,
+            )
+            await run_translation_for_voices(
+                book_id=book_id,
+                voice_ids=regenerated_ids,
+                settings=settings,
+            )
+        except Exception as exc2:
+            log.exception(
+                "voice_regeneration_post_phases_failed",
+                book_id=str(book_id),
+                err=str(exc2)[:2000],
+            )
+            async with session_local() as s5:
+                b2 = await s5.get(Book, book_id)
+                if b2 is not None:
+                    b2.voice_extraction_status = "failed"
+                    b2.voice_extraction_last_error = (str(exc2) or type(exc2).__name__)[:5000]
+                await s5.commit()
+            return
+
+        async with session_local() as s6:
+            b3 = await s6.get(Book, book_id)
+            if b3 is not None:
+                b3.voice_extraction_status = "completed"
+                b3.voice_extraction_last_error = None
+                b3.voice_extraction_cancel_requested = False
+                _clear_voice_progress_fields(b3)
+            await s6.commit()
+        log.info(
+            "voice_regeneration_completed",
+            book_id=str(book_id),
+            profile_count=len(regenerated_ids),
+        )
+
+    except GenerationDisabledError:
+        async with session_local() as session:
+            bb = await session.get(Book, book_id)
+            if bb is not None:
+                bb.voice_extraction_status = "failed"
+                bb.voice_extraction_last_error = "LLM generation disabled (missing API key)."
+                bb.voice_extraction_cancel_requested = False
+            await session.commit()
+    except Exception as exc:
+        log.exception("voice_regeneration_failed", book_id=str(book_id))
+        async with session_local() as session:
+            b = await session.get(Book, book_id)
+            if b is not None:
+                b.voice_extraction_status = "failed"
+                b.voice_extraction_last_error = (str(exc) or type(exc).__name__)[:5000]
+                b.voice_extraction_cancel_requested = False
+            await session.commit()
 
 
 # ─── Top-level orchestration ────────────────────────────

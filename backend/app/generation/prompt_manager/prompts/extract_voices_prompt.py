@@ -54,7 +54,7 @@ dialogue, but they're written *in* {target_language}.
 system cross-checks them. If you put one character's voice traits \
 under another character's ID, the operation is dropped.
 
-{first_pass_note}{speaker_scope_note}\
+{first_pass_note}{speaker_scope_note}{regeneration_note}\
 ## The two voice fields, and what each one does
 
 A character's voice is captured in two fields. They have different \
@@ -453,6 +453,17 @@ SPEAKER_SCOPE_NOTE = """\
 The glossary list below is limited to characters Pass 1 identified as \
 speaking in **this window** (quoted lines with evidence). Profile only \
 those characters — do not add operations for anyone not listed.
+
+"""
+
+REGENERATION_NOTE = """\
+**Targeted regeneration.** Rebuild this character's voice profile from \
+scratch using only the dialogue in this window. The profile fields were \
+cleared and the candidate pool is empty — treat this like a fresh profile \
+for this character: write full source_voice_observation and \
+target_voice_strategy and seed initial_candidates from this window's \
+evidence. Later windows in this regeneration pass will extend and add \
+candidates as usual.
 
 """
 

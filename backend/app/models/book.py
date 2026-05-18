@@ -15,6 +15,7 @@ its `chapters` list and never have to touch FKs by hand.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
@@ -27,8 +28,6 @@ from app.core.db import Base
 from app.models.glossary import FinalGlossary, GlossaryEntry, GlossaryExtractionRun
 
 if TYPE_CHECKING:
-    from datetime import datetime
-
     from app.models.speakers import WindowSpeaker
     from app.models.voice import CharacterVoice
 

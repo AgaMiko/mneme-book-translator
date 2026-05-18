@@ -24,6 +24,7 @@ The LLM never sees ``status`` on working entries — that stays FE/BE territory.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
@@ -44,8 +45,6 @@ from sqlalchemy.sql import func
 from app.core.db import Base
 
 if TYPE_CHECKING:
-    from datetime import datetime
-
     from app.models.book import Book
 
 

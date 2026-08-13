@@ -25,17 +25,24 @@ export function LibraryScreen({ onSelect }: Props) {
   return (
     <div className="reader-surface flex h-full min-h-0 w-full flex-col overflow-y-auto">
       <div className="mx-auto w-full max-w-[760px] flex-1 px-6">
-        <header className="pt-16">
-          <div className="flex items-center gap-3">
-            <BrandMark size={36} className="text-ink-100" />
+        <header className="flex items-center justify-between gap-2.5 pt-16">
+          <div className="flex min-w-0 items-center gap-2.5">
+            <BrandMark size={26} className="text-ink-100" />
             <div className="min-w-0">
-              <h1 className="font-serif text-2xl font-semibold leading-none text-ink-100">Mneme</h1>
-              <p className="mt-1.5 font-serif text-[11px] italic leading-none text-ink-400">
-                Μνήμη
+              {/* Greek sits beside the wordmark, not under it — one
+                  line of brand rather than a stacked lockup. */}
+              <div className="flex items-baseline gap-[7px]">
+                <h1 className="font-serif text-[19px] font-semibold leading-none text-ink-100">
+                  Mneme
+                </h1>
+                <span className="font-serif text-xs italic text-ink-500">Μνήμη</span>
+              </div>
+              <p className="mt-[5px] text-xs leading-none text-ink-400">
+                Translation that remembers.
               </p>
             </div>
           </div>
-          <p className="mt-4 text-sm leading-snug text-ink-400">Translation that remembers.</p>
+          <ThemeToggle />
         </header>
 
         {/* The brand's promise only earns this much room when there is
@@ -54,15 +61,15 @@ export function LibraryScreen({ onSelect }: Props) {
           </div>
         )}
 
-        <div className="mt-10">
+        <div className="mt-6">
           <UploadDropzone onUploaded={onSelect} />
         </div>
 
-        <div className="mt-12 pb-16">
-          <div className="mb-3 flex items-center gap-2">
+        <div className="pb-8 pt-4">
+          <div className="mb-2 flex items-center justify-between px-0.5">
             <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">Library</p>
             {data && data.length > 0 && (
-              <span className="font-mono text-[10px] tabular-nums text-ink-400">{data.length}</span>
+              <span className="font-mono text-[10px] tabular-nums text-ink-600">{data.length}</span>
             )}
           </div>
           <BookList selectedId={null} onSelect={onSelect} onDeleted={() => {}} />
@@ -70,8 +77,8 @@ export function LibraryScreen({ onSelect }: Props) {
       </div>
 
       <footer className="mx-auto flex w-full max-w-[760px] items-center justify-between border-t border-ink-800 px-6 py-3">
-        <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">mneme · v0.1</p>
-        <ThemeToggle />
+        <p className="font-mono text-[10px] uppercase tracking-wider text-ink-600">mneme · v0.1</p>
+        <span className="font-mono text-[10px] uppercase tracking-wider text-ink-600">pl → en</span>
       </footer>
     </div>
   );

@@ -1,4 +1,4 @@
-import { AlertCircle, ArrowLeft, Check, Lock } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, Check, Lock } from "lucide-react";
 
 import { Button } from "@/components/ui/Button";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
@@ -49,21 +49,40 @@ export function BookHeader({ book, activeTab, onSelectTab, onBack, counts }: Pro
           </div>
         </div>
 
-        {/* Title block */}
-        <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
+        {/* Title block. Author, language, size and filename ride on one
+            line under the title — four facts, one row, no stack. */}
+        <div className="mt-4 flex flex-wrap items-start justify-between gap-7">
           <div className="min-w-0">
-            <p className="font-mono text-[10px] uppercase tracking-widest text-ink-400">
-              {language} · {formatNumber(book.word_count)} words
+            <h1 className="font-serif text-[27px] font-semibold leading-tight text-ink-50">
+              {book.title}
+            </h1>
+            <p className="mt-1.5 flex flex-wrap items-center gap-2.5 text-[13px] text-ink-400">
+              {book.author && (
+                <>
+                  <span className="font-serif text-sm italic text-ink-200">{book.author}</span>
+                  <span className="text-ink-700" aria-hidden>
+                    ·
+                  </span>
+                </>
+              )}
+              <span className="font-mono text-[11px] tracking-wide">
+                {language} · {formatNumber(book.word_count)} words
+              </span>
+              <span className="text-ink-700" aria-hidden>
+                ·
+              </span>
+              <span className="font-mono text-[11px] text-ink-500">{book.original_filename}</span>
             </p>
-            <h1 className="mt-1 font-serif text-3xl font-semibold text-ink-50">{book.title}</h1>
-            {book.author && (
-              <p className="mt-0.5 font-serif italic text-ink-300">by {book.author}</p>
-            )}
-            <p className="mt-1 font-mono text-xs text-ink-500">{book.original_filename}</p>
           </div>
           {nextAction && (
-            <Button variant="primary" size="sm" onClick={nextAction.onClick}>
+            <Button
+              variant="primary"
+              size="md"
+              className="shrink-0 font-semibold"
+              onClick={nextAction.onClick}
+            >
               {nextAction.label}
+              <ArrowRight className="h-3.5 w-3.5" aria-hidden />
             </Button>
           )}
         </div>

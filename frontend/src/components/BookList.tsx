@@ -3,13 +3,13 @@ import { BookOpen, Trash2 } from "lucide-react";
 import type { BookSummary } from "@/lib/api/client";
 import { useBooks, useDeleteBook } from "@/lib/api/hooks";
 import { cn, formatRelativeDate } from "@/lib/utils";
+import { Button } from "@/components/ui/Button";
 
 /** `107 643` → `107k`. The row wants the magnitude, not the figure. */
 function compactWords(n: number): string {
   if (n < 1000) return `${n}`;
   return `${Math.round(n / 1000)}k`;
 }
-import { Button } from "@/components/ui/Button";
 
 interface Props {
   selectedId: string | null;
@@ -45,16 +45,18 @@ export function BookList({ selectedId, onSelect, onDeleted }: Props) {
   }
 
   return (
-    <ul className="space-y-1">
+    <ul className="flex flex-col gap-0.5">
       {data.map((book) => {
         const isSelected = book.id === selectedId;
         return (
           <li key={book.id}>
             <div
               className={cn(
-                "group relative flex items-center gap-3 rounded-lg px-4 py-3",
+                "group relative flex items-start gap-2.5 rounded-lg px-3 py-2.5",
                 "transition-colors duration-150",
-                isSelected ? "bg-ink-800" : "hover:bg-ink-800",
+                isSelected
+                  ? "bg-ink-800 shadow-[inset_2px_0_0_var(--color-accent)]"
+                  : "hover:bg-ink-800",
               )}
             >
               <button
@@ -66,9 +68,16 @@ export function BookList({ selectedId, onSelect, onDeleted }: Props) {
                 )}
                 aria-current={isSelected ? "true" : undefined}
               >
-                <div className="truncate text-sm font-medium text-ink-50">{book.title}</div>
+                <div
+                  className={cn(
+                    "truncate font-serif text-[15px] font-semibold",
+                    isSelected ? "text-ink-50" : "text-ink-200",
+                  )}
+                >
+                  {book.title}
+                </div>
                 {book.author && (
-                  <div className="truncate text-xs italic text-ink-300">{book.author}</div>
+                  <div className="mt-[3px] truncate text-xs text-ink-400">{book.author}</div>
                 )}
                 <PipelineStatusLine book={book} />
               </button>
@@ -99,7 +108,7 @@ export function BookList({ selectedId, onSelect, onDeleted }: Props) {
 type Tone = "idle" | "running" | "done" | "warning" | "danger";
 
 const DOT_TONE: Record<Tone, string> = {
-  idle: "bg-ink-600",
+  idle: "bg-ink-700",
   running: "animate-pulse bg-accent",
   done: "bg-success",
   warning: "bg-warning",
@@ -122,19 +131,28 @@ const TEXT_TONE: Record<Tone, string> = {
 function PipelineStatusLine({ book }: { book: BookSummary }) {
   const { tone, label } = pipelineStatus(book);
   return (
-    <div className="mt-1.5 flex items-center gap-2">
-      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", DOT_TONE[tone])} aria-hidden />
+    <div className="mt-[7px] flex items-center gap-[7px]">
       <span
-        className={cn("truncate font-mono text-[11px] uppercase tracking-wider", TEXT_TONE[tone])}
+        className={cn("inline-flex items-center gap-[5px] font-mono text-[10px]", TEXT_TONE[tone])}
       >
-        {label}
+        <span className={cn("h-[5px] w-[5px] shrink-0 rounded-full", DOT_TONE[tone])} aria-hidden />
+        <span className="truncate">{label}</span>
       </span>
-      <span className="shrink-0 font-mono text-[11px] text-ink-500">
-        <span className="text-ink-600">·</span> {compactWords(book.word_count)} ·{" "}
-        {formatRelativeDate(book.created_at)}
+      <span className="shrink-0 font-mono text-[10px] text-ink-600">
+        {compactWords(book.word_count)} · {formatRelativeDate(book.created_at)}
       </span>
     </div>
   );
+}
+
+/** `Glossary 42/118` while a pass is in flight, else just the step name. */
+function withProgress(
+  name: string,
+  completed: number | null | undefined,
+  total: number | null | undefined,
+): string {
+  if (total == null || total <= 0) return `${name}…`;
+  return `${name} ${completed ?? 0}/${total}`;
 }
 
 function pipelineStatus(book: BookSummary): { tone: Tone; label: string } {
@@ -144,23 +162,50 @@ function pipelineStatus(book: BookSummary): { tone: Tone; label: string } {
     book.voice_extraction_status,
   ];
 
-  if (statuses.includes("failed")) return { tone: "danger", label: "run failed" };
+  if (statuses.includes("failed")) return { tone: "danger", label: "Run failed" };
 
-  if (book.glossary_extraction_status === "running") return { tone: "running", label: "glossary…" };
-  if (book.speakers_extraction_status === "running") return { tone: "running", label: "speakers…" };
-  if (book.voice_extraction_status === "running") return { tone: "running", label: "voices…" };
+  if (book.glossary_extraction_status === "running") {
+    return {
+      tone: "running",
+      label: withProgress(
+        "Glossary",
+        book.glossary_extraction_windows_completed,
+        book.glossary_extraction_windows_total,
+      ),
+    };
+  }
+  if (book.speakers_extraction_status === "running") {
+    return {
+      tone: "running",
+      label: withProgress(
+        "Speakers",
+        book.speakers_extraction_windows_completed,
+        book.speakers_extraction_windows_total,
+      ),
+    };
+  }
+  if (book.voice_extraction_status === "running") {
+    return {
+      tone: "running",
+      label: withProgress(
+        "Voices",
+        book.voice_extraction_windows_completed,
+        book.voice_extraction_windows_total,
+      ),
+    };
+  }
 
-  if (statuses.includes("cancelled")) return { tone: "warning", label: "stopped mid-run" };
+  if (statuses.includes("cancelled")) return { tone: "warning", label: "Stopped" };
 
-  if (book.voice_extraction_status === "completed") return { tone: "done", label: "voices ready" };
+  if (book.voice_extraction_status === "completed") return { tone: "done", label: "Voices ready" };
   if (book.speakers_extraction_status === "completed") {
-    return { tone: "done", label: "speakers mapped" };
+    return { tone: "done", label: "Speakers mapped" };
   }
   if (book.glossary_extraction_status === "completed") {
-    return { tone: "done", label: "glossary ready" };
+    return { tone: "done", label: "Glossary ready" };
   }
-  if (book.metadata_status === "pending") return { tone: "running", label: "reading metadata…" };
-  if (book.metadata_status === "failed") return { tone: "danger", label: "metadata failed" };
+  if (book.metadata_status === "pending") return { tone: "running", label: "Reading metadata…" };
+  if (book.metadata_status === "failed") return { tone: "danger", label: "Metadata failed" };
 
-  return { tone: "idle", label: "not started" };
+  return { tone: "idle", label: "Not started" };
 }

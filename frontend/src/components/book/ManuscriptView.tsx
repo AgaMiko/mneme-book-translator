@@ -1,6 +1,9 @@
 import { useEffect, useRef } from "react";
 
 import type { BookDetail } from "@/lib/api/client";
+import { cn } from "@/lib/utils";
+
+import { BOOK_PANEL_CONTAINER, BOOK_PANEL_SURFACE } from "./layout";
 
 interface Props {
   book: BookDetail;
@@ -51,12 +54,10 @@ export function ManuscriptView({
   }, [scrollTarget, onScrollHandled]);
 
   return (
-    <div className="reader-surface h-full min-h-0 flex-1 overflow-y-auto">
-      {/* Wider than the old 68ch measure — with the sidebar gone the
-          reading column can breathe without running long. */}
-      <article className="mx-auto max-w-[78ch] px-8 py-12 lg:py-16">
+    <div className={BOOK_PANEL_SURFACE}>
+      <article className={cn(BOOK_PANEL_CONTAINER, "py-12 lg:py-16")}>
         {book.language_style_note && (
-          <div className="mb-12 max-w-prose border-l-2 border-ink-700 pl-4">
+          <div className="mb-12 border-l-2 border-ink-700 pl-4">
             <p className="mb-2 font-mono text-[10px] uppercase tracking-wider text-ink-500">
               Style note
             </p>

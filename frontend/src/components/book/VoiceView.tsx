@@ -47,6 +47,8 @@ import {
 } from "@/lib/api/hooks";
 import { cn, formatNumber } from "@/lib/utils";
 
+import { BOOK_PANEL_CONTAINER, BOOK_PANEL_SURFACE } from "./layout";
+
 interface Props {
   book: BookDetail;
 }
@@ -876,8 +878,8 @@ export function VoiceView({ book }: Props) {
   const est: VoiceExtractionEstimate | undefined = estimate.data;
 
   return (
-    <div className="reader-surface h-full min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-5xl px-6 py-8">
+    <div className={BOOK_PANEL_SURFACE}>
+      <div className={cn(BOOK_PANEL_CONTAINER, "py-8")}>
         <div>
           <h2 className="font-serif text-xl font-medium text-ink-50">Character voices</h2>
           <p className="mt-1 max-w-2xl text-sm leading-relaxed text-ink-500">

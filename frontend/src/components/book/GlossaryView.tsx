@@ -12,6 +12,9 @@ import {
   useWorkingGlossary,
 } from "@/lib/api/hooks";
 import type { BookDetail } from "@/lib/api/client";
+import { cn } from "@/lib/utils";
+
+import { BOOK_PANEL_CONTAINER, BOOK_PANEL_SURFACE } from "./layout";
 
 interface Props {
   book: BookDetail;
@@ -50,8 +53,8 @@ export function GlossaryView({ book }: Props) {
   }, [book.glossary_extraction_status, book.id, queryClient]);
 
   return (
-    <div className="reader-surface h-full min-h-0 flex-1 overflow-y-auto">
-      <div className="mx-auto max-w-5xl px-6 py-8">
+    <div className={BOOK_PANEL_SURFACE}>
+      <div className={cn(BOOK_PANEL_CONTAINER, "py-8")}>
         <GlossaryExtractionWorkspace
           book={book}
           estimate={estimate}

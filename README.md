@@ -2,9 +2,9 @@
 
 **Translation that remembers.**
 
-Mneme is an open-source AI translation pipeline for fiction manuscripts. It keeps persistent state across the book—glossary, extraction memory, and (in later steps) voice and translator decisions—so the model is an assistant in a workflow, not a one-shot translator.
+Mneme is an open-source AI translation workspace for fiction manuscripts. It keeps persistent state across the book: manuscript structure, metadata, glossary decisions, speaker windows, and character voice profiles. The model is an assistant inside a reviewable workflow, not a one-shot translator.
 
-This repo is a working Docker stack (**Step 1** complete): upload a `.docx` manuscript, parse into chapters and paragraphs, persist to Postgres, and read it back in the web UI. Async metadata and glossary extraction (**Step 2**) and deeper author-in-the-loop flows are in active development.
+This repo is a working Docker stack: upload a `.docx`, parse it into chapters and paragraphs, persist it to Postgres, extract metadata, build a reviewable glossary, identify speaker windows, and draft per-character voice profiles. Fragment translation is the next major surface.
 
 **Repository:** [github.com/AgaMiko/mneme-book-translator](https://github.com/AgaMiko/mneme-book-translator)
 
@@ -15,20 +15,46 @@ This repo is a working Docker stack (**Step 1** complete): upload a `.docx` manu
 | API         | FastAPI · Pydantic v2 · SQLAlchemy 2.0 (async)  |
 | Persistence | PostgreSQL 16 · Alembic                         |
 | Parsing     | `python-docx`                                   |
+| LLM         | Gemini via `google-genai` · Langfuse tracing    |
 | Frontend    | Vite · React 18 · TypeScript · Tailwind         |
 | Data        | TanStack Query · Zod                            |
 | Tooling     | `uv` · `pnpm` · `ruff` · `mypy` · `just`        |
 | Container   | Docker Compose · multi-stage Dockerfiles        |
 
+## What works
+
+- Upload `.docx` manuscripts and preserve book/chapter/paragraph structure.
+- Extract title-adjacent metadata asynchronously after upload.
+- Estimate, start, stop, continue, and reset glossary extraction.
+- Review working glossary terms, translations, variants, and statuses.
+- Identify character speaker windows as the first pass of voice extraction.
+- Draft, review, edit, accept, reject, regenerate, and reset character voice profiles.
+- Keep long-running extraction state in Postgres so interrupted runs can be continued.
+
 ## Quickstart
 
 You need: Docker, Docker Compose, and (optionally) [`just`](https://github.com/casey/just).
 
+Create a local `.env` if you want LLM-backed extraction:
+
 ```bash
-cp .env.example .env
-just up           # or: docker compose up --build
-just migrate      # apply Alembic migrations
+GEMINI_API_KEY=...
+
+# Optional overrides
+GEMINI_MODEL=gemini-3.1-flash-lite-preview
+LANGFUSE_PUBLIC_KEY=...
+LANGFUSE_SECRET_KEY=...
+LANGFUSE_HOST=https://cloud.langfuse.com
 ```
+
+Start the stack:
+
+```bash
+just up
+# or: docker compose up --build
+```
+
+The API container runs Alembic migrations on startup.
 
 Then open:
 
@@ -45,14 +71,17 @@ Then open:
    :5177                :8000                :5432
 ```
 
-Three schema layers are kept deliberately separate (this matters more once the pipeline lands):
+Three schema layers are kept deliberately separate:
 
 ```
 backend/app/
-├── schemas/        # API contracts (request/response DTOs) — stable, FE-facing
-├── models/         # SQLAlchemy ORM — persistence shape
-└── pipeline/       # (next step) LLM I/O contracts — model-facing
-    └── schemas/
+├── schemas/        # API contracts (request/response DTOs) - FE-facing
+├── models/         # SQLAlchemy ORM - persistence shape
+└── generation/
+    ├── prompt_manager/
+    │   ├── models/  # LLM output schemas
+    │   └── prompts/ # prompt templates
+    └── chains/      # provider calls + structured output parsing
 ```
 
 ## Project layout
@@ -62,47 +91,53 @@ mneme-book-translator/
 ├── backend/                 # FastAPI app + Alembic
 │   ├── app/
 │   │   ├── api/routes/      # endpoints
+│   │   ├── constants/       # pipeline sizing and taxonomy
 │   │   ├── core/            # config, db, lifespan
+│   │   ├── generation/      # LLM schemas, prompts, providers, chains
 │   │   ├── models/          # SQLAlchemy
 │   │   ├── schemas/         # Pydantic API contracts
-│   │   └── services/        # business logic (parsing, persistence)
+│   │   └── services/        # business logic and pipeline orchestration
 │   ├── alembic/
 │   ├── pyproject.toml
 │   └── Dockerfile
 ├── frontend/                # Vite + React
 │   ├── src/
 │   │   ├── components/
-│   │   ├── lib/             # api client, utilities
+│   │   ├── constants/       # FE pipeline constants
+│   │   ├── hooks/
+│   │   ├── lib/             # API client, query hooks, utilities
 │   │   └── App.tsx
 │   ├── package.json
 │   └── Dockerfile
 ├── data/uploads/            # bind-mounted upload storage (gitignored)
 ├── docker-compose.yml
-├── .env.example
 └── justfile
 ```
 
 ## Common commands
 
 ```bash
-just up              # start the stack (detached)
+just up              # start the stack
 just down            # stop everything
 just logs <service>  # tail logs (api | postgres | frontend)
 just shell api       # exec into the API container
 just migrate         # run alembic upgrade head
 just makemigration "msg"  # autogenerate migration
-just reset-db        # drop + recreate (destructive; prompts)
+just reset-db        # drop + recreate Postgres data (destructive; prompts)
 just fmt             # ruff + prettier
 just lint            # ruff + mypy + tsc
+just test            # backend pytest
+just gen-client      # regenerate TS API types from OpenAPI
 ```
 
 ## Roadmap
 
 - [x] Step 1 — Upload `.docx`, parse, persist, display
-- [ ] Step 2 — Async metadata extraction; glossary chain (delta-shaped, iterative) *(in progress)*
-- [ ] Step 3 — Author glossary review UI + acceptance flow
-- [ ] Step 4 — Fragment translation with context windows + per-character voice
-- [ ] Step 5 — Problematic-fragment detection + author flag review
+- [x] Step 2 — Async metadata extraction and iterative glossary extraction
+- [x] Step 3 — Author glossary review UI and acceptance flow
+- [x] Step 4 — Speaker identification and character voice profile extraction
+- [ ] Step 5 — Fragment translation with context windows, accepted glossary, and voice memory
+- [ ] Step 6 — Problematic-fragment detection and author flag review
 
 ## License
 

@@ -1,21 +1,20 @@
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, ArrowLeft, Check, Lock } from "lucide-react";
 
-import type {
-  BookDetail,
-  GlossaryExtractionStatus,
-  MetadataStatus,
-  SpeakersExtractionStatus,
-  VoiceExtractionStatus,
-} from "@/lib/api/client";
+import { Button } from "@/components/ui/Button";
+import { ThemeToggle } from "@/components/ui/ThemeToggle";
+import type { BookDetail } from "@/lib/api/client";
 import { cn, formatNumber } from "@/lib/utils";
 
-import type { BookTab } from "./tabs";
+import { computeNextAction } from "./nextAction";
+import type { BookTab, TabCounts, TabState } from "./tabs";
 import { BOOK_TABS } from "./tabs";
 
 interface Props {
   book: BookDetail;
   activeTab: BookTab;
   onSelectTab: (tab: BookTab) => void;
+  onBack: () => void;
+  counts: TabCounts;
 }
 
 /**
@@ -23,49 +22,73 @@ interface Props {
  * only the content area below it swaps. That stability is what makes
  * tab switching feel like navigating sections of one book, instead of
  * the page eating itself.
+ *
+ * Three things live here that used to be spread across the app: the way
+ * back to the library, the pipeline (as tabs that report their own
+ * state), and the single primary action for whatever comes next.
  */
-export function BookHeader({ book, activeTab, onSelectTab }: Props) {
+export function BookHeader({ book, activeTab, onSelectTab, onBack, counts }: Props) {
   const language = (book.manuscript_language ?? book.source_language).toUpperCase();
-  const voicesLocked = book.glossary_extraction_status !== "completed";
+  const nextAction = computeNextAction(book, activeTab, onSelectTab);
+  const failures = collectFailures(book);
 
   return (
-    <header className="border-b border-ink-800 bg-ink-900/95 backdrop-blur-sm">
-      <div className="mx-auto max-w-5xl px-6 pt-6">
-        {/* Title + metadata block */}
-        <div className="flex flex-wrap items-center gap-3">
-          <p className="font-mono text-xs uppercase tracking-widest text-ink-400">
-            {language} · {formatNumber(book.word_count)} words
-          </p>
-          <MetadataPill status={book.metadata_status} />
-          <GlossaryExtractionPill
-            status={book.glossary_extraction_status}
-            windowsCompleted={book.glossary_extraction_windows_completed ?? null}
-            windowsTotal={book.glossary_extraction_windows_total ?? null}
-          />
-          {!voicesLocked && (
-            <>
-              <SpeakersExtractionPill
-                status={book.speakers_extraction_status}
-                windowsCompleted={book.speakers_extraction_windows_completed ?? null}
-                windowsTotal={book.speakers_extraction_windows_total ?? null}
-              />
-              <VoiceExtractionPill
-                status={book.voice_extraction_status}
-                windowsCompleted={book.voice_extraction_windows_completed ?? null}
-                windowsTotal={book.voice_extraction_windows_total ?? null}
-              />
-            </>
+    <header className="border-b border-ink-800 bg-ink-900 backdrop-blur-sm">
+      <div className="mx-auto max-w-5xl px-6 pt-3">
+        {/* Top bar: back to library on the left, chrome on the right. */}
+        <div className="flex items-center justify-between gap-3">
+          <Button variant="ghost" size="sm" onClick={onBack} className="-ml-2 px-2">
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+            Library
+          </Button>
+          <div className="flex items-center gap-3">
+            <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
+              {book.source_language} → {book.target_language}
+            </p>
+            <ThemeToggle />
+          </div>
+        </div>
+
+        {/* Title block */}
+        <div className="mt-3 flex flex-wrap items-end justify-between gap-4">
+          <div className="min-w-0">
+            <p className="font-mono text-[10px] uppercase tracking-widest text-ink-400">
+              {language} · {formatNumber(book.word_count)} words
+            </p>
+            <h1 className="mt-1 font-serif text-3xl font-semibold text-ink-50">{book.title}</h1>
+            {book.author && (
+              <p className="mt-0.5 font-serif italic text-ink-300">by {book.author}</p>
+            )}
+            <p className="mt-1 font-mono text-xs text-ink-500">{book.original_filename}</p>
+          </div>
+          {nextAction && (
+            <Button variant="primary" size="sm" onClick={nextAction.onClick}>
+              {nextAction.label}
+            </Button>
           )}
         </div>
-        <h1 className="mt-2 font-serif text-3xl font-semibold text-ink-50">{book.title}</h1>
-        {book.author && <p className="mt-0.5 font-serif italic text-ink-300">by {book.author}</p>}
-        <p className="mt-1 font-mono text-xs text-ink-500">{book.original_filename}</p>
 
-        {/* Tab strip */}
-        <nav className="-mb-px mt-6 flex gap-1" role="tablist" aria-label="Book sections">
+        {/* One alert for every failed step, rather than a pill each. */}
+        {failures.length > 0 && (
+          <div
+            role="alert"
+            className={cn(
+              "mt-3 flex items-start gap-2 rounded-lg border border-danger-border bg-danger-surface",
+              "px-3 py-2 text-xs leading-relaxed text-danger",
+            )}
+          >
+            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
+            <span>{failures.join(" · ")}. Open the step to retry — partial results are kept.</span>
+          </div>
+        )}
+
+        {/* Tab strip — the pipeline. Two lines per tab: state + label,
+            then a caption reporting what is inside. */}
+        <nav className="-mb-px mt-4 flex gap-1" role="tablist" aria-label="Book sections">
           {BOOK_TABS.map((t) => {
             const active = t.id === activeTab;
-            const tabDisabled = t.disabled || (t.id === "voices" && voicesLocked);
+            const state = t.state(book, counts);
+            const tabDisabled = t.disabled || state === "locked";
             return (
               <button
                 key={t.id}
@@ -76,26 +99,34 @@ export function BookHeader({ book, activeTab, onSelectTab }: Props) {
                 disabled={tabDisabled}
                 onClick={() => !tabDisabled && onSelectTab(t.id)}
                 className={cn(
-                  "relative -mb-px border-b-2 px-4 py-3 font-mono text-xs uppercase tracking-wider",
+                  "relative -mb-px min-w-[9.5rem] px-[18px] pb-[11px] pt-3 text-left",
                   "transition-colors duration-150 ease-out",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                  // The whole shorthand in both branches — a longhand
+                  // override on top of a shorthand base leaves the
+                  // bottom colour unset, which resolves to white.
                   active
-                    ? "border-accent text-ink-50"
-                    : "border-transparent text-ink-400 hover:text-ink-100",
-                  tabDisabled && "cursor-not-allowed text-ink-600 hover:text-ink-600",
+                    ? "border-b-2 border-b-accent border-solid"
+                    : "border-b-2 border-b-transparent border-solid",
+                  tabDisabled && "cursor-not-allowed",
                 )}
               >
-                <span>{t.label}</span>
-                {t.id === "voices" && voicesLocked && (
-                  <span className="ml-2 rounded bg-ink-800 px-1.5 py-0.5 text-[9px] text-ink-500">
-                    glossary first
+                <span className="flex items-center gap-2">
+                  <TabBadge state={state} index={BOOK_TABS.indexOf(t) + 1} />
+                  <span
+                    className={cn(
+                      "font-sans text-[13px] font-medium",
+                      active ? "text-ink-50" : tabDisabled ? "text-ink-500" : "text-ink-200",
+                    )}
+                  >
+                    {t.label}
                   </span>
-                )}
-                {t.id === "translation" && t.disabled && (
-                  <span className="ml-2 rounded bg-ink-800 px-1.5 py-0.5 text-[9px] text-ink-500">
-                    soon
-                  </span>
-                )}
+                </span>
+                {/* Indented past the badge so the caption hangs under the
+                    label rather than under the step marker. */}
+                <span className="mt-1 block truncate pl-[26px] font-mono text-[10px] tracking-wide text-ink-500">
+                  {t.caption(book, counts)}
+                </span>
               </button>
             );
           })}
@@ -106,190 +137,51 @@ export function BookHeader({ book, activeTab, onSelectTab }: Props) {
 }
 
 /**
- * Status pill base — semantic tokens (success/warning/danger) that
- * resolve to mode-appropriate colors via CSS variables.
+ * Numeral when the step hasn't run, check when it's done, padlock when
+ * it's out of reach, pulse while it's in flight. The badge is the only
+ * status indicator the header needs.
  */
-const pillBase =
-  "inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 font-mono text-[10px] uppercase tracking-wider";
+function TabBadge({ state, index }: { state: TabState; index: number }) {
+  const base =
+    "flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border font-mono text-[9px] tabular-nums";
 
-function MetadataPill({ status }: { status: MetadataStatus }) {
-  if (status === "ready") return null;
-
-  if (status === "pending") {
+  if (state === "done") {
     return (
-      <span className={cn(pillBase, "bg-ink-800 text-ink-300")}>
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
-        extracting metadata…
+      <span
+        className={cn(base, "border-success-border bg-success-surface text-success")}
+        aria-label="completed"
+      >
+        <Check className="h-2.5 w-2.5" aria-hidden />
       </span>
     );
   }
-
+  if (state === "locked") {
+    return (
+      <span className={cn(base, "border-ink-700 text-ink-600")} aria-label="locked">
+        <Lock className="h-2.5 w-2.5" aria-hidden />
+      </span>
+    );
+  }
+  if (state === "active") {
+    return (
+      <span className={cn(base, "border-accent bg-accent-soft text-accent")} aria-label="running">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
+      </span>
+    );
+  }
   return (
-    <span className={cn(pillBase, "border border-danger-border bg-danger-surface text-danger")}>
-      <AlertCircle className="h-3 w-3" aria-hidden />
-      metadata extraction failed
+    <span className={cn(base, "border-ink-700 text-ink-400")} aria-hidden>
+      {index}
     </span>
   );
 }
 
-function GlossaryExtractionPill({
-  status,
-  windowsCompleted,
-  windowsTotal,
-}: {
-  status: GlossaryExtractionStatus;
-  windowsCompleted: number | null;
-  windowsTotal: number | null;
-}) {
-  if (status === "idle") return null;
-
-  if (status === "running") {
-    const progress =
-      windowsTotal != null && windowsTotal > 0 ? ` ${windowsCompleted ?? 0}/${windowsTotal}` : "";
-    return (
-      <span className={cn(pillBase, "bg-ink-800 text-ink-300")}>
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
-        glossary extraction…{progress}
-      </span>
-    );
-  }
-
-  if (status === "completed") {
-    return (
-      <span
-        className={cn(pillBase, "border border-success-border bg-success-surface text-success")}
-      >
-        glossary saved
-      </span>
-    );
-  }
-
-  if (status === "cancelled") {
-    const tail =
-      windowsTotal != null && windowsTotal > 0
-        ? ` after ${windowsCompleted ?? 0}/${windowsTotal}`
-        : "";
-    return (
-      <span
-        className={cn(pillBase, "border border-warning-border bg-warning-surface text-warning")}
-      >
-        glossary stopped{tail}
-      </span>
-    );
-  }
-
-  return (
-    <span className={cn(pillBase, "border border-danger-border bg-danger-surface text-danger")}>
-      <AlertCircle className="h-3 w-3" aria-hidden />
-      glossary failed
-    </span>
-  );
-}
-
-function SpeakersExtractionPill({
-  status,
-  windowsCompleted,
-  windowsTotal,
-}: {
-  status: SpeakersExtractionStatus;
-  windowsCompleted: number | null;
-  windowsTotal: number | null;
-}) {
-  if (status === "idle") return null;
-
-  if (status === "running") {
-    const progress =
-      windowsTotal != null && windowsTotal > 0 ? ` ${windowsCompleted ?? 0}/${windowsTotal}` : "";
-    return (
-      <span className={cn(pillBase, "bg-ink-800 text-ink-300")}>
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
-        speakers…{progress}
-      </span>
-    );
-  }
-
-  if (status === "completed") {
-    return (
-      <span
-        className={cn(pillBase, "border border-success-border bg-success-surface text-success")}
-      >
-        speakers mapped
-      </span>
-    );
-  }
-
-  if (status === "cancelled") {
-    const tail =
-      windowsTotal != null && windowsTotal > 0
-        ? ` after ${windowsCompleted ?? 0}/${windowsTotal}`
-        : "";
-    return (
-      <span
-        className={cn(pillBase, "border border-warning-border bg-warning-surface text-warning")}
-      >
-        speakers stopped{tail}
-      </span>
-    );
-  }
-
-  return (
-    <span className={cn(pillBase, "border border-danger-border bg-danger-surface text-danger")}>
-      <AlertCircle className="h-3 w-3" aria-hidden />
-      speakers failed
-    </span>
-  );
-}
-
-function VoiceExtractionPill({
-  status,
-  windowsCompleted,
-  windowsTotal,
-}: {
-  status: VoiceExtractionStatus;
-  windowsCompleted: number | null;
-  windowsTotal: number | null;
-}) {
-  if (status === "idle") return null;
-
-  if (status === "running") {
-    const progress =
-      windowsTotal != null && windowsTotal > 0 ? ` ${windowsCompleted ?? 0}/${windowsTotal}` : "";
-    return (
-      <span className={cn(pillBase, "bg-ink-800 text-ink-300")}>
-        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-accent" aria-hidden />
-        voice extraction…{progress}
-      </span>
-    );
-  }
-
-  if (status === "completed") {
-    return (
-      <span
-        className={cn(pillBase, "border border-success-border bg-success-surface text-success")}
-      >
-        voices saved
-      </span>
-    );
-  }
-
-  if (status === "cancelled") {
-    const tail =
-      windowsTotal != null && windowsTotal > 0
-        ? ` after ${windowsCompleted ?? 0}/${windowsTotal}`
-        : "";
-    return (
-      <span
-        className={cn(pillBase, "border border-warning-border bg-warning-surface text-warning")}
-      >
-        voices stopped{tail}
-      </span>
-    );
-  }
-
-  return (
-    <span className={cn(pillBase, "border border-danger-border bg-danger-surface text-danger")}>
-      <AlertCircle className="h-3 w-3" aria-hidden />
-      voices failed
-    </span>
-  );
+/** Human names for whichever pipeline steps are in a failed state. */
+function collectFailures(book: BookDetail): string[] {
+  const failures: string[] = [];
+  if (book.metadata_status === "failed") failures.push("Metadata extraction failed");
+  if (book.glossary_extraction_status === "failed") failures.push("Glossary extraction failed");
+  if (book.speakers_extraction_status === "failed") failures.push("Speaker identification failed");
+  if (book.voice_extraction_status === "failed") failures.push("Voice extraction failed");
+  return failures;
 }

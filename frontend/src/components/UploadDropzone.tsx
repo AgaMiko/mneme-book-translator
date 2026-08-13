@@ -98,7 +98,7 @@ export function UploadDropzone({ onUploaded }: Props) {
       {error && (
         <div
           role="alert"
-          className="flex items-start gap-2 rounded-md border border-danger-border bg-danger-surface px-3 py-2 text-xs text-danger"
+          className="flex items-start gap-2 rounded-lg border border-danger-border bg-danger-surface px-3 py-2 text-xs text-danger"
         >
           <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
           <span>{error}</span>

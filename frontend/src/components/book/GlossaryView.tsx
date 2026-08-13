@@ -1,10 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { useEffect, useRef } from "react";
 
-import {
-  GlossaryExtractionActionBar,
-  GlossaryExtractionWorkspace,
-} from "@/components/GlossaryExtractionWorkspace";
+import { GlossaryExtractionWorkspace } from "@/components/GlossaryExtractionWorkspace";
 import { GlossaryReviewPanel } from "@/components/GlossaryReviewPanel";
 import {
   bookKeys,
@@ -12,6 +9,7 @@ import {
   useGlossaryExtractionEstimate,
   useStartGlossaryExtraction,
   useStopGlossaryExtraction,
+  useWorkingGlossary,
 } from "@/lib/api/hooks";
 import type { BookDetail } from "@/lib/api/client";
 
@@ -20,8 +18,9 @@ interface Props {
 }
 
 /**
- * The working surface. Composes extraction controls (top) and the live
- * glossary table (below) as scrolling sections of one page.
+ * The working surface. The run card sits at the top of the scroll area
+ * and the terms follow immediately below it — no sticky bar, no jump
+ * links, because there is nothing between them to jump over.
  */
 export function GlossaryView({ book }: Props) {
   const queryClient = useQueryClient();
@@ -29,7 +28,15 @@ export function GlossaryView({ book }: Props) {
   const startGlossary = useStartGlossaryExtraction(book.id);
   const continueGlossary = useContinueGlossaryExtraction(book.id);
   const stopGlossary = useStopGlossaryExtraction(book.id);
-  const termsRef = useRef<HTMLDivElement | null>(null);
+  /**
+   * Same query key the review panel below uses — react-query serves both
+   * from one fetch, so the run card can name the run without a second
+   * request.
+   */
+  const working = useWorkingGlossary(book.id, {
+    enabled: true,
+    refetchIntervalMs: book.glossary_extraction_status === "running" ? 2000 : false,
+  });
 
   const prevStatus = useRef<string | null>(null);
   useEffect(() => {
@@ -42,43 +49,25 @@ export function GlossaryView({ book }: Props) {
     }
   }, [book.glossary_extraction_status, book.id, queryClient]);
 
-  const actionBarEnabled = Boolean(estimate.data && estimate.data.window_count > 0);
-
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="reader-surface flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-5xl px-6 py-10">
-          <GlossaryExtractionWorkspace
-            book={book}
-            estimate={estimate}
-            startGlossary={startGlossary}
-            continueGlossary={continueGlossary}
-            stopGlossary={stopGlossary}
-            onOpenTerms={() => {
-              termsRef.current?.scrollIntoView({
-                behavior: "smooth",
-                block: "start",
-              });
-            }}
+    <div className="reader-surface h-full min-h-0 flex-1 overflow-y-auto">
+      <div className="mx-auto max-w-5xl px-6 py-8">
+        <GlossaryExtractionWorkspace
+          book={book}
+          estimate={estimate}
+          startGlossary={startGlossary}
+          continueGlossary={continueGlossary}
+          stopGlossary={stopGlossary}
+          run={working.data?.run ?? null}
+        />
+
+        <div className="mt-8">
+          <GlossaryReviewPanel
+            bookId={book.id}
+            pollWhileRunning={book.glossary_extraction_status === "running"}
           />
-
-          <div className="my-12 border-t border-ink-800" />
-
-          <div ref={termsRef} className="scroll-mt-6">
-            <GlossaryReviewPanel
-              bookId={book.id}
-              pollWhileRunning={book.glossary_extraction_status === "running"}
-            />
-          </div>
         </div>
       </div>
-      <GlossaryExtractionActionBar
-        book={book}
-        startGlossary={startGlossary}
-        continueGlossary={continueGlossary}
-        stopGlossary={stopGlossary}
-        enabled={actionBarEnabled}
-      />
     </div>
   );
 }

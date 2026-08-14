@@ -1,5 +1,5 @@
 import { useCallback, useRef, useState, type DragEvent } from "react";
-import { FileUp, Loader2, AlertCircle } from "lucide-react";
+import { AlertCircle, FileUp, Loader2, Plus } from "lucide-react";
 
 import { useUploadBook } from "@/lib/api/hooks";
 import { ApiError } from "@/lib/api/client";
@@ -42,7 +42,13 @@ export function UploadDropzone({ onUploaded }: Props) {
   const isUploading = upload.isPending;
 
   return (
-    <div className="space-y-2">
+    <div>
+      {/*
+       * A bar, not a panel. On the library screen the list of manuscripts
+       * is the subject; upload is one action above it and should occupy an
+       * action's worth of space. Dropping still works — the whole bar is
+       * the drop target — so the affordance is not lost by shrinking it.
+       */}
       <label
         onDragEnter={(e) => {
           e.preventDefault();
@@ -55,14 +61,12 @@ export function UploadDropzone({ onUploaded }: Props) {
         onDragLeave={() => setDragOver(false)}
         onDrop={onDrop}
         className={cn(
-          "flex flex-col items-center justify-center gap-2 rounded-lg",
-          "border border-dashed py-8 px-4 cursor-pointer text-center",
-          "transition-colors duration-150 ease-out",
-          "focus-within:ring-2 focus-within:ring-accent focus-within:ring-offset-2",
-          "focus-within:ring-offset-ink-900",
+          "flex h-[38px] w-full cursor-pointer items-center justify-center gap-2 rounded-lg border",
+          "text-[13px] font-medium transition-colors duration-150 ease-out",
+          "focus-within:outline-none focus-within:ring-2 focus-within:ring-accent",
           dragOver
-            ? "border-accent bg-accent-soft"
-            : "border-ink-600 hover:border-ink-500 hover:bg-ink-800",
+            ? "border-accent bg-accent-soft text-accent"
+            : "border-ink-700 bg-ink-800 text-ink-100 hover:border-accent",
           isUploading && "pointer-events-none opacity-70",
         )}
       >
@@ -80,25 +84,26 @@ export function UploadDropzone({ onUploaded }: Props) {
         />
         {isUploading ? (
           <>
-            <Loader2 className="h-5 w-5 animate-spin text-accent" />
-            <span className="text-sm text-ink-200">Parsing manuscript…</span>
+            <Loader2 className="h-[15px] w-[15px] animate-spin text-accent" aria-hidden />
+            Parsing manuscript…
           </>
         ) : (
           <>
-            <FileUp className="h-5 w-5 text-ink-300" aria-hidden />
-            <span className="text-sm text-ink-100">
-              <span className="font-medium text-accent">Choose a file</span>
-              <span className="text-ink-300"> or drag a .docx here</span>
-            </span>
-            <span className="text-xs text-ink-400">Up to 50 MB</span>
+            {dragOver ? (
+              <FileUp className="h-[15px] w-[15px]" aria-hidden />
+            ) : (
+              <Plus className="h-[15px] w-[15px] text-accent" aria-hidden />
+            )}
+            {dragOver ? "Drop to upload" : "Upload manuscript"}
           </>
         )}
       </label>
+      <p className="mt-2 text-center text-xs text-ink-500">or drop a .docx here · max 50 MB</p>
 
       {error && (
         <div
           role="alert"
-          className="flex items-start gap-2 rounded-md border border-danger-border bg-danger-surface px-3 py-2 text-xs text-danger"
+          className="mt-2 flex items-start gap-2 rounded-lg border border-danger-border bg-danger-surface px-3 py-2 text-xs text-danger"
         >
           <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
           <span>{error}</span>

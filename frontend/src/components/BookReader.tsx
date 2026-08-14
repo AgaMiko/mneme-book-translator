@@ -1,24 +1,78 @@
+import { useCallback, useMemo, useState } from "react";
+
 import { BookHeader } from "@/components/book/BookHeader";
+import { ChapterRail } from "@/components/book/ChapterRail";
 import { GlossaryView } from "@/components/book/GlossaryView";
 import { ManuscriptView } from "@/components/book/ManuscriptView";
-import { BOOK_TAB_IDS, DEFAULT_BOOK_TAB } from "@/components/book/tabs";
+import { BOOK_TAB_IDS, DEFAULT_BOOK_TAB, type TabCounts } from "@/components/book/tabs";
 import { TranslationView } from "@/components/book/TranslationView";
 import { VoiceView } from "@/components/book/VoiceView";
-import { WorkflowHint } from "@/components/book/WorkflowHint";
 import { useBookTab } from "@/hooks/useBookTab";
-import { useBook } from "@/lib/api/hooks";
+import { useBook, useWorkingGlossary, useWorkingVoices } from "@/lib/api/hooks";
 
 interface Props {
   bookId: string;
+  onBack: () => void;
 }
 
 /**
- * Thin shell. Orchestrates loading, tab state, and which section to
- * render. All real content lives in `components/book/`.
+ * Thin shell. Orchestrates loading, tab state, the persistent chapter
+ * rail, and which section to render. All real content lives in
+ * `components/book/`.
  */
-export function BookReader({ bookId }: Props) {
+export function BookReader({ bookId, onBack }: Props) {
   const { data: book, isLoading, isError } = useBook(bookId);
   const [activeTab, setActiveTab] = useBookTab(bookId, BOOK_TAB_IDS, DEFAULT_BOOK_TAB);
+
+  /**
+   * Which chapter is in view. Owned here rather than in `ManuscriptView`
+   * so the rail can read it from any tab, and so it survives the
+   * manuscript unmounting while you work in the glossary.
+   */
+  const [activeChapter, setActiveChapter] = useState<string | null>(null);
+  const [chapterScrollTarget, setChapterScrollTarget] = useState<string | null>(null);
+
+  /**
+   * Counts for the tab captions. Both queries are already mounted by the
+   * panels themselves — react-query dedupes on the same key, so reading
+   * them here costs nothing extra.
+   */
+  const glossary = useWorkingGlossary(bookId, {
+    enabled: true,
+    refetchIntervalMs: book?.glossary_extraction_status === "running" ? 2000 : false,
+  });
+  const voices = useWorkingVoices(bookId, {
+    enabled: book?.glossary_extraction_status === "completed",
+    refetchIntervalMs: book?.voice_extraction_status === "running" ? 1500 : false,
+  });
+
+  const counts: TabCounts = useMemo(() => {
+    const glossaryEntries = glossary.data?.entries ?? [];
+    const voiceEntries = voices.data?.entries ?? [];
+    const pendingOf = (entries: readonly { status: string }[]) =>
+      entries.filter((e) => e.status === "proposed" || e.status === "adjusted").length;
+    return {
+      glossaryTotal: glossaryEntries.length,
+      glossaryPending: pendingOf(glossaryEntries),
+      voicesTotal: voiceEntries.length,
+      voicesPending: pendingOf(voiceEntries),
+    };
+  }, [glossary.data?.entries, voices.data?.entries]);
+
+  /**
+   * Picking a chapter from a working tab means "take me back to the text
+   * there" — switch to the manuscript, then scroll once it mounts.
+   */
+  const handleSelectChapter = useCallback(
+    (chapterDomId: string) => {
+      setActiveChapter(chapterDomId);
+      setChapterScrollTarget(chapterDomId);
+      setActiveTab("manuscript");
+    },
+    [setActiveTab],
+  );
+
+  const handleScrollHandled = useCallback(() => setChapterScrollTarget(null), []);
 
   if (isLoading) {
     return (
@@ -42,15 +96,30 @@ export function BookReader({ bookId }: Props) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <BookHeader book={book} activeTab={activeTab} onSelectTab={setActiveTab} />
-      <WorkflowHint book={book} activeTab={activeTab} onSelectTab={setActiveTab} />
+    <div className="flex h-full min-h-0 w-full flex-col">
+      <BookHeader
+        book={book}
+        activeTab={activeTab}
+        onSelectTab={setActiveTab}
+        onBack={onBack}
+        counts={counts}
+      />
 
-      <div className="min-h-0 flex-1">
-        {activeTab === "manuscript" && <ManuscriptView book={book} />}
-        {activeTab === "glossary" && <GlossaryView book={book} />}
-        {activeTab === "voices" && <VoiceView book={book} />}
-        {activeTab === "translation" && <TranslationView />}
+      <div className="flex min-h-0 flex-1">
+        <ChapterRail book={book} activeChapterId={activeChapter} onSelect={handleSelectChapter} />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {activeTab === "manuscript" && (
+            <ManuscriptView
+              book={book}
+              onActiveChapterChange={setActiveChapter}
+              scrollTarget={chapterScrollTarget}
+              onScrollHandled={handleScrollHandled}
+            />
+          )}
+          {activeTab === "glossary" && <GlossaryView book={book} />}
+          {activeTab === "voices" && <VoiceView book={book} />}
+          {activeTab === "translation" && <TranslationView />}
+        </div>
       </div>
     </div>
   );

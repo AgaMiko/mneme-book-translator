@@ -24,7 +24,7 @@ export function ThemeToggle({ className }: Props) {
       title={isDark ? "Switch to light mode" : "Switch to dark mode"}
       aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
       className={cn(
-        "inline-flex h-7 w-7 items-center justify-center rounded-md",
+        "inline-flex h-7 w-7 items-center justify-center rounded-lg",
         "text-ink-400 transition-colors duration-150 ease-out",
         "hover:bg-ink-700 hover:text-ink-100",
         "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",

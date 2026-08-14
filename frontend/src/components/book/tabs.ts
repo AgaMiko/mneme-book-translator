@@ -1,21 +1,131 @@
+import type { BookDetail } from "@/lib/api/client";
+import { formatNumber } from "@/lib/utils";
+
 /**
  * Sections of an open book — single source of truth.
  *
- * `Voices` unlocks after glossary extraction completes (canonical characters exist).
- * `Translation` is visible-but-disabled rather than hidden, on purpose.
+ * The tabs double as the pipeline: each one reports where its step
+ * stands (`state`) and a one-line summary of what is inside (`caption`).
+ * That is why the header no longer needs a row of status pills — the
+ * navigation itself carries the state.
+ *
+ * `Voices` unlocks after glossary extraction completes (canonical
+ * characters exist). `Translation` is visible-but-locked rather than
+ * hidden, on purpose.
  */
-export const BOOK_TABS = [
-  { id: "manuscript", label: "Manuscript", disabled: false },
-  { id: "glossary", label: "Glossary", disabled: false },
-  { id: "voices", label: "Voices", disabled: false },
-  { id: "translation", label: "Translation", disabled: true },
-] as const satisfies readonly {
-  id: string;
+
+/**
+ * `done` — the step finished. `active` — a run is in flight.
+ * `idle` — reachable but not started. `locked` — a prerequisite is missing.
+ */
+export type TabState = "done" | "active" | "idle" | "locked";
+
+/** Review counts the header needs for the captions. */
+export interface TabCounts {
+  glossaryTotal: number;
+  glossaryPending: number;
+  voicesTotal: number;
+  voicesPending: number;
+}
+
+export const EMPTY_TAB_COUNTS: TabCounts = {
+  glossaryTotal: 0,
+  glossaryPending: 0,
+  voicesTotal: 0,
+  voicesPending: 0,
+};
+
+export interface BookTabDef {
+  id: "manuscript" | "glossary" | "voices" | "translation";
   label: string;
   disabled: boolean;
-}[];
+  state: (book: BookDetail, counts: TabCounts) => TabState;
+  caption: (book: BookDetail, counts: TabCounts) => string;
+}
 
-export type BookTab = (typeof BOOK_TABS)[number]["id"];
+/** `3/48` when a run reports window progress, otherwise "". */
+function windowProgress(completed: number | null | undefined, total: number | null | undefined) {
+  if (total == null || total <= 0) return "";
+  return `${completed ?? 0}/${total}`;
+}
+
+export const BOOK_TABS: readonly BookTabDef[] = [
+  {
+    id: "manuscript",
+    label: "Manuscript",
+    disabled: false,
+    // The text is always there — parsing happens at upload.
+    state: () => "done",
+    caption: (b) =>
+      `${formatNumber(b.chapters.length)} chapter${b.chapters.length === 1 ? "" : "s"} · ${formatNumber(b.word_count)} words`,
+  },
+  {
+    id: "glossary",
+    label: "Glossary",
+    disabled: false,
+    state: (b) => {
+      if (b.glossary_extraction_status === "completed") return "done";
+      if (b.glossary_extraction_status === "running") return "active";
+      return "idle";
+    },
+    caption: (b, counts) => {
+      if (b.glossary_extraction_status === "running") {
+        const p = windowProgress(
+          b.glossary_extraction_windows_completed,
+          b.glossary_extraction_windows_total,
+        );
+        return p ? `extracting · pass ${p}` : "extracting…";
+      }
+      if (b.glossary_extraction_status === "idle") return "not started";
+      if (counts.glossaryTotal === 0) return "no terms yet";
+      return `${formatNumber(counts.glossaryTotal)} terms · ${formatNumber(counts.glossaryPending)} pending`;
+    },
+  },
+  {
+    id: "voices",
+    label: "Voices",
+    disabled: false,
+    state: (b) => {
+      if (b.glossary_extraction_status !== "completed") return "locked";
+      if (b.voice_extraction_status === "running" || b.speakers_extraction_status === "running") {
+        return "active";
+      }
+      if (b.voice_extraction_status === "completed") return "done";
+      return "idle";
+    },
+    caption: (b, counts) => {
+      if (b.glossary_extraction_status !== "completed") return "glossary first";
+      if (b.speakers_extraction_status === "running") {
+        const p = windowProgress(
+          b.speakers_extraction_windows_completed,
+          b.speakers_extraction_windows_total,
+        );
+        return p ? `pass 1 · window ${p}` : "pass 1 running…";
+      }
+      if (b.voice_extraction_status === "running") {
+        const p = windowProgress(
+          b.voice_extraction_windows_completed,
+          b.voice_extraction_windows_total,
+        );
+        return p ? `pass 2 · window ${p}` : "pass 2 running…";
+      }
+      if (counts.voicesTotal > 0) {
+        return `${formatNumber(counts.voicesTotal)} profiles · ${formatNumber(counts.voicesPending)} pending`;
+      }
+      if (b.speakers_extraction_status === "completed") return "speakers mapped";
+      return "not started";
+    },
+  },
+  {
+    id: "translation",
+    label: "Translation",
+    disabled: true,
+    state: () => "locked",
+    caption: () => "coming next",
+  },
+];
+
+export type BookTab = BookTabDef["id"];
 
 export const BOOK_TAB_IDS: readonly BookTab[] = BOOK_TABS.map((t) => t.id);
 

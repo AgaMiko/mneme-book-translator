@@ -9,10 +9,17 @@ interface Props {
   onUploaded?: (bookId: string) => void;
 }
 
+const SOURCE_LANGUAGES = [
+  { value: "pl", label: "Polish" },
+  { value: "de", label: "German" },
+  { value: "en", label: "English" },
+];
+
 export function UploadDropzone({ onUploaded }: Props) {
   const upload = useUploadBook();
   const [dragOver, setDragOver] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sourceLanguage, setSourceLanguage] = useState("pl");
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleFile = useCallback(
@@ -22,14 +29,17 @@ export function UploadDropzone({ onUploaded }: Props) {
         setError("Only .docx manuscripts are supported.");
         return;
       }
-      upload.mutate(file, {
-        onSuccess: (data) => onUploaded?.(data.book.id),
-        onError: (err) => {
-          setError(err instanceof ApiError ? err.detail : "Upload failed.");
+      upload.mutate(
+        { file, sourceLanguage },
+        {
+          onSuccess: (data) => onUploaded?.(data.book.id),
+          onError: (err) => {
+            setError(err instanceof ApiError ? err.detail : "Upload failed.");
+          },
         },
-      });
+      );
     },
-    [upload, onUploaded],
+    [upload, onUploaded, sourceLanguage],
   );
 
   const onDrop = (e: DragEvent<HTMLLabelElement>) => {
@@ -43,6 +53,22 @@ export function UploadDropzone({ onUploaded }: Props) {
 
   return (
     <div className="space-y-2">
+      <label htmlFor="source-language" className="text-xs text-ink-300">
+        Manuscript language
+      </label>
+      <select
+        id="source-language"
+        value={sourceLanguage}
+        onChange={(e) => setSourceLanguage(e.target.value)}
+        disabled={isUploading}
+        className="w-full rounded-md border border-ink-600 bg-ink-800 px-2 py-1.5 text-sm text-ink-100"
+      >
+        {SOURCE_LANGUAGES.map((lang) => (
+          <option key={lang.value} value={lang.value}>
+            {lang.label}
+          </option>
+        ))}
+      </select>
       <label
         onDragEnter={(e) => {
           e.preventDefault();

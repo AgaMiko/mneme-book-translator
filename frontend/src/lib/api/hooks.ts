@@ -131,10 +131,14 @@ export function usePatchGlossaryWorkingEntry(
   });
 }
 
-export function useUploadBook(): UseMutationResult<UploadBookResponse, Error, File> {
+export function useUploadBook(): UseMutationResult<
+  UploadBookResponse,
+  Error,
+  { file: File; sourceLanguage?: string }
+> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: api.uploadBook,
+    mutationFn: ({ file, sourceLanguage }) => api.uploadBook(file, sourceLanguage),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: bookKeys.lists() });
     },

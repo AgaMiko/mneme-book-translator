@@ -431,10 +431,9 @@ export const api = {
       GlossaryExtractionStopResponseSchema,
     ),
 
-  uploadBook: async (file: File, sourceLanguage?: string): Promise<UploadBookResponse> => {
+  uploadBook: async (file: File): Promise<UploadBookResponse> => {
     const fd = new FormData();
     fd.append("file", file);
-    if (sourceLanguage) fd.append("source_language", sourceLanguage);
     return handleResponse(
       await fetch(`${API_URL}/books`, { method: "POST", body: fd }),
       UploadBookResponseSchema,

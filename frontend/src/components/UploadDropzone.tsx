@@ -42,7 +42,7 @@ export function UploadDropzone({ onUploaded }: Props) {
   const isUploading = upload.isPending;
 
   return (
-    <div>
+    <div className="space-y-2">
       {/*
        * A bar, not a panel. On the library screen the list of manuscripts
        * is the subject; upload is one action above it and should occupy an

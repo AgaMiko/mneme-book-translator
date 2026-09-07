@@ -24,6 +24,7 @@ from fastapi import (
     BackgroundTasks,
     Depends,
     File,
+    Form,
     HTTPException,
     UploadFile,
     status,
@@ -113,6 +114,8 @@ def _opening_sample(parsed: ParsedManuscript, max_chars: int = 1000) -> str:
 async def upload_book(
     background: BackgroundTasks,
     file: UploadFile = File(...),
+    source_language: str = Form("pl"),
+    target_language: str = Form("en"),
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> UploadBookResponse:
@@ -141,7 +144,7 @@ async def upload_book(
 
     fallback_title = Path(file.filename).stem
     try:
-        parsed = parse_docx(storage_path, fallback_title=fallback_title)
+        parsed = parse_docx(storage_path, fallback_title=fallback_title, source_language=source_language)
     except Exception as exc:
         storage_path.unlink(missing_ok=True)
         log.exception("parse_failed", filename=file.filename)
@@ -155,6 +158,8 @@ async def upload_book(
         parsed=parsed,
         original_filename=file.filename,
         storage_path=storage_path,
+        source_language=source_language,
+        target_language=target_language,
     )
 
     sample = _opening_sample(parsed)

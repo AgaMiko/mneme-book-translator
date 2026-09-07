@@ -4,9 +4,11 @@ Heuristics, in order of preference:
 
 1. Word "Heading 1" style markers split chapters. This is what
    well-formatted manuscripts use.
-2. Fallback: lines matching common Polish chapter markers
-   (`Rozdział 1`, `Rozdział I`, `Prolog`, `Epilog`, plus their
-   English equivalents for translated drafts).
+2. Fallback: lines matching chapter markers for the manuscript's
+   ``source_language`` (see ``_CHAPTER_MARKERS_BY_LANGUAGE``), plus
+   English markers, which are always included since translated
+   drafts often mix in English chapter words regardless of source
+   language.
 3. Final fallback: a single chapter with all paragraphs.
 
 The parser is intentionally conservative — it never rewrites text,
@@ -24,6 +26,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from functools import cache
 from typing import TYPE_CHECKING
 
 from docx import Document
@@ -31,21 +34,39 @@ from docx import Document
 if TYPE_CHECKING:
     from pathlib import Path
 
-# Matches: "Rozdział 1", "Rozdział I", "Chapter 1", "Prolog", "Epilog",
-# optionally followed by a title on the same line.
-_CHAPTER_MARKER = re.compile(
-    r"""^\s*
-    (
-        rozdział\s+[\divxlcdm]+      # Rozdział 1 / Rozdział IV
-      | chapter\s+[\divxlcdm]+        # Chapter 1
-      | prolog (?:\s+.*)?$            # Prolog [optional title]
-      | epilog (?:\s+.*)?$            # Epilog
-      | prologue (?:\s+.*)?$
-      | epilogue (?:\s+.*)?$
-    )
-    """,
-    re.IGNORECASE | re.VERBOSE,
-)
+# Chapter/prologue/epilogue keywords by source_language. English is always
+# merged in on top of these (see _chapter_marker_pattern) since translated
+# drafts often keep English chapter words regardless of source language.
+# Numeral suffix covers "Rozdział 1" / "Rozdział IV" style headings.
+_CHAPTER_MARKERS_BY_LANGUAGE: dict[str, list[str]] = {
+    "pl": [
+        r"rozdział\s+[\divxlcdm]+",
+        r"prolog(?:\s+.*)?$",
+        r"epilog(?:\s+.*)?$",
+    ],
+    "de": [
+        r"kapitel\s+[\divxlcdm]+",
+        r"prolog(?:\s+.*)?$",
+        r"epilog(?:\s+.*)?$",
+    ],
+}
+
+_EN_CHAPTER_MARKERS = [
+    r"chapter\s+[\divxlcdm]+",
+    r"prologue(?:\s+.*)?$",
+    r"epilogue(?:\s+.*)?$",
+]
+
+
+@cache
+def _chapter_marker_pattern(source_language: str) -> re.Pattern[str]:
+    """Compile the chapter-marker regex for a source language.
+
+    Unknown languages still get the English markers, so behavior degrades
+    to "recognize English headings only" rather than "recognize nothing."
+    """
+    keywords = _CHAPTER_MARKERS_BY_LANGUAGE.get(source_language.lower(), []) + _EN_CHAPTER_MARKERS
+    return re.compile(rf"^\s*({'|'.join(keywords)})", re.IGNORECASE)
 
 # Scene / section break inside one docx paragraph (exactly three stars).
 _STAR_SCENE_BREAK = re.compile(r"\s*(?<!\*)\*{3}(?!\*)\s*")
@@ -107,17 +128,17 @@ class ParsedManuscript:
         return "\n\n".join(parts)
 
 
-def _looks_like_chapter_heading(text: str, style_name: str | None) -> bool:
+def _looks_like_chapter_heading(text: str, style_name: str | None, source_language: str) -> bool:
     if style_name and style_name.lower().startswith("heading 1"):
         return True
-    return bool(_CHAPTER_MARKER.match(text.strip()))
+    return bool(_chapter_marker_pattern(source_language).match(text.strip()))
 
 
 def _looks_like_document_title(style_name: str | None) -> bool:
     return bool(style_name and style_name.lower() == "title")
 
 
-def parse_docx(path: Path, fallback_title: str) -> ParsedManuscript:
+def parse_docx(path: Path, fallback_title: str, source_language: str = "pl") -> ParsedManuscript:
     """Parse a `.docx` file from disk into a ParsedManuscript."""
     document = Document(str(path))
 
@@ -143,7 +164,7 @@ def parse_docx(path: Path, fallback_title: str) -> ParsedManuscript:
             manuscript.title = text
             continue
 
-        if _looks_like_chapter_heading(text, style_name):
+        if _looks_like_chapter_heading(text, style_name, source_language):
             # Close out the previous chapter if it had content; otherwise
             # we're at the very top of the doc.
             if current.paragraphs or current.title is not None:

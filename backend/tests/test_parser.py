@@ -91,3 +91,45 @@ def test_parse_no_chapters_fallback(tmp_path: Path) -> None:
     assert len(parsed.chapters) == 1
     assert parsed.chapters[0].title is None
     assert len(parsed.chapters[0].paragraphs) == 1
+
+
+def test_parse_detects_german_chapter_markers(tmp_path: Path) -> None:
+    """No Heading 1 styles — relies purely on the regex fallback."""
+    doc = Document()
+    doc.add_paragraph("Kapitel 1")
+    doc.add_paragraph("Erster Absatz.")
+    doc.add_paragraph("Kapitel 2")
+    doc.add_paragraph("Zweiter Absatz.")
+    path = tmp_path / "german.docx"
+    doc.save(str(path))
+
+    parsed = parse_docx(path, fallback_title="Untitled", source_language="de")
+    assert len(parsed.chapters) == 2
+    assert parsed.chapters[0].title == "Kapitel 1"
+    assert parsed.chapters[1].title == "Kapitel 2"
+
+
+def test_parse_unknown_language_still_matches_english_markers(tmp_path: Path) -> None:
+    """Languages with no dedicated keyword list still get English as a fallback."""
+    doc = Document()
+    doc.add_paragraph("Chapter 1")
+    doc.add_paragraph("Some text.")
+    path = tmp_path / "unknown_lang.docx"
+    doc.save(str(path))
+
+    parsed = parse_docx(path, fallback_title="Untitled", source_language="kn")
+    assert len(parsed.chapters) == 1
+    assert parsed.chapters[0].title == "Chapter 1"
+
+
+def test_parse_german_markers_not_matched_under_polish_default(tmp_path: Path) -> None:
+    """Chapter keywords are per-language — German markers shouldn't leak into pl."""
+    doc = Document()
+    doc.add_paragraph("Kapitel 1")
+    doc.add_paragraph("Some text.")
+    path = tmp_path / "german_under_pl.docx"
+    doc.save(str(path))
+
+    parsed = parse_docx(path, fallback_title="Untitled")
+    assert len(parsed.chapters) == 1
+    assert parsed.chapters[0].title is None

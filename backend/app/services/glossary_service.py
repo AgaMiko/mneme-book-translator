@@ -415,7 +415,8 @@ async def can_continue_glossary_extraction(
     if not wins:
         return False
     total = len(wins)
-    done = await _max_stored_glossary_window(session, extraction_run_id=run.id)
+    stored = await _max_stored_glossary_window(session, extraction_run_id=run.id)
+    done = max(stored, book.glossary_extraction_windows_completed or 0)
     if done >= total:
         return False
     return not (
@@ -867,6 +868,8 @@ async def extract_book_glossary(
     run_id: UUID | None = None
     windows: list[str] = []
     start_window = 1
+    # Windows up to here already have a stored response; don't store them twice.
+    stored_up_to = 0
 
     try:
         async with session_local() as session:
@@ -934,7 +937,9 @@ async def extract_book_glossary(
                     )
                     return
                 max_stored = await _max_stored_glossary_window(session, extraction_run_id=run_id)
-                start_window = max_stored + 1
+                # An expand run stores no window responses, so its progress is on the book.
+                start_window = max(max_stored, book.glossary_extraction_windows_completed or 0) + 1
+                stored_up_to = max_stored
                 res.status = "running"
                 res.model = res.model or settings.GEMINI_MODEL
                 res.error_message = None
@@ -1029,7 +1034,7 @@ async def extract_book_glossary(
                         settings=settings,
                     )
 
-                    if not expand:
+                    if not expand and n > stored_up_to:
                         raw = delta.model_dump(mode="json")
                         session.add(
                             GlossaryWindowGeneration(

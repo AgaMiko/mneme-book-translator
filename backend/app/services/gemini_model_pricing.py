@@ -9,7 +9,7 @@ middle tier for Flash-class work.
 
 Rates are paid-tier prices for prompts up to 200K tokens, from the Gemini
 Developer API and Vertex AI pricing pages (checked 2026-10-21). Where a model
-has a lower price until a cut-off date (3.6–3.8 Flash until 2026-12-31,
+has a lower price until a cut-off date (3.6 to 3.8 Flash until 2026-12-31,
 4 Argon until 2026-11-30), the table uses the later, higher price, so
 estimates don't go up when the lower price ends.
 """

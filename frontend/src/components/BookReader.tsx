@@ -8,7 +8,7 @@ import { BOOK_TAB_IDS, DEFAULT_BOOK_TAB, type TabCounts } from "@/components/boo
 import { TranslationView } from "@/components/book/TranslationView";
 import { VoiceView } from "@/components/book/VoiceView";
 import { useBookTab } from "@/hooks/useBookTab";
-import { useBook, useWorkingGlossary, useWorkingVoices } from "@/lib/api/hooks";
+import { useBook, useTranslation, useWorkingGlossary, useWorkingVoices } from "@/lib/api/hooks";
 
 interface Props {
   bookId: string;
@@ -46,6 +46,9 @@ export function BookReader({ bookId, onBack }: Props) {
     refetchIntervalMs: book?.voice_extraction_status === "running" ? 1500 : false,
   });
 
+  const translation = useTranslation(bookId);
+  const translationRun = translation.data?.run ?? null;
+
   const counts: TabCounts = useMemo(() => {
     const glossaryEntries = glossary.data?.entries ?? [];
     const voiceEntries = voices.data?.entries ?? [];
@@ -56,8 +59,11 @@ export function BookReader({ bookId, onBack }: Props) {
       glossaryPending: pendingOf(glossaryEntries),
       voicesTotal: voiceEntries.length,
       voicesPending: pendingOf(voiceEntries),
+      translationStatus: translationRun?.status ?? null,
+      translationDone: translationRun?.fragments_completed ?? 0,
+      translationTotal: translationRun?.fragments_total ?? 0,
     };
-  }, [glossary.data?.entries, voices.data?.entries]);
+  }, [glossary.data?.entries, voices.data?.entries, translationRun]);
 
   /**
    * Picking a chapter from a working tab means "take me back to the text
@@ -118,7 +124,7 @@ export function BookReader({ bookId, onBack }: Props) {
           )}
           {activeTab === "glossary" && <GlossaryView book={book} />}
           {activeTab === "voices" && <VoiceView book={book} />}
-          {activeTab === "translation" && <TranslationView />}
+          {activeTab === "translation" && <TranslationView book={book} />}
         </div>
       </div>
     </div>

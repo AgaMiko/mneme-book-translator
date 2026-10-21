@@ -45,6 +45,14 @@ class Settings(BaseSettings):
     # --- LLM providers ---
     GEMINI_API_KEY: str | None = None
     GEMINI_MODEL: str = "gemini-3.1-flash-lite-preview"
+    # Fragment translation (Step 5). Each stage falls back to TRANSLATION_MODEL,
+    # then to GEMINI_MODEL, so one setting is enough to start.
+    TRANSLATION_MODEL: str | None = None
+    TRANSLATION_FAITHFUL_MODEL: str | None = None
+    TRANSLATION_LINE_EDIT_MODEL: str | None = None
+    TRANSLATION_POLISH_MODEL: str | None = None
+    # How many fragments are translated at the same time.
+    TRANSLATION_CONCURRENCY: int = 4
     # Optional: override per-million-token USD prices used in glossary cost estimates.
     GEMINI_INPUT_PRICE_USD_PER_MTOK: float | None = None
     GEMINI_OUTPUT_PRICE_USD_PER_MTOK: float | None = None

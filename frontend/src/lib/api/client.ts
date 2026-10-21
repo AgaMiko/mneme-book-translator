@@ -247,6 +247,136 @@ export type GlossaryEntryPatchBody = {
   merge_into_entry_id?: string;
 };
 
+// ─── Translation (Step 5) ───────────────────────────────
+
+export const TranslationStageSchema = z.enum(["faithful", "line_edit", "polish"]);
+export type TranslationStage = z.infer<typeof TranslationStageSchema>;
+
+export const TranslationRunSchema = z.object({
+  id: z.string(),
+  status: z.enum(["running", "completed", "failed", "cancelled"]),
+  cancel_requested: z.boolean(),
+  chapter_ids: z.array(z.string()).nullable(),
+  fragments_total: z.number().int(),
+  fragments_completed: z.number().int(),
+  fragments_failed: z.number().int(),
+  models: z.record(z.string()),
+  error_message: z.string().nullable(),
+  started_at: z.string(),
+  completed_at: z.string().nullable(),
+});
+export type TranslationRun = z.infer<typeof TranslationRunSchema>;
+
+export const TranslatorNoteSchema = z.object({
+  paragraph_id: z.string().nullable(),
+  kind: z.string(),
+  note: z.string(),
+});
+export type TranslatorNote = z.infer<typeof TranslatorNoteSchema>;
+
+export const DeclaredEditSchema = z.object({
+  paragraph_id: z.string().nullable(),
+  kind: z.string(),
+  before: z.string(),
+  after: z.string(),
+  why: z.string(),
+});
+export type DeclaredEdit = z.infer<typeof DeclaredEditSchema>;
+
+export const QaIssueSchema = z.object({
+  check: z.string(),
+  paragraph_id: z.string(),
+  detail: z.string(),
+});
+export type QaIssue = z.infer<typeof QaIssueSchema>;
+
+export const StyleMetricsSchema = z.object({
+  words: z.number(),
+  narration_sentences: z.number(),
+  she_he_openers: z.number(),
+  ellipses: z.number(),
+  em_dashes: z.number(),
+  stock: z.record(z.number()),
+  she_he_pct: z.number(),
+  ellipses_per_1k: z.number(),
+  dashes_per_1k: z.number(),
+  stock_total: z.number(),
+});
+export type StyleMetrics = z.infer<typeof StyleMetricsSchema>;
+
+export const StageOutputSchema = z.object({
+  paragraphs: z.array(z.object({ paragraph_id: z.string(), text: z.string() })),
+  notes: z.array(TranslatorNoteSchema),
+  declared_edits: z.array(DeclaredEditSchema),
+  qa: z.array(QaIssueSchema),
+  metrics: StyleMetricsSchema.partial(),
+  model: z.string().nullable(),
+  created_at: z.string(),
+});
+export type StageOutput = z.infer<typeof StageOutputSchema>;
+
+export const TranslationFragmentSchema = z.object({
+  fragment_id: z.string(),
+  position: z.number().int(),
+  paragraph_ids: z.array(z.string()),
+  word_count: z.number().int(),
+  run_status: z
+    .object({
+      status: z.enum(["pending", "running", "completed", "failed"]),
+      last_stage: TranslationStageSchema.nullable(),
+      error_message: z.string().nullable(),
+    })
+    .nullable(),
+  stages: z.object({
+    faithful: StageOutputSchema.optional(),
+    line_edit: StageOutputSchema.optional(),
+    polish: StageOutputSchema.optional(),
+  }),
+});
+export type TranslationFragment = z.infer<typeof TranslationFragmentSchema>;
+
+export const ChapterTranslationSchema = z.object({
+  chapter_id: z.string(),
+  fragments: z.array(TranslationFragmentSchema),
+  metrics: z.object({
+    faithful: StyleMetricsSchema.optional(),
+    line_edit: StyleMetricsSchema.optional(),
+    polish: StyleMetricsSchema.optional(),
+  }),
+});
+export type ChapterTranslation = z.infer<typeof ChapterTranslationSchema>;
+
+export const TranslationViewSchema = z.object({
+  run: TranslationRunSchema.nullable(),
+  fragment_count: z.number().int(),
+  chapters: z.array(ChapterTranslationSchema),
+});
+export type TranslationView = z.infer<typeof TranslationViewSchema>;
+
+export const TranslationEstimateSchema = z.object({
+  word_count: z.number().int(),
+  fragment_count: z.number().int(),
+  glossary_terms: z.number().int(),
+  total_tokens: z.number().int(),
+  cost_usd: z.number(),
+  stages: z.array(
+    z.object({
+      stage: TranslationStageSchema,
+      model: z.string(),
+      calls: z.number().int(),
+      input_tokens: z.number().int(),
+      output_tokens: z.number().int(),
+      cost_usd: z.number(),
+    }),
+  ),
+});
+export type TranslationEstimate = z.infer<typeof TranslationEstimateSchema>;
+
+export type StartTranslationBody = {
+  chapter_ids?: string[] | null;
+  retranslate?: boolean;
+};
+
 // ─── Errors ─────────────────────────────────────────────
 
 export class ApiError extends Error {
@@ -430,6 +560,52 @@ export const api = {
       await fetch(`${API_URL}/books/${id}/glossary-extraction/stop`, { method: "POST" }),
       GlossaryExtractionStopResponseSchema,
     ),
+
+  getTranslation: async (id: string): Promise<TranslationView> =>
+    handleResponse(await fetch(`${API_URL}/books/${id}/translation`), TranslationViewSchema),
+
+  getTranslationEstimate: async (
+    id: string,
+    chapterIds: string[] | null,
+  ): Promise<TranslationEstimate> => {
+    const qs = chapterIds?.length
+      ? "?" + chapterIds.map((c) => `chapter_id=${encodeURIComponent(c)}`).join("&")
+      : "";
+    return handleResponse(
+      await fetch(`${API_URL}/books/${id}/translation/estimate${qs}`),
+      TranslationEstimateSchema,
+    );
+  },
+
+  startTranslation: async (id: string, body: StartTranslationBody): Promise<TranslationRun> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/translation/run`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      TranslationRunSchema,
+    ),
+
+  continueTranslation: async (id: string): Promise<TranslationRun> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/translation/continue`, { method: "POST" }),
+      TranslationRunSchema,
+    ),
+
+  stopTranslation: async (id: string): Promise<void> => {
+    const res = await fetch(`${API_URL}/books/${id}/translation/stop`, { method: "POST" });
+    if (!res.ok) {
+      let detail = `${res.status} ${res.statusText}`;
+      try {
+        const body = (await res.json()) as { detail?: unknown };
+        if (body?.detail != null) detail = String(body.detail);
+      } catch {
+        // keep default
+      }
+      throw new ApiError(res.status, detail);
+    }
+  },
 
   uploadBook: async (file: File): Promise<UploadBookResponse> => {
     const fd = new FormData();

@@ -1,6 +1,6 @@
 # Step 5 & Step 6 — fragment translation and author flag review
 
-Status: design, nothing built. Written 2026-10-20.
+Status: design written 2026-10-20. First slice built 2026-10-21: fragments, the three-stage chain, style metrics, translator notes, polish declared edits, a cost estimate and the Translation tab (sections 2, 3, 4 and part of 8). Not built yet: style sheet entity, glossary propagation and placeholder tokens, epithet claims, the flags table and Step 6 review actions, special passages, export.
 
 This doc turns the manual translation of *Zaplataczka* (→ *The Weaveress*, ~102k Polish words, 2026-10-19) into an app pipeline. The manual run used parallel agents with a shared glossary and brief, then a line-edit pass and a polish pass. Its working files are in `translations/zaplataczka/` (untracked, in the main checkout): `BRIEF.md`, `POLISH_BRIEF.md`, `glossary.md`, `terms/batch_*.md`, `AUTHOR_QUERIES.md`, `style_metrics.py`, `build_pdf.py`, plus `pass1/`, `v2_lineedit/`, `en/` and `out/`. Every design choice below points back either to code that exists today or to something that went wrong, or worked, in that run.
 

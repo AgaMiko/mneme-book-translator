@@ -100,7 +100,29 @@ TranslationStageName = Literal["faithful", "line_edit", "polish"]
 
 
 class TranslationConflictError(RuntimeError):
-    """A run is already in progress, or there is nothing to translate."""
+    """A run is already in progress, the book is not ready, or there is nothing to translate."""
+
+
+def missing_prerequisites(book: Book) -> list[str]:
+    """Steps that must finish before a book can be translated.
+
+    The translation prompts lean on the accepted glossary terms and the
+    voice profiles, so both extractions have to be complete.
+    """
+    missing = []
+    if book.glossary_extraction_status != "completed":
+        missing.append("glossary")
+    if book.voice_extraction_status != "completed":
+        missing.append("voices")
+    return missing
+
+
+def _require_prerequisites(book: Book) -> None:
+    missing = missing_prerequisites(book)
+    if missing:
+        raise TranslationConflictError(
+            f"Finish the {' and '.join(missing)} before translating this book."
+        )
 
 
 # ─── Fragments ───────────────────────────────────────────
@@ -318,6 +340,7 @@ async def start_translation_run(
     current = await latest_run(session, book_id=book_id)
     if current is not None and current.status == "running":
         raise TranslationConflictError("A translation run is already in progress for this book.")
+    _require_prerequisites(book)
 
     fragments = await ensure_fragments(session, book)
     wanted = set(chapter_ids) if chapter_ids else None
@@ -402,6 +425,10 @@ async def resume_translation_run(session: AsyncSession, *, book_id: UUID) -> Tra
     run = await latest_run(session, book_id=book_id)
     if run is None or run.status in ("running", "completed"):
         raise TranslationConflictError("There is no stopped or failed run to continue.")
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise TranslationConflictError("There is no stopped or failed run to continue.")
+    _require_prerequisites(book)
     await session.execute(
         update(TranslationRunFragment)
         .where(

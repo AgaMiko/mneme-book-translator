@@ -5,10 +5,11 @@ from uuid import uuid4
 from app.core.config import Settings
 from app.generation.chains.translate_fragment_chain import _alignment_problem, stage_model
 from app.generation.prompt_manager.models.translate_fragment_model import ParagraphOut
+from app.models.book import Book
 from app.services.fragmenter import ChapterInput, ParagraphInput, plan_fragments
 from app.services.translation_estimate import estimate_translation
 from app.services.translation_qa import hard_checks, style_metrics
-from app.services.translation_service import speakers_for_range
+from app.services.translation_service import missing_prerequisites, speakers_for_range
 
 
 def _para(words: int, text: str | None = None) -> ParagraphInput:
@@ -514,3 +515,20 @@ def test_find_terms_matches_case_forms_and_respects_capitals() -> None:
     assert ("dar", "Dar Widzenia") in hits
     assert ("hania", "Hanna") in hits
     assert all(word not in {w for _, w in hits} for word in ("splątany", "Radość", "Vynmor", "Zapadła"))
+
+
+def test_translation_needs_glossary_and_voices() -> None:
+    book = Book(
+        title="Book",
+        original_filename="book.docx",
+        storage_path="book.docx",
+        glossary_extraction_status="idle",
+        voice_extraction_status="idle",
+    )
+    assert missing_prerequisites(book) == ["glossary", "voices"]
+    book.glossary_extraction_status = "completed"
+    assert missing_prerequisites(book) == ["voices"]
+    book.voice_extraction_status = "running"
+    assert missing_prerequisites(book) == ["voices"]
+    book.voice_extraction_status = "completed"
+    assert missing_prerequisites(book) == []

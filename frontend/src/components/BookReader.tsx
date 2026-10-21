@@ -146,7 +146,7 @@ export function BookReader({ bookId, onBack }: Props) {
           )}
           {activeTab === "voices" && <VoiceView book={book} />}
           {activeTab === "translation" && (
-            <TranslationView book={book} onOpenTerm={handleOpenTerm} />
+            <TranslationView book={book} onOpenTerm={handleOpenTerm} onSelectTab={setActiveTab} />
           )}
         </div>
       </div>

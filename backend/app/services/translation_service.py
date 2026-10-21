@@ -24,6 +24,8 @@ glossary run, voice profiles of the characters who speak in the fragment
 from __future__ import annotations
 
 import asyncio
+import os
+import unicodedata
 from collections import defaultdict
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
@@ -156,6 +158,34 @@ async def ensure_fragments(session: AsyncSession, book: Book) -> list[Translatio
 # ─── Prompt inputs ───────────────────────────────────────
 
 
+def _fold(text: str) -> str:
+    """Lower case without diacritics (ł has no decomposition, so map it by hand)."""
+    decomposed = unicodedata.normalize("NFKD", text.lower().replace("ł", "l"))
+    return "".join(c for c in decomposed if not unicodedata.combining(c))
+
+
+def is_form_of(canonical: str, variant: str) -> bool:
+    """True when ``variant`` looks like a case form or spelling of ``canonical``.
+
+    Glossary extraction stores more than inflections in ``variants``: aliases,
+    descriptions and sometimes a different name altogether ("Vynmor" under
+    "Naelori", "adept" under "Elantria"). Translation prompts present variants
+    as forms of the term, so a wrong one makes the model rename things. Only
+    forms that share each word's stem pass: same number of words, and every
+    word pair shares a prefix of at least 3 letters and of all but the last
+    3 letters of the shorter word (Miro/Mira, Einardzie/Einard, Hanna/Hania,
+    Pyłu/Pyłem).
+    """
+    a_words, b_words = _fold(canonical).split(), _fold(variant).split()
+    if not a_words or len(a_words) != len(b_words) or a_words == b_words:
+        return False
+    for a, b in zip(a_words, b_words, strict=True):
+        common = len(os.path.commonprefix([a, b]))
+        if common < max(3, min(len(a), len(b)) - 3):
+            return False
+    return True
+
+
 async def load_glossary_rows(
     session: AsyncSession, *, book_id: UUID
 ) -> tuple[list[GlossaryRow], dict[UUID, GlossaryRow]]:
@@ -183,7 +213,7 @@ async def load_glossary_rows(
             source=e.canonical_form,
             target=target,
             strategy=_strategy_from_recommendation(rec),
-            variants=list(e.variants or []),
+            variants=[v for v in (e.variants or []) if is_form_of(e.canonical_form, v)],
             notes=" ".join(notes_parts) or None,
         )
         by_id[e.id] = row

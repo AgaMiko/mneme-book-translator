@@ -1,9 +1,10 @@
 import { TriangleAlert } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 
 import type { GlossaryTerm, TermSpan } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
+import { parseInline } from "./inline";
 import { TermContext, useTerms } from "./terms";
 
 /**
@@ -48,7 +49,11 @@ export function TermProvider({
   return <TermContext.Provider value={value}>{children}</TermContext.Provider>;
 }
 
-/** Text with its term spans turned into hoverable, clickable marks. */
+/**
+ * Text with Markdown italics/bold rendered and its term spans turned into
+ * hoverable, clickable marks. Spans are raw-text offsets; a span that crosses
+ * an italic boundary is drawn as two marks.
+ */
 export function HighlightedText({
   text,
   spans,
@@ -59,22 +64,34 @@ export function HighlightedText({
   warnIds?: Set<string>;
 }) {
   const ctx = useTerms();
-  if (!ctx || spans.length === 0) return <>{text}</>;
-  const parts: ReactNode[] = [];
-  let pos = 0;
-  spans.forEach((s, i) => {
-    const term = ctx.termsById.get(s.term_id);
-    if (!term || s.start < pos) return;
-    if (s.start > pos) parts.push(text.slice(pos, s.start));
-    parts.push(
-      <TermMark key={i} term={term} warn={warnIds?.has(term.id) ?? false}>
-        {text.slice(s.start, s.end)}
-      </TermMark>,
-    );
-    pos = s.end;
-  });
-  if (pos < text.length) parts.push(text.slice(pos));
-  return <>{parts}</>;
+  const runs = useMemo(() => parseInline(text), [text]);
+  const usable = ctx ? spans.filter((s) => ctx.termsById.has(s.term_id)) : [];
+  return (
+    <>
+      {runs.map((run, r) => {
+        const pieces: ReactNode[] = [];
+        let pos = run.start;
+        for (const [i, s] of usable.entries()) {
+          const a = Math.max(s.start, run.start);
+          const b = Math.min(s.end, run.end);
+          if (b <= a || a < pos) continue;
+          if (a > pos) pieces.push(text.slice(pos, a));
+          const term = ctx!.termsById.get(s.term_id)!;
+          pieces.push(
+            <TermMark key={`${r}-${i}`} term={term} warn={warnIds?.has(term.id) ?? false}>
+              {text.slice(a, b)}
+            </TermMark>,
+          );
+          pos = b;
+        }
+        if (pos < run.end) pieces.push(text.slice(pos, run.end));
+        let node: ReactNode = pieces;
+        if (run.italic) node = <em>{node}</em>;
+        if (run.bold) node = <strong className="font-semibold">{node}</strong>;
+        return <Fragment key={r}>{node}</Fragment>;
+      })}
+    </>
+  );
 }
 
 function TermMark({

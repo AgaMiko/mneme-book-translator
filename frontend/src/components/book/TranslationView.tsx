@@ -555,7 +555,7 @@ function ChapterBlock({
             {sourceTitle}
           </p>
           <p className="whitespace-pre-line font-serif text-[14px] italic leading-relaxed text-ink-100">
-            {translatedTitle ?? ""}
+            <HighlightedText text={translatedTitle ?? ""} spans={NO_SPAN_LIST} />
           </p>
         </div>
       )}

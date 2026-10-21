@@ -31,6 +31,7 @@ from app.generation.prompt_manager.models.translate_fragment_model import (
 from app.generation.prompt_manager.prompts.translate_fragment_prompt import (
     build_faithful_prompt,
     build_line_edit_prompt,
+    build_one_step_prompt,
     build_polish_prompt,
     build_revision_prompt,
 )
@@ -72,8 +73,11 @@ def calls_per_fragment(settings: Settings) -> tuple[str, ...]:
     """The model calls each fragment gets, named by the settings they use.
 
     In two-step mode the second call (``line_edit`` settings) is the
-    revision, and its output is stored as the final (``polish``) stage.
+    revision, and its output is stored as the final (``polish``) stage. In
+    one-step mode the only call uses the ``line_edit`` settings too.
     """
+    if settings.TRANSLATION_STAGE_COUNT == 1:
+        return ("line_edit",)
     if settings.TRANSLATION_STAGE_COUNT == 2:
         return ("faithful", "line_edit")
     return ("faithful", "line_edit", "polish")
@@ -329,6 +333,34 @@ async def revise_fragment(
         rhythm=rhythm,
         metrics_block=metrics_block,
     )
+    return await _generate_aligned(
+        fixed_context=fixed_context,
+        cached_content=cached_content,
+        prompt=prompt,
+        schema=LineEditedFragment,
+        expected_ids=[pid for pid, _ in source],
+        stage="line_edit",
+        temperature=0.5,
+        settings=settings,
+    )
+
+
+@observe(name="translate_fragment_one_step", as_type="generation")
+async def translate_fragment_one_step(
+    *,
+    fixed_context: str,
+    cached_content: str | None,
+    context: str,
+    source: list[tuple[str, str]],
+    target_language: str,
+    settings: Settings,
+) -> StageResult[LineEditedFragment]:
+    """One-step mode: straight from the source to the final text.
+
+    Uses the line-edit model and thinking level; the caller stores the
+    result as the final stage.
+    """
+    prompt = build_one_step_prompt(context=context, target_language=target_language, source=source)
     return await _generate_aligned(
         fixed_context=fixed_context,
         cached_content=cached_content,

@@ -467,3 +467,45 @@ def build_revision_prompt(
             "## Faithful translation to revise\n\n" + render_paragraphs(faithful),
         ]
     )
+
+
+def _between(text: str, start: str, end: str | None = None) -> str:
+    i = text.index(start)
+    return text[i : text.index(end, i)] if end else text[i:]
+
+
+# One-step mode (``TRANSLATION_STAGE_COUNT=1``): the strong model translates
+# straight from the source into the final text. Built from the same pieces as
+# the other tasks, so the rules cannot drift apart.
+ONE_STEP_TASK = (
+    "## Your task: translation (one pass)\n\n"
+    "Translate the source paragraphs into fluent, natural {target_language}, the way "
+    "a skilled {target_language} novelist would have written this passage, so it "
+    "reads like a published fantasy novel and not like a translation. There is no "
+    "draft before you and no editor after you: what you write is the final text. "
+    "Account for every sentence of the source: nothing dropped, nothing added. "
+    "Apply the rules and the style sheet above, including names, glossary terms, "
+    "quotes, units and scene breaks.\n\n"
+    + _between(
+        LINE_EDIT_TASK, "Work from the meaning, not the words.", "Check your rewrite against"
+    )
+    + "Check every paragraph against the source when you are done.\n\n"
+    + _between(LINE_EDIT_TASK, "- Vary sentence openings.", "- Fix every problem listed")
+    + _between(STYLE_TARGETS, "- She/He openers:")
+    + "\nAdd a note only when the author needs to know or decide something, and report "
+    "every added clarifying beat as an added_clarification note.\n\n"
+    "Return one paragraph for each source paragraph, with the same id, in the same "
+    "order. Never merge or split paragraphs across ids.\n"
+)
+
+
+def build_one_step_prompt(
+    *, context: str, target_language: str, source: list[tuple[str, str]]
+) -> str:
+    return "\n\n".join(
+        [
+            ONE_STEP_TASK.format(target_language=target_language),
+            context,
+            "## Source paragraphs\n\n" + render_paragraphs(source),
+        ]
+    )

@@ -4,7 +4,7 @@
 
 Mneme is an open-source AI translation workspace for fiction manuscripts. It keeps persistent state across the book: manuscript structure, metadata, glossary decisions, speaker windows, and character voice profiles. The model is an assistant inside a reviewable workflow, not a one-shot translator.
 
-This repo is a working Docker stack: upload a `.docx`, parse it into chapters and paragraphs, persist it to Postgres, extract metadata, build a reviewable glossary, identify speaker windows, draft per-character voice profiles, translate the book fragment by fragment in three stages, and export the result as PDF, EPUB or DOCX.
+This repo is a working Docker stack: upload a `.docx`, parse it into chapters and paragraphs, persist it to Postgres, extract metadata, build a reviewable glossary, identify speaker windows, draft per-character voice profiles, translate the book fragment by fragment (a faithful draft, then a revision into fluent English), and export the result as PDF, EPUB or DOCX.
 
 **Repository:** [github.com/AgaMiko/mneme-book-translator](https://github.com/AgaMiko/mneme-book-translator)
 
@@ -30,7 +30,7 @@ This repo is a working Docker stack: upload a `.docx`, parse it into chapters an
 - Review working glossary terms, translations, variants, and statuses.
 - Identify character speaker windows as the first pass of voice extraction.
 - Draft, review, edit, accept, reject, regenerate, and reset character voice profiles.
-- Translate fragments in three stages (Faithful → Line edit → Final), using the accepted glossary and voice profiles, with style metrics and translator notes.
+- Translate fragments in two stages by default: a faithful draft (gpt-6-luna), then one revision (gpt-6.1-sol, high thinking) that rewrites the draft into fluent English and meets the style targets. A three-stage mode (Faithful → Line edit → Final) is available. Uses the accepted glossary and voice profiles, with style metrics and translator notes.
 - Check rhythm and repetition in the line edit and final stages, keeping the meaning of the source over word variety.
 - Export the translation as PDF, EPUB or DOCX, choosing which stage to export. Untranslated fragments are marked so gaps are visible.
 - Open each book on the pipeline stage it has reached.
@@ -44,14 +44,19 @@ Create a local `.env` if you want LLM-backed extraction:
 
 ```bash
 GEMINI_API_KEY=...
+OPENAI_API_KEY=...   # needed for the default translation models
 
 # Optional overrides
 GEMINI_MODEL=gemini-3.1-flash-lite-preview
-# Fragment translation: one model for all three stages, or one per stage.
-TRANSLATION_MODEL=gemini-3.8-flash
-TRANSLATION_FAITHFUL_MODEL=
-TRANSLATION_LINE_EDIT_MODEL=
-TRANSLATION_POLISH_MODEL=   # the Final stage
+# Fragment translation. Defaults: Luna writes the faithful draft, Sol does one
+# revision (2 stages), high thinking, OpenAI Flex tier (half price, slower).
+TRANSLATION_MODEL=gpt-6.1-sol          # any gemini-… or gpt-… model
+TRANSLATION_FAITHFUL_MODEL=gpt-6-luna
+TRANSLATION_STAGE_COUNT=2              # 3 = faithful, line edit, final edit
+TRANSLATION_LINE_EDIT_MODEL=           # per-stage overrides (3-stage mode)
+TRANSLATION_POLISH_MODEL=              # the Final stage
+TRANSLATION_THINKING_LINE_EDIT=high    # minimal | low | medium | high, per stage
+TRANSLATION_OPENAI_SERVICE_TIER=flex   # empty = standard tier
 TRANSLATION_CONCURRENCY=4
 LANGFUSE_PUBLIC_KEY=...
 LANGFUSE_SECRET_KEY=...
@@ -147,7 +152,7 @@ just gen-client      # regenerate TS API types from OpenAPI
 - [x] Step 2 — Async metadata extraction and iterative glossary extraction
 - [x] Step 3 — Author glossary review UI and acceptance flow
 - [x] Step 4 — Speaker identification and character voice profile extraction
-- [~] Step 5 — Fragment translation with context windows, accepted glossary, and voice memory. First slice built: three stages per fragment (Faithful → Line edit → Final), style metrics, translator notes, rhythm and repetition checks, a Translation tab, and PDF/EPUB/DOCX export. Glossary change propagation and flags review are still to do; see [docs/step5-translation-pipeline.md](docs/step5-translation-pipeline.md).
+- [~] Step 5 — Fragment translation with context windows, accepted glossary, and voice memory. First slice built: a faithful draft and one revision per fragment by default (three stages optional), Gemini and OpenAI models, Flex pricing and prompt caching, style metrics, translator notes, rhythm and repetition checks, a Translation tab, and PDF/EPUB/DOCX export. Glossary change propagation and flags review are still to do; see [docs/step5-translation-pipeline.md](docs/step5-translation-pipeline.md).
 - [ ] Step 6 — Problematic-fragment detection and author flag review
 
 ## License

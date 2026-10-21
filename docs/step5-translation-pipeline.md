@@ -1,6 +1,8 @@
 # Step 5 & Step 6 — fragment translation and author flag review
 
-Status: design written 2026-10-20. First slice built 2026-10-21: fragments, the three-stage chain, style metrics, translator notes, polish declared edits, a cost estimate and the Translation tab (sections 2, 3, 4 and part of 8). Not built yet: style sheet entity, glossary propagation and placeholder tokens, epithet claims, the flags table and Step 6 review actions, special passages, export.
+Status: design written 2026-10-20. Built 2026-10-21: fragments, the translate chain (three-stage and two-step modes), style metrics, rhythm and repetition checks, translator notes, polish declared edits, a cost estimate, the Translation tab, and PDF/EPUB/DOCX export (sections 2, 3, 4, 11 and part of 8). Not built yet: style sheet entity, glossary propagation and placeholder tokens, epithet claims, the flags table and Step 6 review actions, special passages.
+
+**Change to section 3 after testing:** the default is now two steps, not three. See "Model and pipeline tests" at the end.
 
 This doc turns the manual translation of *Zaplataczka* (→ *The Weaveress*, ~102k Polish words, 2026-10-19) into an app pipeline. The manual run used parallel agents with a shared glossary and brief, then a line-edit pass and a polish pass. Its working files are in `translations/zaplataczka/` (untracked, in the main checkout): `BRIEF.md`, `POLISH_BRIEF.md`, `glossary.md`, `terms/batch_*.md`, `AUTHOR_QUERIES.md`, `style_metrics.py`, `build_pdf.py`, plus `pass1/`, `v2_lineedit/`, `en/` and `out/`. Every design choice below points back either to code that exists today or to something that went wrong, or worked, in that run.
 
@@ -514,3 +516,34 @@ Steps 6–9 depend on 1–5 but not on each other, so they can be built in paral
 - **Who may change the style sheet mid-run**, and whether that marks renditions stale or only flags them. The proposal here: units and quote style → patch automatically; prose-level rules → stale, re-render on request.
 - **Source edits from Step 6.** Should source fixes write back to the uploaded `.docx` for the author, or only live in `paragraph_revisions`?
 - **Fixed terms not in the glossary** (e.g. "pierce" vs "break the skin" for *przebić barierę*, flagged in batch 1). They are recurring phrases rather than names. Do they belong in the glossary as `specialized_usage` (yes, probably), and should the faithful pass propose them as claims too?
+
+---
+
+## Model and pipeline tests (2026-10-21)
+
+All tests used *Zaplataczka*. Quality was judged blind: for each paragraph the versions were shown under shuffled letters, and the best (and sometimes worst) was picked against the Polish before the key was opened. One reader, one run per setting, so small differences are within noise. Costs are for the whole book (about 108,000 words), estimated from the tokens actually used.
+
+| Setting (chapter 5 only) | Best / worst of 20 | Whole book |
+|---|---|---|
+| Gemini 3.8 Flash, high thinking, all three stages | 4 / 0 | ~$67 list (~$33 until 31 Dec) |
+| gpt-6.1-sol, high, all three stages | 11 / 2 | ~$69 standard |
+| gpt-6-luna, high, all three stages | 0 / 9 | ~$3 |
+| Luna → Luna → Sol, medium | 0 / 3 | ~$16 |
+| Luna → Sol → Luna, medium | 5 / 6 | ~$15 |
+
+Luna's faithful drafts were fine; its errors came from the final edit, where it rewrites freely (added "with the book on her lap", dropped the third gong stroke). Sol was strongest where judgement is needed.
+
+| Setting (chapters 3 and 5, Flex, cache) | Blind wins of 40 | Whole book |
+|---|---|---|
+| Sol high, all three stages | 22 | ~$37 |
+| Luna draft + Sol high line edit and final | 18 | ~$26 |
+| Luna draft + one Sol high revision (two steps) | 26 (vs 14 for the row above) | ~$13 |
+
+In the three-step runs the line edit changed about 85% of paragraphs and the final edit only about 31% (95% similar), mainly lowering She/He openers and repeated words, at about 40% of the cost. One revision that gets the line-edit instructions and the style targets together did better at half the price, so it is the default (`TRANSLATION_STAGE_COUNT=2`).
+
+Other findings:
+
+- **Thinking level:** low or medium thinking let meaning drift through (added intensity, a lost stammer). All stages default to high.
+- **Caching:** prompts start with the fixed part (rules, style sheet, glossary). Gemini runs use an explicit cache per run that is deleted afterwards; OpenAI runs prewarm OpenAI's own cache before the fragments start. About half of all input is then read from the cache.
+- **Glossary variants:** extraction stored aliases and other names as variants (Vynmor under Naelori). Prompts now get only real case forms; fixing extraction and review is a separate task.
+- **Still wrong in every setting:** "z roku dwusetnego przed Rozdarciem" (the year 200 before the Rending) became "two hundred years before"; a trailing ellipsis in dialogue was dropped; some glossary terms drift (adept/trainee, weave/design).

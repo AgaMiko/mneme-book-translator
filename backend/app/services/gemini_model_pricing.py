@@ -47,6 +47,23 @@ _MODEL_USD_PER_MTOK: list[tuple[str, tuple[float, float]]] = [
 ]
 
 
+# OpenAI Flex tier (half the standard price for Sol and Astra), 2026-10-21.
+_OPENAI_FLEX_USD_PER_MTOK: list[tuple[str, tuple[float, float]]] = [
+    ("gpt-6-astra", (10.00, 50.00)),
+    ("gpt-6.1-sol", (2.00, 10.00)),
+    ("gpt-6-luna", (0.10, 0.50)),
+]
+
+
+def resolve_flex_usd_per_million_tokens(model: str) -> tuple[float, float] | None:
+    """Flex prices for an OpenAI model, or None when there is no Flex price."""
+    key = model.strip().lower()
+    for prefix, prices in _OPENAI_FLEX_USD_PER_MTOK:
+        if prefix in key:
+            return prices
+    return None
+
+
 def resolve_gemini_usd_per_million_tokens(model: str) -> tuple[float, float]:
     """Return (input_per_mtok, output_per_mtok) for ``model`` id."""
     key = model.strip().lower()

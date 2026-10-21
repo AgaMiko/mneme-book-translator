@@ -91,15 +91,25 @@ def test_speakers_for_range_uses_voice_window_geometry() -> None:
 
 
 def test_stage_model_fallbacks() -> None:
-    s = Settings(GEMINI_MODEL="base", TRANSLATION_MODEL=None, TRANSLATION_POLISH_MODEL="pro")
+    s = Settings(
+        GEMINI_MODEL="base",
+        TRANSLATION_MODEL=None,
+        TRANSLATION_FAITHFUL_MODEL=None,
+        TRANSLATION_POLISH_MODEL="pro",
+    )
     assert stage_model(s, "faithful") == "base"
     assert stage_model(s, "polish") == "pro"
-    s2 = Settings(GEMINI_MODEL="base", TRANSLATION_MODEL="mid")
+    s2 = Settings(GEMINI_MODEL="base", TRANSLATION_MODEL="mid", TRANSLATION_FAITHFUL_MODEL=None)
     assert stage_model(s2, "line_edit") == "mid"
 
 
 def test_estimate_scales_with_words() -> None:
-    s = Settings(GEMINI_MODEL="gemini-3.1-flash-lite-preview")
+    s = Settings(
+        GEMINI_MODEL="gemini-3.1-flash-lite-preview",
+        TRANSLATION_MODEL=None,
+        TRANSLATION_FAITHFUL_MODEL=None,
+        TRANSLATION_STAGE_COUNT=3,
+    )
     small = estimate_translation(
         word_count=1000, fragment_count=None, glossary_terms=50, settings=s
     )
@@ -137,9 +147,11 @@ def test_even_runs_found_and_short_sentences_break_them() -> None:
 
 
 def test_estimate_counts_thinking_for_non_lite_models() -> None:
-    lite = Settings(GEMINI_MODEL="gemini-3.1-flash-lite-preview")
+    gemini_only = {"TRANSLATION_MODEL": None, "TRANSLATION_FAITHFUL_MODEL": None}
+    lite = Settings(GEMINI_MODEL="gemini-3.1-flash-lite-preview", **gemini_only)
     flash = Settings(
         GEMINI_MODEL="gemini-3.8-flash",
+        **gemini_only,
         TRANSLATION_THINKING_FAITHFUL="",
         TRANSLATION_THINKING_LINE_EDIT="",
         TRANSLATION_THINKING_POLISH="",
@@ -152,12 +164,12 @@ def test_estimate_counts_thinking_for_non_lite_models() -> None:
     )
     # Default thinking adds about 3.2x the visible output; Flash-Lite adds none.
     assert 4.1 < b.stages[0].output_tokens / a.stages[0].output_tokens < 4.3
-    high = Settings(GEMINI_MODEL="gemini-3.8-flash")  # default: high thinking everywhere
+    high = Settings(GEMINI_MODEL="gemini-3.8-flash", **gemini_only)  # high thinking everywhere
     c = estimate_translation(
         word_count=10_000, fragment_count=None, glossary_terms=50, settings=high
     )
     assert c.cost_usd > b.cost_usd
-    no_cache = Settings(GEMINI_MODEL="gemini-3.8-flash", TRANSLATION_CACHE=False)
+    no_cache = Settings(GEMINI_MODEL="gemini-3.8-flash", **gemini_only, TRANSLATION_CACHE=False)
     d = estimate_translation(
         word_count=10_000, fragment_count=None, glossary_terms=50, settings=no_cache
     )
@@ -376,7 +388,7 @@ def test_two_step_mode() -> None:
     )
     from app.services.translation_service import _run_models
 
-    three = Settings(GEMINI_MODEL="m", TRANSLATION_MODEL="gpt-6.1-sol")
+    three = Settings(GEMINI_MODEL="m", TRANSLATION_MODEL="gpt-6.1-sol", TRANSLATION_STAGE_COUNT=3)
     two = Settings(
         GEMINI_MODEL="m",
         TRANSLATION_MODEL="gpt-6.1-sol",
@@ -408,3 +420,17 @@ def test_two_step_mode() -> None:
     assert "revision (stage 2 of 2)" in prompt
     assert "She/He 30%" in prompt  # the style targets are part of the revision
     assert "Return the text unchanged" not in prompt
+
+
+def test_default_pipeline_is_luna_draft_and_one_sol_revision_on_flex() -> None:
+    from app.generation.chains.translate_fragment_chain import calls_per_fragment, stage_thinking
+
+    s = Settings(GEMINI_MODEL="gemini-3.1-flash-lite-preview")
+    assert calls_per_fragment(s) == ("faithful", "line_edit")
+    assert stage_model(s, "faithful") == "gpt-6-luna"
+    assert stage_model(s, "line_edit") == "gpt-6.1-sol"
+    assert stage_thinking(s, "line_edit") == "high"
+    assert s.TRANSLATION_OPENAI_SERVICE_TIER == "flex"
+    # Measured on chapters 3 and 5 (5,491 words): $0.67 on Flex.
+    est = estimate_translation(word_count=5491, fragment_count=6, glossary_terms=178, settings=s)
+    assert 0.45 < est.cost_usd < 0.95

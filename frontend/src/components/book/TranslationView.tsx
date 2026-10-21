@@ -81,6 +81,17 @@ export function TranslationView({ book }: Props) {
     return map;
   }, [translation.data?.chapters]);
 
+  // Two-step runs have no separate line edit: show only stages that have text.
+  const visibleStages = useMemo(() => {
+    const present = new Set<TranslationStage>();
+    for (const ch of translation.data?.chapters ?? []) {
+      for (const f of ch.fragments) {
+        for (const s of Object.keys(f.stages) as TranslationStage[]) present.add(s);
+      }
+    }
+    return STAGES.filter((s) => present.has(s.id));
+  }, [translation.data?.chapters]);
+
   const translatedChapters = book.chapters.filter((c) => {
     const ch = byChapter.get(c.id);
     return ch?.fragments.some((f) => Object.keys(f.stages).length > 0 || f.run_status);
@@ -105,7 +116,7 @@ export function TranslationView({ book }: Props) {
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">Show</p>
             <div className="inline-flex rounded-lg border border-ink-700 bg-ink-900 p-0.5">
-              {STAGES.map((s) => (
+              {visibleStages.map((s) => (
                 <button
                   key={s.id}
                   type="button"
@@ -294,8 +305,8 @@ function RunCard({
           <p className="mt-3 text-xs leading-relaxed text-ink-400">
             About {formatNumber(estimate.data.fragment_count)} fragment
             {estimate.data.fragment_count === 1 ? "" : "s"} ·{" "}
-            {formatNumber(estimate.data.word_count)} words · 3 calls per fragment · ~
-            {formatNumber(estimate.data.total_tokens)} tokens ·{" "}
+            {formatNumber(estimate.data.word_count)} words · {estimate.data.stages.length} calls per
+            fragment · ~{formatNumber(estimate.data.total_tokens)} tokens ·{" "}
             <span className="text-accent">≈ ${estimate.data.cost_usd.toFixed(2)}</span>. A rough
             estimate; thinking tokens vary by model.
           </p>
@@ -363,7 +374,7 @@ function RunCard({
 
 function summary(run: TranslationRun | null): string {
   if (!run)
-    return "No translation yet. Each fragment goes through a faithful translation, a line edit and a final edit.";
+    return "No translation yet. Each fragment gets a faithful draft, then is revised into the final English.";
   const progress = `${run.fragments_completed}/${run.fragments_total} fragments`;
   switch (run.status) {
     case "running":

@@ -218,7 +218,34 @@ function RunCard({
   byChapter: Map<string, ChapterTranslation>;
 }) {
   const [retranslate, setRetranslate] = useState(false);
-  const estimate = useTranslationEstimate(book.id, selected.length ? selected : null);
+
+  // Per chapter: fragments, and how many have a final English version.
+  const status = useMemo(() => {
+    const m = new Map<string, { total: number; finished: number }>();
+    for (const c of book.chapters) {
+      const frags = byChapter.get(c.id)?.fragments ?? [];
+      m.set(c.id, {
+        total: frags.length,
+        finished: frags.filter((f) => f.stages.polish).length,
+      });
+    }
+    return m;
+  }, [book.chapters, byChapter]);
+  const isDone = (id: string) => {
+    const st = status.get(id);
+    return !!st && st.total > 0 && st.finished === st.total;
+  };
+  const doneCount = book.chapters.filter((c) => isDone(c.id)).length;
+  const allDone = doneCount === book.chapters.length && doneCount > 0;
+
+  // Without "Translate again", a whole-book run skips finished chapters,
+  // so the estimate covers only the rest.
+  const estimateIds = selected.length
+    ? selected
+    : retranslate || doneCount === 0
+      ? null
+      : book.chapters.filter((c) => !isDone(c.id)).map((c) => c.id);
+  const estimate = useTranslationEstimate(book.id, estimateIds);
   const start = useStartTranslation(book.id);
   const resume = useContinueTranslation(book.id);
   const stop = useStopTranslation(book.id);
@@ -291,22 +318,29 @@ function RunCard({
               onChange={() => onSelectedChange([])}
               className="accent-[var(--color-accent)]"
             />
-            Whole book
+            {doneCount > 0 && !retranslate ? "Whole book (untranslated parts)" : "Whole book"}
           </label>
           {book.chapters.map((c, idx) => {
-            const ch = byChapter.get(c.id);
-            const finished = ch?.fragments.length
-              ? ch.fragments.filter((f) => f.stages.polish).length
-              : 0;
-            const frags = ch?.fragments.length ?? 0;
+            const st = status.get(c.id) ?? { total: 0, finished: 0 };
+            const done = isDone(c.id);
+            const locked = done && !retranslate;
             return (
               <label
                 key={c.id}
-                className="flex items-center gap-2 rounded px-2 py-1 text-[12.5px] text-ink-300 hover:bg-ink-800"
+                title={
+                  locked
+                    ? "Already translated. Tick “Translate again” to include it in a run."
+                    : undefined
+                }
+                className={cn(
+                  "flex items-center gap-2 rounded px-2 py-1 text-[12.5px] text-ink-300",
+                  locked ? "cursor-not-allowed opacity-50" : "hover:bg-ink-800",
+                )}
               >
                 <input
                   type="checkbox"
                   checked={selected.includes(c.id)}
+                  disabled={locked}
                   onChange={() => toggle(c.id)}
                   className="accent-[var(--color-accent)]"
                 />
@@ -314,11 +348,19 @@ function RunCard({
                   {String(idx + 1).padStart(2, "0")}
                 </span>
                 <span className="min-w-0 flex-1 truncate">{c.title ?? `Chapter ${idx + 1}`}</span>
-                {frags > 0 && finished > 0 && (
-                  <span className="font-mono text-[10px] text-ink-500">
-                    {finished}/{frags} finished
+                {done ? (
+                  <span className="inline-flex items-center gap-1 font-mono text-[10px] text-success">
+                    <CheckCircle2 className="h-3 w-3" aria-hidden />
+                    translated
                   </span>
-                )}
+                ) : st.finished > 0 ? (
+                  <span
+                    className="font-mono text-[10px] tabular-nums text-ink-400"
+                    title="Fragments with a final English version"
+                  >
+                    {st.finished}/{st.total}
+                  </span>
+                ) : null}
               </label>
             );
           })}
@@ -342,7 +384,11 @@ function RunCard({
           <input
             type="checkbox"
             checked={retranslate}
-            onChange={(e) => setRetranslate(e.target.checked)}
+            onChange={(e) => {
+              setRetranslate(e.target.checked);
+              // Finished chapters can only stay selected while translating again.
+              if (!e.target.checked) onSelectedChange(selected.filter((id) => !isDone(id)));
+            }}
             className="accent-[var(--color-accent)]"
           />
           Translate again, including fragments that already have a final English version
@@ -352,7 +398,7 @@ function RunCard({
           <Button
             variant="accent"
             size="sm"
-            disabled={running || start.isPending}
+            disabled={running || start.isPending || (allDone && !retranslate && !selected.length)}
             onClick={() =>
               start.mutate({ chapter_ids: selected.length ? selected : null, retranslate })
             }
@@ -361,7 +407,11 @@ function RunCard({
               ? "Starting…"
               : selected.length
                 ? `Translate ${selected.length} chapter${selected.length === 1 ? "" : "s"}`
-                : "Translate whole book"}
+                : allDone && !retranslate
+                  ? "Everything is translated"
+                  : doneCount > 0 && !retranslate
+                    ? "Translate the rest of the book"
+                    : "Translate whole book"}
           </Button>
           <Button
             variant="ghost"

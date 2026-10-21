@@ -100,6 +100,27 @@ export const GlossaryExtractionStartResponseSchema = z.object({
 });
 export type GlossaryExtractionStartResponse = z.infer<typeof GlossaryExtractionStartResponseSchema>;
 
+export const GlossaryImportSourceSchema = z.object({
+  book_id: z.string().uuid(),
+  title: z.string().nullable(),
+  original_filename: z.string().nullable(),
+  created_at: z.string(),
+  accepted: z.number().int(),
+  removed: z.number().int(),
+});
+export type GlossaryImportSource = z.infer<typeof GlossaryImportSourceSchema>;
+
+export const GlossaryImportSourcesSchema = z.object({
+  sources: z.array(GlossaryImportSourceSchema),
+});
+
+export const GlossaryImportResultSchema = z.object({
+  added: z.number().int(),
+  updated: z.number().int(),
+  kept: z.number().int(),
+});
+export type GlossaryImportResult = z.infer<typeof GlossaryImportResultSchema>;
+
 export const GlossaryExtractionStopResponseSchema = z.object({
   status: z.literal("accepted"),
   book_id: z.string().uuid(),
@@ -592,6 +613,30 @@ export const api = {
     handleResponse(
       await fetch(`${API_URL}/books/${id}/glossary-extraction/continue`, { method: "POST" }),
       GlossaryExtractionStartResponseSchema,
+    ),
+
+  expandGlossary: async (id: string): Promise<GlossaryExtractionStartResponse> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/glossary-extraction/expand`, { method: "POST" }),
+      GlossaryExtractionStartResponseSchema,
+    ),
+
+  getGlossaryImportSources: async (id: string): Promise<GlossaryImportSource[]> =>
+    (
+      await handleResponse(
+        await fetch(`${API_URL}/books/${id}/glossary-import-sources`),
+        GlossaryImportSourcesSchema,
+      )
+    ).sources,
+
+  importGlossary: async (id: string, sourceBookId: string): Promise<GlossaryImportResult> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/glossary-import`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_book_id: sourceBookId }),
+      }),
+      GlossaryImportResultSchema,
     ),
 
   stopGlossaryExtraction: async (id: string): Promise<GlossaryExtractionStopResponse> =>

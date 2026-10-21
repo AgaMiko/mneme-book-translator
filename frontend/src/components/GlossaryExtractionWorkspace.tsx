@@ -3,6 +3,7 @@ import { AlertCircle, CheckCircle2, ChevronDown, Circle, Loader2, PauseCircle } 
 import type { UseMutationResult, UseQueryResult } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/Button";
+import { useGlossaryImportSources, useImportGlossary } from "@/lib/api/hooks";
 import type { BookDetail, GlossaryExtractionEstimate, GlossaryRunMeta } from "@/lib/api/client";
 import { ApiError } from "@/lib/api/client";
 import {
@@ -29,6 +30,7 @@ interface Props {
   startGlossary: StartMut;
   continueGlossary: StartMut;
   stopGlossary: StopMut;
+  expandGlossary: StartMut;
   /** Metadata for the latest run, when one exists. */
   run: GlossaryRunMeta | null;
 }
@@ -49,6 +51,7 @@ export function GlossaryExtractionWorkspace({
   startGlossary,
   continueGlossary,
   stopGlossary,
+  expandGlossary,
   run,
 }: Props) {
   const [controlsOpen, setControlsOpen] = useState(book.glossary_extraction_status === "idle");
@@ -63,7 +66,8 @@ export function GlossaryExtractionWorkspace({
       "Could not continue extraction.",
       continueGlossary.isError,
     ) ??
-    errorDetail(stopGlossary.error, "Could not request stop.", stopGlossary.isError);
+    errorDetail(stopGlossary.error, "Could not request stop.", stopGlossary.isError) ??
+    errorDetail(expandGlossary.error, "Could not start expanding.", expandGlossary.isError);
 
   return (
     <section className="rounded-lg border border-ink-800 bg-ink-800" aria-label="Extraction run">
@@ -203,7 +207,28 @@ export function GlossaryExtractionWorkspace({
             >
               {stopGlossary.isPending ? "Stopping…" : "Stop"}
             </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              disabled={!runnable || !run || running || expandGlossary.isPending}
+              title={
+                run
+                  ? "Read the whole manuscript again and add terms that are missing"
+                  : "Run an extraction or import a glossary first"
+              }
+              onClick={() => expandGlossary.mutate()}
+            >
+              {expandGlossary.isPending ? "Starting…" : "Expand glossary"}
+            </Button>
           </div>
+          <p className="mt-2 text-xs leading-relaxed text-ink-500">
+            <span className="text-ink-400">Expand glossary</span> reads the whole manuscript again
+            and adds terms the glossary is missing, as proposals to review. Terms you accepted or
+            removed stay as they are; it may only add spelling and case variants to them. Costs
+            about the same as a new run.
+          </p>
+
+          <ImportGlossary book={book} disabled={running} />
 
           {mutationError && (
             <p className="mt-3 text-sm text-danger" role="alert">
@@ -213,6 +238,74 @@ export function GlossaryExtractionWorkspace({
         </div>
       )}
     </section>
+  );
+}
+
+/**
+ * Copy the reviewed terms of another book's glossary into this one, for a
+ * new version of the same manuscript or the next book in a series.
+ */
+function ImportGlossary({ book, disabled }: { book: BookDetail; disabled: boolean }) {
+  const sources = useGlossaryImportSources(book.id, true);
+  const importGlossary = useImportGlossary(book.id);
+  const [sourceId, setSourceId] = useState("");
+  const chosen = sourceId || sources.data?.[0]?.book_id || "";
+
+  return (
+    <div className="mt-5 border-t border-ink-700 pt-4">
+      <h3 className="text-[13px] font-medium text-ink-100">Import from another book</h3>
+      <p className="mt-1 text-xs leading-relaxed text-ink-500">
+        Copies the terms you accepted or removed in another book. Unreviewed proposals are not
+        copied. If a term is already accepted or removed here, this book&apos;s decision stays; if
+        it is only a proposal here, the other book&apos;s decision replaces it. Then use Expand
+        glossary to add the terms only this book has.
+      </p>
+
+      {sources.isLoading && <p className="mt-2 text-xs text-ink-400">Looking for books…</p>}
+      {sources.data && sources.data.length === 0 && (
+        <p className="mt-2 text-xs text-ink-400">No other book has reviewed glossary terms yet.</p>
+      )}
+      {sources.data && sources.data.length > 0 && (
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <select
+            value={chosen}
+            onChange={(e) => {
+              setSourceId(e.target.value);
+              importGlossary.reset();
+            }}
+            className="min-w-0 max-w-full flex-1 rounded-md border border-ink-700 bg-ink-900 px-2 py-1.5 text-[13px] text-ink-100"
+            aria-label="Book to import from"
+          >
+            {sources.data.map((s) => (
+              <option key={s.book_id} value={s.book_id}>
+                {s.title || s.original_filename || "Untitled"} · uploaded {formatWhen(s.created_at)}{" "}
+                · {s.accepted} accepted, {s.removed} removed
+              </option>
+            ))}
+          </select>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={disabled || !chosen || importGlossary.isPending}
+            onClick={() => importGlossary.mutate(chosen)}
+          >
+            {importGlossary.isPending ? "Importing…" : "Import"}
+          </Button>
+        </div>
+      )}
+
+      {importGlossary.data && (
+        <p className="mt-2 text-xs text-success" role="status">
+          Imported: {importGlossary.data.added} new, {importGlossary.data.updated} proposals
+          replaced, {importGlossary.data.kept} already reviewed here and kept.
+        </p>
+      )}
+      {importGlossary.isError && (
+        <p className="mt-2 text-xs text-danger" role="alert">
+          {errorDetail(importGlossary.error, "Could not import the glossary.", true)}
+        </p>
+      )}
+    </div>
   );
 }
 

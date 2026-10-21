@@ -351,9 +351,11 @@ async def patch_working_glossary_entry(
 
     if patch.accept:
         entry.status = "accepted"
-    elif (
-        (patch.proposed_target is not None or patch.suggestion is not None)
-        and entry.status in ("proposed", "accepted", "adjusted", "rejected")
+    elif (patch.proposed_target is not None or patch.suggestion is not None) and entry.status in (
+        "proposed",
+        "accepted",
+        "adjusted",
+        "rejected",
     ):
         entry.status = "adjusted"
 
@@ -416,7 +418,17 @@ async def can_continue_glossary_extraction(
     done = await _max_stored_glossary_window(session, extraction_run_id=run.id)
     if done >= total:
         return False
-    return not (book.glossary_extraction_windows_total is not None and book.glossary_extraction_windows_total != total)
+    return not (
+        book.glossary_extraction_windows_total is not None
+        and book.glossary_extraction_windows_total != total
+    )
+
+
+REVIEWED_STATUSES = ("accepted", "adjusted", "rejected")
+
+
+def _is_reviewed(entry: GlossaryEntry) -> bool:
+    return entry.status in REVIEWED_STATUSES
 
 
 def _dedupe_new_terms_in_delta(entries: list[NewTerm]) -> list[NewTerm]:
@@ -471,7 +483,9 @@ def _first_seen_window(
     return None
 
 
-def _normalize_translation_recommendation(rec: dict[str, Any], canonical_form: str) -> dict[str, Any]:
+def _normalize_translation_recommendation(
+    rec: dict[str, Any], canonical_form: str
+) -> dict[str, Any]:
     """Ensure ``proposed_target`` is always a concrete string for review UIs."""
     out = dict(rec) if isinstance(rec, dict) else {}
     suggestion = out.get("suggestion")
@@ -633,7 +647,12 @@ async def apply_delta(
     window_text: str,
     window_number: int,
 ) -> None:
-    """Persist one window's delta (merges → refinements → extensions → new → notepad → counts)."""
+    """Persist one window's delta (merges → refinements → extensions → new → notepad → counts).
+
+    Entries the author has reviewed (accepted, adjusted or removed) are never
+    renamed, rewritten or merged away; extraction may only add variants to
+    them. This matters when a run expands an existing or imported glossary.
+    """
     for m in delta.merges:
         winner = await session.get(GlossaryEntry, UUID(m.winner_id))
         loser = await session.get(GlossaryEntry, UUID(m.loser_id))
@@ -644,6 +663,13 @@ async def apply_delta(
             or loser.extraction_run_id != extraction_run_id
         ):
             raise ValueError("merge entries do not belong to this extraction run")
+        if _is_reviewed(loser):
+            log.info(
+                "glossary_merge_skipped_reviewed_entry",
+                loser_id=str(loser.id),
+                window_number=window_number,
+            )
+            continue
         w_var = list(winner.variants or [])
         l_var = list(loser.variants or [])
         winner.variants = _unique_variants(
@@ -656,6 +682,8 @@ async def apply_delta(
     for r in delta.refinements:
         entry = await session.get(GlossaryEntry, UUID(r.entry_id))
         if entry is None or entry.extraction_run_id != extraction_run_id:
+            continue
+        if _is_reviewed(entry):
             continue
 
         # Renaming onto an existing canonical would violate ``uq_glossary_run_canonical``.
@@ -673,6 +701,14 @@ async def apply_delta(
                     + list(entry.variants or [])
                     + [entry.canonical_form],
                 )
+                if _is_reviewed(existing):
+                    r = r.model_copy(
+                        update={
+                            "new_term_type": None,
+                            "new_meaning": None,
+                            "new_translation_recommendation": None,
+                        }
+                    )
                 if r.new_term_type is not None:
                     existing.term_type = r.new_term_type
                 if r.new_meaning is not None:
@@ -773,8 +809,15 @@ async def extract_book_glossary(
     book_id: UUID,
     settings: Settings,
     continue_extraction: bool = False,
+    expand: bool = False,
 ) -> None:
     """Background task: run glossary windows for a book, optionally resuming a run.
+
+    With ``expand=True``, reads every window again on the book's latest run
+    (for example an imported glossary), so only missing terms and variants are
+    added; reviewed entries stay as they are (see ``apply_delta``). It works in
+    place because voice profiles point at that run's entries. Window responses
+    are not stored again (the run already has them, or none for an import).
 
     New run processes every window. With ``continue_extraction=True``, reuses
     the latest *failed* or *cancelled* run and all persisted entries, and only
@@ -809,7 +852,23 @@ async def extract_book_glossary(
             windows = make_windows(plaintext)
             total = len(windows)
 
-            if not continue_extraction:
+            if expand:
+                latest, _entries = await load_working_glossary_for_latest_run(
+                    session, book_id=book_id
+                )
+                if latest is None:
+                    book.glossary_extraction_status = "failed"
+                    await session.commit()
+                    log.warning("glossary_expand_no_glossary", book_id=str(book_id))
+                    return
+                run_id = latest.id
+                start_window = 1
+                latest.status = "running"
+                latest.model = settings.GEMINI_MODEL
+                latest.error_message = None
+                await session.commit()
+                log.info("glossary_expand_started", book_id=str(book_id), run_id=str(run_id))
+            elif not continue_extraction:
                 run = GlossaryExtractionRun(
                     book_id=book_id,
                     status="running",
@@ -943,14 +1002,15 @@ async def extract_book_glossary(
                         settings=settings,
                     )
 
-                    raw = delta.model_dump(mode="json")
-                    session.add(
-                        GlossaryWindowGeneration(
-                            extraction_run_id=run_id,
-                            window_number=n,
-                            raw_response=raw,
-                        ),
-                    )
+                    if not expand:
+                        raw = delta.model_dump(mode="json")
+                        session.add(
+                            GlossaryWindowGeneration(
+                                extraction_run_id=run_id,
+                                window_number=n,
+                                raw_response=raw,
+                            ),
+                        )
                     await apply_delta(
                         session,
                         book_id=book_id,
@@ -1043,6 +1103,134 @@ async def extract_book_glossary(
                 bb.glossary_extraction_status = "failed"
                 bb.glossary_extraction_cancel_requested = False
             await session.commit()
+
+
+async def list_glossary_import_sources(
+    session: AsyncSession, *, book_id: UUID
+) -> list[dict[str, Any]]:
+    """Other books whose latest glossary has reviewed terms to import."""
+    books = (
+        (
+            await session.execute(
+                select(Book).where(Book.id != book_id).order_by(Book.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    out: list[dict[str, Any]] = []
+    for b in books:
+        _run, entries = await load_working_glossary_for_latest_run(session, book_id=b.id)
+        accepted = sum(1 for e in entries if e.status in ("accepted", "adjusted"))
+        removed = sum(1 for e in entries if e.status == "rejected")
+        if accepted or removed:
+            out.append(
+                {
+                    "book_id": str(b.id),
+                    "title": b.title,
+                    "original_filename": b.original_filename,
+                    "created_at": b.created_at.isoformat(),
+                    "accepted": accepted,
+                    "removed": removed,
+                }
+            )
+    return out
+
+
+async def import_glossary_from_book(
+    session: AsyncSession,
+    *,
+    book_id: UUID,
+    source_book_id: UUID,
+    model_label: str = "import",
+) -> dict[str, int]:
+    """Copy the reviewed terms of another book's glossary into this book's.
+
+    Accepted, adjusted and removed entries keep their status (removed ones
+    stop extraction proposing them again); unreviewed proposals are not
+    copied. A term this book has already reviewed keeps this book's decision;
+    a term that is only proposed here takes the other book's decision.
+    Variants are combined. Occurrence counts are recomputed for this book, so
+    terms the book never uses show 0.
+    """
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise LookupError("Book not found")
+    _src_run, source_entries = await load_working_glossary_for_latest_run(
+        session, book_id=source_book_id
+    )
+    reviewed = [e for e in source_entries if _is_reviewed(e)]
+    if not reviewed:
+        raise ValueError("The other book has no reviewed glossary terms to import.")
+
+    run, entries = await load_working_glossary_for_latest_run(session, book_id=book_id)
+    if run is None:
+        run = GlossaryExtractionRun(book_id=book_id, status="completed", model=model_label)
+        run.completed_at = datetime.now(UTC)
+        session.add(run)
+        await session.flush()
+        entries = []
+    by_canonical = {e.canonical_form: e for e in entries}
+
+    added = updated = kept = 0
+    for src in reviewed:
+        status = src.status
+        rec = dict(src.translation_recommendation or {})
+        rec["imported_from_book_id"] = str(source_book_id)
+        target = by_canonical.get(src.canonical_form)
+        if target is None:
+            session.add(
+                GlossaryEntry(
+                    book_id=book_id,
+                    extraction_run_id=run.id,
+                    canonical_form=src.canonical_form,
+                    term_type=src.term_type,
+                    meaning=src.meaning,
+                    translation_recommendation=rec,
+                    variants=list(src.variants or []),
+                    status=status,
+                    first_seen_window=1,
+                    occurrence_count=0,
+                )
+            )
+            added += 1
+        elif _is_reviewed(target):
+            target.variants = _unique_variants(
+                list(target.variants or []) + list(src.variants or [])
+            )
+            kept += 1
+        else:
+            target.term_type = src.term_type
+            target.meaning = src.meaning
+            target.translation_recommendation = rec
+            target.status = status
+            target.variants = _unique_variants(
+                list(target.variants or []) + list(src.variants or [])
+            )
+            updated += 1
+    await session.flush()
+
+    plaintext = await _load_book_plaintext(session, book_id)
+    await recompute_glossary_entry_metrics(
+        session,
+        book_id=book_id,
+        extraction_run_id=run.id,
+        plaintext=plaintext,
+        windows=make_windows(plaintext) if plaintext else [],
+    )
+    if book.glossary_extraction_status in ("idle", "failed", "cancelled"):
+        book.glossary_extraction_status = "completed"
+        _clear_book_glossary_progress_fields(book)
+    await session.commit()
+    log.info(
+        "glossary_imported",
+        book_id=str(book_id),
+        source_book_id=str(source_book_id),
+        added=added,
+        updated=updated,
+        kept=kept,
+    )
+    return {"added": added, "updated": updated, "kept": kept}
 
 
 async def publish_final_glossary(

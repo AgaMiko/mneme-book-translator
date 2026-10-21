@@ -862,7 +862,7 @@ function GlossaryEntryRow({
                         )}
                         Accept
                       </Button>
-                      {isAwaitingAcceptance(entry) ? (
+                      {entry.status !== "rejected" ? (
                         <Button
                           variant="danger"
                           size="sm"

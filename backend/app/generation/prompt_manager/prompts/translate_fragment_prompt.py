@@ -135,6 +135,9 @@ order. Never merge or split paragraphs across ids.
 Add a note only when the author needs to know or decide something.
 """
 
+# Two-step mode (``TRANSLATION_STAGE_COUNT=2``): one revision pass does the
+# line edit and the final edit's measured targets together, working from
+# the faithful draft. Built from the same pieces as the three-step tasks.
 LINE_EDIT_TASK = """\
 ## Your task: line edit (stage 2 of 3)
 
@@ -196,13 +199,7 @@ look at each spot listed under "Rhythm and repetition in the draft".
 Return one paragraph for each paragraph id, in the same order.
 """
 
-POLISH_TASK = """\
-## Your task: final polish (stage 3 of 3)
-
-Below is the line-edited translation. Make it read like a professionally \
-edited {target_language} fantasy novel without changing what happens, what \
-is said, or who says it.
-
+STYLE_TARGETS = """\
 Measured targets, with this fragment's current numbers:
 
 {metrics_block}
@@ -225,6 +222,19 @@ wave of, couldn't help but, suddenly…): replace with something concrete, or \
 cut.
 - Also fix clunky lines (especially converted units), long clause chains \
 and repeated dialogue tags.
+"""
+
+POLISH_TASK = (
+    """\
+## Your task: final polish (stage 3 of 3)
+
+Below is the line-edited translation. Make it read like a professionally \
+edited {target_language} fantasy novel without changing what happens, what \
+is said, or who says it.
+
+"""
+    + STYLE_TARGETS
+    + """\
 - Sentence rhythm: vary sentence length. Translating sentence by sentence \
 tends to give runs of sentences of about the same length; mix short, \
 medium and long ones so the prose has movement. Short sentences for \
@@ -262,6 +272,7 @@ rephrased with the same meaning is not a meaning risk and is not listed.
 
 Return one paragraph for each paragraph id, in the same order.
 """
+)
 
 
 @dataclass(slots=True)
@@ -415,5 +426,44 @@ def build_polish_prompt(
             context,
             "## Source paragraphs (for checking meaning)\n\n" + render_paragraphs(source),
             "## Line-edited translation to polish\n\n" + render_paragraphs(line_edited),
+        ]
+    )
+
+
+REVISION_TASK = (
+    LINE_EDIT_TASK.replace("line edit (stage 2 of 3)", "revision (stage 2 of 2)").replace(
+        "Return one paragraph for each paragraph id, in the same order.\n", ""
+    )
+    + "\nThis is also the final pass: no editor works on the text after you. "
+    "Meet the measured targets below as well (numbers measured on the draft).\n\n"
+    + STYLE_TARGETS.replace(
+        " Return the text unchanged only when every target is met and nothing reads clumsily.",
+        "",
+    )
+    + "\nReturn one paragraph for each paragraph id, in the same order.\n"
+)
+
+
+def build_revision_prompt(
+    *,
+    context: str,
+    target_language: str,
+    source: list[tuple[str, str]],
+    faithful: list[tuple[str, str]],
+    checks: list[str],
+    rhythm: list[str],
+    metrics_block: str,
+) -> str:
+    """Two-step mode: the line-edit prompt with the style targets added."""
+    return "\n\n".join(
+        [
+            REVISION_TASK.format(target_language=target_language, metrics_block=metrics_block),
+            context,
+            "## Problems found by automatic checks\n\n"
+            + ("\n".join(f"- {c}" for c in checks) if checks else "(none)"),
+            "## Rhythm and repetition in the draft\n\n"
+            + ("\n".join(f"- {r}" for r in rhythm) if rhythm else "(none found)"),
+            "## Source paragraphs\n\n" + render_paragraphs(source),
+            "## Faithful translation to revise\n\n" + render_paragraphs(faithful),
         ]
     )

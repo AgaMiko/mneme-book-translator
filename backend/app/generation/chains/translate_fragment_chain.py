@@ -32,6 +32,7 @@ from app.generation.prompt_manager.prompts.translate_fragment_prompt import (
     build_faithful_prompt,
     build_line_edit_prompt,
     build_polish_prompt,
+    build_revision_prompt,
 )
 from app.generation.providers.gemini import generate as gemini_generate
 from app.generation.providers.openai import ModelResult, cache_key_for, is_openai_model
@@ -65,6 +66,17 @@ def stage_thinking(settings: Settings, stage: str) -> str | None:
         "polish": settings.TRANSLATION_THINKING_POLISH,
     }.get(stage)
     return level.strip().lower() if level and level.strip() else None
+
+
+def calls_per_fragment(settings: Settings) -> tuple[str, ...]:
+    """The model calls each fragment gets, named by the settings they use.
+
+    In two-step mode the second call (``line_edit`` settings) is the
+    revision, and its output is stored as the final (``polish``) stage.
+    """
+    if settings.TRANSLATION_STAGE_COUNT == 2:
+        return ("faithful", "line_edit")
+    return ("faithful", "line_edit", "polish")
 
 
 def stage_model(settings: Settings, stage: str) -> str:
@@ -285,5 +297,45 @@ async def polish_fragment(
         expected_ids=[pid for pid, _ in source],
         stage="polish",
         temperature=0.4,
+        settings=settings,
+    )
+
+
+@observe(name="revise_fragment", as_type="generation")
+async def revise_fragment(
+    *,
+    fixed_context: str,
+    cached_content: str | None,
+    context: str,
+    source: list[tuple[str, str]],
+    faithful: list[tuple[str, str]],
+    checks: list[str],
+    rhythm: list[str],
+    metrics_block: str,
+    target_language: str,
+    settings: Settings,
+) -> StageResult[LineEditedFragment]:
+    """Two-step mode, stage 2: line edit and final edit in one pass.
+
+    Uses the line-edit model and thinking level; the caller stores the
+    result as the final stage.
+    """
+    prompt = build_revision_prompt(
+        context=context,
+        target_language=target_language,
+        source=source,
+        faithful=faithful,
+        checks=checks,
+        rhythm=rhythm,
+        metrics_block=metrics_block,
+    )
+    return await _generate_aligned(
+        fixed_context=fixed_context,
+        cached_content=cached_content,
+        prompt=prompt,
+        schema=LineEditedFragment,
+        expected_ids=[pid for pid, _ in source],
+        stage="line_edit",
+        temperature=0.5,
         settings=settings,
     )

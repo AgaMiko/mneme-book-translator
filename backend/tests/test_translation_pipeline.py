@@ -367,3 +367,44 @@ def test_openai_input_marks_the_prefix_as_a_cache_breakpoint() -> None:
         "prompt_cache_breakpoint": {"mode": "explicit"},
     }
     assert content[1] == {"type": "input_text", "text": "rest"}
+
+
+def test_two_step_mode() -> None:
+    from app.generation.chains.translate_fragment_chain import calls_per_fragment
+    from app.generation.prompt_manager.prompts.translate_fragment_prompt import (
+        build_revision_prompt,
+    )
+    from app.services.translation_service import _run_models
+
+    three = Settings(GEMINI_MODEL="m", TRANSLATION_MODEL="gpt-6.1-sol")
+    two = Settings(
+        GEMINI_MODEL="m",
+        TRANSLATION_MODEL="gpt-6.1-sol",
+        TRANSLATION_FAITHFUL_MODEL="gpt-6-luna",
+        TRANSLATION_STAGE_COUNT=2,
+    )
+    assert calls_per_fragment(three) == ("faithful", "line_edit", "polish")
+    assert calls_per_fragment(two) == ("faithful", "line_edit")
+    assert _run_models(two) == {"faithful": "gpt-6-luna", "polish": "gpt-6.1-sol"}
+
+    a = estimate_translation(
+        word_count=10_000, fragment_count=None, glossary_terms=50, settings=three
+    )
+    b = estimate_translation(
+        word_count=10_000, fragment_count=None, glossary_terms=50, settings=two
+    )
+    assert [s.stage for s in b.stages] == ["faithful", "line_edit"]
+    assert b.cost_usd < a.cost_usd
+
+    prompt = build_revision_prompt(
+        context="ctx",
+        target_language="English",
+        source=[("p1", "Tak.")],
+        faithful=[("p1", "Yes.")],
+        checks=[],
+        rhythm=[],
+        metrics_block="She/He 30%",
+    )
+    assert "revision (stage 2 of 2)" in prompt
+    assert "She/He 30%" in prompt  # the style targets are part of the revision
+    assert "Return the text unchanged" not in prompt

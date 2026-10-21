@@ -48,9 +48,12 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str | None = None
     GEMINI_MODEL: str = "gemini-3.1-flash-lite-preview"
     # Fragment translation (Step 5). Each stage falls back to TRANSLATION_MODEL,
-    # then to GEMINI_MODEL, so one setting is enough to start.
-    TRANSLATION_MODEL: str | None = None
-    TRANSLATION_FAITHFUL_MODEL: str | None = None
+    # then to GEMINI_MODEL. Default (chosen in blind tests on Zaplataczka
+    # chapters 3 and 5, 2026-10-21): gpt-6-luna writes the faithful draft and
+    # gpt-6.1-sol does one revision at high thinking, on the Flex tier. Needs
+    # OPENAI_API_KEY; set TRANSLATION_MODEL to a gemini-… model to avoid OpenAI.
+    TRANSLATION_MODEL: str | None = "gpt-6.1-sol"
+    TRANSLATION_FAITHFUL_MODEL: str | None = "gpt-6-luna"
     TRANSLATION_LINE_EDIT_MODEL: str | None = None
     TRANSLATION_POLISH_MODEL: str | None = None
     # How many fragments are translated at the same time.
@@ -69,7 +72,7 @@ class Settings(BaseSettings):
     # revision that does the line edit and the final edit's style targets;
     # it uses the line-edit model and thinking level and is stored as the
     # final stage.
-    TRANSLATION_STAGE_COUNT: int = 3
+    TRANSLATION_STAGE_COUNT: int = 2
     # OpenAI service tier for translation calls: "flex" is half price and
     # slower; empty uses the standard tier.
     TRANSLATION_OPENAI_SERVICE_TIER: str | None = "flex"

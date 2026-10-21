@@ -28,8 +28,12 @@ from app.generation.prompt_manager.prompts.translate_fragment_prompt import (
     RULES_CORE,
     STYLE_SHEET,
 )
+from app.generation.providers.openai import is_openai_model
 from app.services.fragmenter import TARGET_WORDS
-from app.services.gemini_model_pricing import resolve_gemini_usd_per_million_tokens
+from app.services.gemini_model_pricing import (
+    resolve_flex_usd_per_million_tokens,
+    resolve_gemini_usd_per_million_tokens,
+)
 
 if TYPE_CHECKING:
     from app.core.config import Settings
@@ -52,12 +56,28 @@ _THINKING_RATIO_BY_LEVEL: dict[str, dict[str, float]] = {
     "high": {"faithful": 7.5, "line_edit": 7.5, "polish": 12.5},
 }
 _THINKING_RATIO_MODEL_DEFAULT = 3.2
+# OpenAI reasoning tokens as a share of visible output, measured the same way
+# (Luna and Sol on chapters 3 and 5). Sol's single revision in two-step mode
+# reasons like a line edit.
+_OPENAI_THINKING_RATIO: dict[str, dict[str, dict[str, float]]] = {
+    "gpt-6-luna": {
+        "high": {"faithful": 2.1, "line_edit": 2.1, "polish": 2.1},
+        "medium": {"faithful": 0.6, "line_edit": 0.6, "polish": 0.6},
+    },
+    "gpt-6.1-sol": {
+        "high": {"faithful": 1.8, "line_edit": 3.1, "polish": 2.7},
+        "medium": {"faithful": 0.4, "line_edit": 0.4, "polish": 0.3},
+    },
+}
 _CACHED_INPUT_SHARE_OF_PRICE = 0.1
 
 
 def thinking_ratio(model: str, level: str | None, stage: str) -> float:
     if "lite" in model.lower():
         return 0.0
+    for prefix, by_level in _OPENAI_THINKING_RATIO.items():
+        if model.lower().startswith(prefix) and level in by_level:
+            return by_level[level][stage]
     if level is None:
         return _THINKING_RATIO_MODEL_DEFAULT
     return _THINKING_RATIO_BY_LEVEL.get(level, {}).get(stage, _THINKING_RATIO_MODEL_DEFAULT)
@@ -119,6 +139,11 @@ def estimate_translation(
         ratio = thinking_ratio(model, stage_thinking(settings, stage), stage)
         output_tokens = _tokens(visible_out * (1 + ratio))
         in_price, out_price = resolve_gemini_usd_per_million_tokens(model)
+        if is_openai_model(model) and settings.TRANSLATION_OPENAI_SERVICE_TIER == "flex":
+            in_price, out_price = resolve_flex_usd_per_million_tokens(model) or (
+                in_price,
+                out_price,
+            )
         if settings.GEMINI_INPUT_PRICE_USD_PER_MTOK is not None:
             in_price = settings.GEMINI_INPUT_PRICE_USD_PER_MTOK
         if settings.GEMINI_OUTPUT_PRICE_USD_PER_MTOK is not None:

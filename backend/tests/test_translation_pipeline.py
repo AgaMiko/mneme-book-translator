@@ -303,3 +303,25 @@ def test_openai_usage_maps_to_gemini_keys() -> None:
         "thoughts_token_count": 700,
         "total_token_count": 1900,
     }
+
+
+def test_only_case_forms_count_as_glossary_variants() -> None:
+    from app.services.translation_service import is_form_of
+
+    for canonical, variant in [
+        ("Mira", "Miro"),
+        ("Einard", "Einardzie"),
+        ("Stein", "Steina"),
+        ("Hania", "Hanna"),
+        ("Dar Widzenia Pyłu", "Dar Widzenia Pyłem"),
+    ]:
+        assert is_form_of(canonical, variant), (canonical, variant)
+    for canonical, variant in [
+        ("Naelori", "Vynmor"),  # a different place named next to it
+        ("Elantria", "adeptka"),  # a description, not her name
+        ("Klejnot Myśli", "Krwawy Szeptacz"),  # a different artefact
+        ("Alithor", "medalion Alithora"),  # a phrase containing the name
+        ("Kerry", "Selen"),  # an alias: translated on its own
+        ("Mira", "Mira"),  # the canonical form itself
+    ]:
+        assert not is_form_of(canonical, variant), (canonical, variant)

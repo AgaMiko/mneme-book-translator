@@ -37,6 +37,7 @@ import {
 import { cn, formatNumber } from "@/lib/utils";
 
 import { BOOK_PANEL_CONTAINER, BOOK_PANEL_SURFACE } from "./layout";
+import { type BookTab, translationBlockers } from "./tabs";
 import { HighlightedText, MissingTerms, TermProvider } from "./TermHighlight";
 import { englishTerms, useTerms } from "./terms";
 
@@ -44,6 +45,8 @@ interface Props {
   book: BookDetail;
   /** Open a glossary term in the Glossary tab. */
   onOpenTerm: (termId: string) => void;
+  /** Switch to another tab (the step that still has to be done). */
+  onSelectTab: (tab: BookTab) => void;
 }
 
 const STAGES: { id: TranslationStage; label: string; hint: string }[] = [
@@ -82,7 +85,7 @@ const EDIT_LABELS: Record<string, string> = {
  * starts, stops and continues runs; the stage switch shows whichever of the
  * draft, line-edited and final texts exist.
  */
-export function TranslationView({ book, onOpenTerm }: Props) {
+export function TranslationView({ book, onOpenTerm, onSelectTab }: Props) {
   const translation = useTranslation(book.id);
   const terms = useTranslationTerms(book.id);
   const [stage, setStage] = useState<TranslationStage>("polish");
@@ -124,6 +127,7 @@ export function TranslationView({ book, onOpenTerm }: Props) {
             selected={selected}
             onSelectedChange={setSelected}
             byChapter={byChapter}
+            onSelectTab={onSelectTab}
           />
 
           {translation.isError && (
@@ -210,12 +214,14 @@ function RunCard({
   selected,
   onSelectedChange,
   byChapter,
+  onSelectTab,
 }: {
   book: BookDetail;
   run: TranslationRun | null;
   selected: string[];
   onSelectedChange: (ids: string[]) => void;
   byChapter: Map<string, ChapterTranslation>;
+  onSelectTab: (tab: BookTab) => void;
 }) {
   const [retranslate, setRetranslate] = useState(false);
 
@@ -252,7 +258,7 @@ function RunCard({
 
   const running = run?.status === "running";
   const canContinue = run?.status === "failed" || run?.status === "cancelled";
-  const glossaryReady = book.glossary_extraction_status === "completed";
+  const missing = translationBlockers(book);
 
   const error =
     errorText(start.error, start.isError, "Could not start the translation.") ??
@@ -300,11 +306,20 @@ function RunCard({
       )}
 
       <div className="border-t border-ink-700 px-4 py-4">
-        {!glossaryReady && (
-          <p className="mb-3 text-sm text-warning">
-            The glossary hasn&apos;t been extracted yet. Translation will run without accepted
-            terms.
-          </p>
+        {missing.length > 0 && (
+          <div className="mb-3 flex flex-wrap items-center gap-3 text-sm text-warning">
+            <p className="min-w-0 flex-1">
+              {missing.length === 2
+                ? "Build the glossary and extract the voices before translating."
+                : missing[0] === "glossary"
+                  ? "Finish the glossary before translating."
+                  : "Extract the voices before translating."}{" "}
+              The translation uses the glossary terms and the voice profiles.
+            </p>
+            <Button variant="ghost" size="sm" onClick={() => onSelectTab(missing[0])}>
+              {missing[0] === "glossary" ? "Go to glossary" : "Go to voices"}
+            </Button>
+          </div>
         )}
 
         <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
@@ -398,7 +413,12 @@ function RunCard({
           <Button
             variant="accent"
             size="sm"
-            disabled={running || start.isPending || (allDone && !retranslate && !selected.length)}
+            disabled={
+              running ||
+              start.isPending ||
+              missing.length > 0 ||
+              (allDone && !retranslate && !selected.length)
+            }
             onClick={() =>
               start.mutate({ chapter_ids: selected.length ? selected : null, retranslate })
             }
@@ -416,7 +436,7 @@ function RunCard({
           <Button
             variant="ghost"
             size="sm"
-            disabled={!canContinue || resume.isPending}
+            disabled={!canContinue || resume.isPending || missing.length > 0}
             title={
               canContinue ? "Retry failed and unfinished fragments" : "Only after a stop or failure"
             }

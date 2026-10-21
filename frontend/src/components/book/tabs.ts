@@ -10,9 +10,9 @@ import { formatNumber } from "@/lib/utils";
  * navigation itself carries the state.
  *
  * `Voices` unlocks after glossary extraction completes (canonical
- * characters exist). `Translation` is always reachable; it works best after
- * the glossary and voices are reviewed, but can run on a single chapter
- * at any time.
+ * characters exist). `Translation` unlocks once the voices are extracted
+ * too: the translation prompts use both. A book that already has a
+ * translation run keeps the tab open so the result stays readable.
  */
 
 /**
@@ -41,6 +41,14 @@ export const EMPTY_TAB_COUNTS: TabCounts = {
   translationDone: 0,
   translationTotal: 0,
 };
+
+/** Steps that must finish before a translation can start (mirrors the backend check). */
+export function translationBlockers(book: BookDetail): ("glossary" | "voices")[] {
+  const missing: ("glossary" | "voices")[] = [];
+  if (book.glossary_extraction_status !== "completed") missing.push("glossary");
+  if (book.voice_extraction_status !== "completed") missing.push("voices");
+  return missing;
+}
 
 export interface BookTabDef {
   id: "manuscript" | "glossary" | "voices" | "translation";
@@ -127,12 +135,17 @@ export const BOOK_TABS: readonly BookTabDef[] = [
     id: "translation",
     label: "Translation",
     disabled: false,
-    state: (_b, counts) => {
+    state: (b, counts) => {
+      if (counts.translationStatus === null && translationBlockers(b).length > 0) return "locked";
       if (counts.translationStatus === "running") return "active";
       if (counts.translationStatus === "completed") return "done";
       return "idle";
     },
-    caption: (_b, counts) => {
+    caption: (b, counts) => {
+      if (counts.translationStatus === null) {
+        const missing = translationBlockers(b);
+        if (missing.length > 0) return `${missing[0]} first`;
+      }
       const p = windowProgress(counts.translationDone, counts.translationTotal);
       switch (counts.translationStatus) {
         case "running":

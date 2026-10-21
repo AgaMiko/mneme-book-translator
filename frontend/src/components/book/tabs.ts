@@ -10,8 +10,9 @@ import { formatNumber } from "@/lib/utils";
  * navigation itself carries the state.
  *
  * `Voices` unlocks after glossary extraction completes (canonical
- * characters exist). `Translation` is visible-but-locked rather than
- * hidden, on purpose.
+ * characters exist). `Translation` is always reachable; it works best after
+ * the glossary and voices are reviewed, but can run on a single chapter
+ * at any time.
  */
 
 /**
@@ -26,6 +27,9 @@ export interface TabCounts {
   glossaryPending: number;
   voicesTotal: number;
   voicesPending: number;
+  translationStatus: "running" | "completed" | "failed" | "cancelled" | null;
+  translationDone: number;
+  translationTotal: number;
 }
 
 export const EMPTY_TAB_COUNTS: TabCounts = {
@@ -33,6 +37,9 @@ export const EMPTY_TAB_COUNTS: TabCounts = {
   glossaryPending: 0,
   voicesTotal: 0,
   voicesPending: 0,
+  translationStatus: null,
+  translationDone: 0,
+  translationTotal: 0,
 };
 
 export interface BookTabDef {
@@ -119,9 +126,27 @@ export const BOOK_TABS: readonly BookTabDef[] = [
   {
     id: "translation",
     label: "Translation",
-    disabled: true,
-    state: () => "locked",
-    caption: () => "coming next",
+    disabled: false,
+    state: (_b, counts) => {
+      if (counts.translationStatus === "running") return "active";
+      if (counts.translationStatus === "completed") return "done";
+      return "idle";
+    },
+    caption: (_b, counts) => {
+      const p = windowProgress(counts.translationDone, counts.translationTotal);
+      switch (counts.translationStatus) {
+        case "running":
+          return p ? `translating · ${p}` : "translating…";
+        case "completed":
+          return p ? `${p} fragments done` : "done";
+        case "cancelled":
+          return p ? `stopped · ${p}` : "stopped";
+        case "failed":
+          return p ? `errors · ${p}` : "failed";
+        default:
+          return "not started";
+      }
+    },
   },
 ];
 

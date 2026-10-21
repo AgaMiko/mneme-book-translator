@@ -15,6 +15,10 @@ import {
   type GlossaryExtractionStartResponse,
   type GlossaryExtractionStopResponse,
   type GlossaryWorkingEntry,
+  type StartTranslationBody,
+  type TranslationEstimate,
+  type TranslationRun,
+  type TranslationView,
   type UploadBookResponse,
   type VoiceExtractionEstimate,
   type VoiceProfilePatchBody,
@@ -34,6 +38,9 @@ export const bookKeys = {
   workingGlossary: (id: string) => [...bookKeys.all, "working-glossary", id] as const,
   workingVoices: (id: string) => [...bookKeys.all, "working-voices", id] as const,
   workingSpeakers: (id: string) => [...bookKeys.all, "working-speakers", id] as const,
+  translation: (id: string) => [...bookKeys.all, "translation", id] as const,
+  translationEstimate: (id: string, chapterIds: readonly string[] | null) =>
+    [...bookKeys.all, "translation-estimate", id, chapterIds ?? "all"] as const,
 };
 
 // How often to re-fetch a book while it's still being enriched. Short
@@ -347,6 +354,63 @@ export function useResetSpeakersExtraction(bookId: string): UseMutationResult<vo
       void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
       void qc.invalidateQueries({ queryKey: bookKeys.lists() });
       void qc.invalidateQueries({ queryKey: bookKeys.workingSpeakers(bookId) });
+    },
+  });
+}
+
+// ─── Translation (Step 5) ───────────────────────────────
+
+const TRANSLATION_POLL_INTERVAL_MS = 2000;
+
+export function useTranslation(bookId: string): UseQueryResult<TranslationView, Error> {
+  return useQuery({
+    queryKey: bookKeys.translation(bookId),
+    queryFn: () => api.getTranslation(bookId),
+    refetchInterval: (query) =>
+      query.state.data?.run?.status === "running" ? TRANSLATION_POLL_INTERVAL_MS : false,
+  });
+}
+
+export function useTranslationEstimate(
+  bookId: string,
+  chapterIds: string[] | null,
+): UseQueryResult<TranslationEstimate, Error> {
+  return useQuery({
+    queryKey: bookKeys.translationEstimate(bookId, chapterIds),
+    queryFn: () => api.getTranslationEstimate(bookId, chapterIds),
+  });
+}
+
+export function useStartTranslation(
+  bookId: string,
+): UseMutationResult<TranslationRun, Error, StartTranslationBody> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (body) => api.startTranslation(bookId, body),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: bookKeys.translation(bookId) });
+    },
+  });
+}
+
+export function useContinueTranslation(
+  bookId: string,
+): UseMutationResult<TranslationRun, Error, void> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.continueTranslation(bookId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: bookKeys.translation(bookId) });
+    },
+  });
+}
+
+export function useStopTranslation(bookId: string): UseMutationResult<void, Error, void> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.stopTranslation(bookId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: bookKeys.translation(bookId) });
     },
   });
 }

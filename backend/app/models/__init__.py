@@ -12,6 +12,12 @@ from app.models.glossary import (
     GlossaryWindowGeneration,
 )
 from app.models.speakers import SpeakerNotepad, WindowSpeaker
+from app.models.translation import (
+    FragmentRendition,
+    TranslationFragment,
+    TranslationRun,
+    TranslationRunFragment,
+)
 from app.models.voice import CharacterVoice, VoiceNotepad
 
 __all__ = [
@@ -20,12 +26,16 @@ __all__ = [
     "CharacterVoice",
     "FinalGlossary",
     "FinalGlossaryEntry",
+    "FragmentRendition",
     "GlossaryEntry",
     "GlossaryExtractionRun",
     "GlossaryNotepad",
     "GlossaryWindowGeneration",
     "Paragraph",
     "SpeakerNotepad",
+    "TranslationFragment",
+    "TranslationRun",
+    "TranslationRunFragment",
     "VoiceNotepad",
     "WindowSpeaker",
 ]

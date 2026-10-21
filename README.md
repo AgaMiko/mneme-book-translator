@@ -42,6 +42,12 @@ GEMINI_API_KEY=...
 
 # Optional overrides
 GEMINI_MODEL=gemini-3.1-flash-lite-preview
+# Fragment translation: one model for all three stages, or one per stage.
+TRANSLATION_MODEL=gemini-3.8-flash
+TRANSLATION_FAITHFUL_MODEL=
+TRANSLATION_LINE_EDIT_MODEL=
+TRANSLATION_POLISH_MODEL=
+TRANSLATION_CONCURRENCY=4
 LANGFUSE_PUBLIC_KEY=...
 LANGFUSE_SECRET_KEY=...
 LANGFUSE_HOST=https://cloud.langfuse.com
@@ -136,7 +142,7 @@ just gen-client      # regenerate TS API types from OpenAPI
 - [x] Step 2 — Async metadata extraction and iterative glossary extraction
 - [x] Step 3 — Author glossary review UI and acceptance flow
 - [x] Step 4 — Speaker identification and character voice profile extraction
-- [ ] Step 5 — Fragment translation with context windows, accepted glossary, and voice memory
+- [~] Step 5 — Fragment translation with context windows, accepted glossary, and voice memory. First slice built: three stages per fragment (faithful → line edit → polish), style metrics, translator notes, a Translation tab. Glossary change propagation, flags review and export are still to do; see [docs/step5-translation-pipeline.md](docs/step5-translation-pipeline.md).
 - [ ] Step 6 — Problematic-fragment detection and author flag review
 
 ## License

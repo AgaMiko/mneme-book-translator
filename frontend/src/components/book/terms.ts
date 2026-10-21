@@ -26,11 +26,35 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-/** Singular and plural forms of an English target: Shapers/Shaper, Academy/Academies. */
+/** Past forms of irregular verbs that glossary targets may use ("weaving" -> wove, woven). */
+const IRREGULAR_VERBS: Record<string, string[]> = {
+  weave: ["wove", "woven"],
+  bind: ["bound"],
+  break: ["broke", "broken"],
+  sew: ["sewn"],
+  spin: ["spun"],
+  tear: ["tore", "torn"],
+  weep: ["wept"],
+};
+
+/** Other forms of a verb given as "-ing" (weaving -> weave, weaves, weaved, wove, woven). */
+function verbForms(t: string): string[] {
+  if (!/^[a-z]+ing$/.test(t)) return []; // lower-case single word only, not names like "the Rending"
+  const stem = t.slice(0, -3);
+  const bases = new Set([stem, stem + "e"]);
+  if (/([^aeiou])\1$/.test(stem)) bases.add(stem.slice(0, -1)); // spinning -> spin
+  const out: string[] = [];
+  for (const b of bases) {
+    out.push(b, b.endsWith("e") ? b + "d" : b + "ed", ...(IRREGULAR_VERBS[b] ?? []));
+  }
+  return out;
+}
+
+/** Forms of an English target: Shapers/Shaper, Academy/Academies, weaving/woven. */
 function targetForms(target: string): string[] {
   const t = target.replace(/^the\s+/i, "").trim();
   if (!t) return [];
-  const forms = new Set([t]);
+  const forms = new Set([t, ...verbForms(t)]);
   if (/ies$/i.test(t)) forms.add(t.slice(0, -3) + "y");
   else if (/[sx]es$/i.test(t)) forms.add(t.slice(0, -2));
   else if (/s$/i.test(t) && !/ss$/i.test(t)) forms.add(t.slice(0, -1));

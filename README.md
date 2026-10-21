@@ -4,7 +4,7 @@
 
 Mneme is an open-source AI translation workspace for fiction manuscripts. It keeps persistent state across the book: manuscript structure, metadata, glossary decisions, speaker windows, and character voice profiles. The model is an assistant inside a reviewable workflow, not a one-shot translator.
 
-This repo is a working Docker stack: upload a `.docx`, parse it into chapters and paragraphs, persist it to Postgres, extract metadata, build a reviewable glossary, identify speaker windows, and draft per-character voice profiles. Fragment translation is the next major surface.
+This repo is a working Docker stack: upload a `.docx`, parse it into chapters and paragraphs, persist it to Postgres, extract metadata, build a reviewable glossary, identify speaker windows, draft per-character voice profiles, translate the book fragment by fragment in three stages, and export the result as PDF, EPUB or DOCX.
 
 **Repository:** [github.com/AgaMiko/mneme-book-translator](https://github.com/AgaMiko/mneme-book-translator)
 
@@ -15,6 +15,7 @@ This repo is a working Docker stack: upload a `.docx`, parse it into chapters an
 | API         | FastAPI · Pydantic v2 · SQLAlchemy 2.0 (async)  |
 | Persistence | PostgreSQL 16 · Alembic                         |
 | Parsing     | `python-docx`                                   |
+| Export      | WeasyPrint (PDF) · EPUB 3 · `python-docx`       |
 | LLM         | Gemini via `google-genai` · Langfuse tracing    |
 | Frontend    | Vite · React 18 · TypeScript · Tailwind         |
 | Data        | TanStack Query · Zod                            |
@@ -29,7 +30,11 @@ This repo is a working Docker stack: upload a `.docx`, parse it into chapters an
 - Review working glossary terms, translations, variants, and statuses.
 - Identify character speaker windows as the first pass of voice extraction.
 - Draft, review, edit, accept, reject, regenerate, and reset character voice profiles.
-- Keep long-running extraction state in Postgres so interrupted runs can be continued.
+- Translate fragments in three stages (Faithful → Line edit → Final), using the accepted glossary and voice profiles, with style metrics and translator notes.
+- Check rhythm and repetition in the line edit and final stages, keeping the meaning of the source over word variety.
+- Export the translation as PDF, EPUB or DOCX, choosing which stage to export. Untranslated fragments are marked so gaps are visible.
+- Open each book on the pipeline stage it has reached.
+- Keep long-running extraction and translation state in Postgres so interrupted runs can be continued.
 
 ## Quickstart
 
@@ -46,7 +51,7 @@ GEMINI_MODEL=gemini-3.1-flash-lite-preview
 TRANSLATION_MODEL=gemini-3.8-flash
 TRANSLATION_FAITHFUL_MODEL=
 TRANSLATION_LINE_EDIT_MODEL=
-TRANSLATION_POLISH_MODEL=
+TRANSLATION_POLISH_MODEL=   # the Final stage
 TRANSLATION_CONCURRENCY=4
 LANGFUSE_PUBLIC_KEY=...
 LANGFUSE_SECRET_KEY=...
@@ -142,9 +147,13 @@ just gen-client      # regenerate TS API types from OpenAPI
 - [x] Step 2 — Async metadata extraction and iterative glossary extraction
 - [x] Step 3 — Author glossary review UI and acceptance flow
 - [x] Step 4 — Speaker identification and character voice profile extraction
-- [~] Step 5 — Fragment translation with context windows, accepted glossary, and voice memory. First slice built: three stages per fragment (faithful → line edit → polish), style metrics, translator notes, a Translation tab. Glossary change propagation, flags review and export are still to do; see [docs/step5-translation-pipeline.md](docs/step5-translation-pipeline.md).
+- [~] Step 5 — Fragment translation with context windows, accepted glossary, and voice memory. First slice built: three stages per fragment (Faithful → Line edit → Final), style metrics, translator notes, rhythm and repetition checks, a Translation tab, and PDF/EPUB/DOCX export. Glossary change propagation and flags review are still to do; see [docs/step5-translation-pipeline.md](docs/step5-translation-pipeline.md).
 - [ ] Step 6 — Problematic-fragment detection and author flag review
 
 ## License
 
 Apache 2.0 — see [LICENSE](./LICENSE).
+
+## Acknowledgements
+
+The LLM tokens used to build and run Mneme were sponsored by [CHAPTR](https://www.chaptr.com/).

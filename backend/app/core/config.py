@@ -44,6 +44,8 @@ class Settings(BaseSettings):
 
     # --- LLM providers ---
     GEMINI_API_KEY: str | None = None
+    # Needed only when a translation stage uses an OpenAI model (gpt-…).
+    OPENAI_API_KEY: str | None = None
     GEMINI_MODEL: str = "gemini-3.1-flash-lite-preview"
     # Fragment translation (Step 5). Each stage falls back to TRANSLATION_MODEL,
     # then to GEMINI_MODEL, so one setting is enough to start.

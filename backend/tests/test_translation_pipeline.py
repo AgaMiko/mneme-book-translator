@@ -236,3 +236,70 @@ async def test_run_caches_are_deleted_on_close(monkeypatch) -> None:  # type: ig
     )
     assert off.name_for("flash") is None
     await off.close()
+
+
+def test_openai_models_are_recognised() -> None:
+    from app.generation.providers.openai import is_openai_model
+
+    assert is_openai_model("gpt-6-luna")
+    assert is_openai_model("GPT-6.1-sol")
+    assert not is_openai_model("gemini-3.8-flash")
+
+
+async def test_gpt_models_go_to_openai_with_reasoning_effort(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from app.generation.chains import translate_fragment_chain as chain
+    from app.generation.prompt_manager.models.translate_fragment_model import (
+        FaithfulFragment,
+        ParagraphOut,
+    )
+    from app.generation.providers.openai import ModelResult
+
+    calls: list[dict] = []  # type: ignore[type-arg]
+
+    async def fake_openai(**kwargs):  # type: ignore[no-untyped-def]
+        calls.append(kwargs)
+        out = FaithfulFragment(paragraphs=[ParagraphOut(paragraph_id="p1", text="Yes.")])
+        return ModelResult(parsed=out, text=None, usage={"prompt_token_count": 10})
+
+    async def fail_gemini(**kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("Gemini must not be called for a gpt model")
+
+    monkeypatch.setattr(chain, "openai_generate", fake_openai)
+    monkeypatch.setattr(chain, "gemini_generate", fail_gemini)
+    s = Settings(GEMINI_MODEL="gemini-3.8-flash", TRANSLATION_MODEL="gpt-6-luna")
+    result = await chain.translate_fragment_faithful(
+        fixed_context="RULES",
+        cached_content=None,
+        context="ctx",
+        source=[("p1", "Tak.")],
+        target_language="English",
+        settings=s,
+    )
+    assert result.model == "gpt-6-luna"
+    assert result.output.paragraphs[0].text == "Yes."
+    assert calls[0]["reasoning_effort"] == "high"
+    assert calls[0]["prompt"].startswith("RULES")  # fixed part first, for prefix caching
+    assert calls[0]["prompt_cache_key"].startswith("mneme-")
+
+
+def test_openai_usage_maps_to_gemini_keys() -> None:
+    from types import SimpleNamespace
+
+    from app.generation.providers.openai import _usage
+
+    response = SimpleNamespace(
+        usage=SimpleNamespace(
+            input_tokens=1000,
+            input_tokens_details=SimpleNamespace(cached_tokens=600),
+            output_tokens=900,
+            output_tokens_details=SimpleNamespace(reasoning_tokens=700),
+            total_tokens=1900,
+        )
+    )
+    assert _usage(response) == {
+        "prompt_token_count": 1000,
+        "cached_content_token_count": 600,
+        "candidates_token_count": 200,
+        "thoughts_token_count": 700,
+        "total_token_count": 1900,
+    }

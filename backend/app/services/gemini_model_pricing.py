@@ -21,6 +21,10 @@ _DEFAULT_FLASH_LITE = (0.10, 0.40)
 
 # Longest keys first so ``gemini-3.1-flash-lite-preview`` matches before ``gemini-3``.
 _MODEL_USD_PER_MTOK: list[tuple[str, tuple[float, float]]] = [
+    # OpenAI models used for translation (standard tier, checked 2026-10-21).
+    ("gpt-6-astra", (20.00, 75.00)),
+    ("gpt-6.1-sol", (4.00, 15.00)),
+    ("gpt-6-luna", (0.20, 0.75)),
     ("gemini-4-argon", (4.00, 20.00)),
     ("gemini-3.8-flash-cyber", (1.50, 7.50)),
     ("gemini-3.8-flash", (1.50, 7.50)),

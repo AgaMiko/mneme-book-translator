@@ -32,8 +32,9 @@ RULES_CORE = """\
 translation, and the translation adds no content the source does not have. \
 Wording and sentence structure are free: words, clauses and sentences do not \
 need to match the source one to one. Do not add content to make the text \
-flow (no "easy now", "trust me", "my friend" unless the source has them); \
-better flow comes from restructuring what the source says.
+flow (no "easy now", "trust me", "my friend" unless the source has them), \
+and no images, details or stronger wording than the source has; better \
+flow comes from restructuring what the source says.
 
 2. **Idiom for idiom.** Use the {target_language} idiom that does the same \
 job, not a word-for-word copy. Polish "No proszę" → "Would you look at \
@@ -166,6 +167,13 @@ Polish avoids repetition through inflection and synonyms; English needs a \
 synonym, a pronoun or a rebuilt sentence. Keep a repetition only where the \
 source repeats on purpose (anaphora, a refrain, emphasis), and keep \
 glossary terms and names exactly as they are.
+- Meaning wins over variety. A precise word used twice is better than a \
+synonym that shifts the meaning: soldiers are not "guards" or \
+"infantrymen", patients are not "sick men", "the shrine" is not "a \
+shrine". Prefer a pronoun or a rebuilt sentence to a looser synonym. Do \
+not add images, details or intensity to vary a sentence ("from her knees" \
+does not become "from the muck"; "angry shouts" do not become "ragged \
+screams").
 - Merge or split sentences for {target_language} rhythm. Cut Polish-style \
 chains of "and… and…" or "so… so…".
 - Fix stiff or word-for-word phrases. No modern slang in narration.
@@ -224,7 +232,14 @@ short fragments, a long breathless sentence).
 Polish avoids repetition through inflection and synonyms; English needs a \
 synonym, a pronoun or a rebuilt sentence. Keep a repetition only where the \
 source repeats on purpose (anaphora, a refrain, emphasis), and keep \
-glossary terms and names exactly as they are. Three or more \
+glossary terms and names exactly as they are.
+- Meaning wins over variety. A precise word used twice is better than a \
+synonym that shifts the meaning: soldiers are not "guards" or \
+"infantrymen", patients are not "sick men", "the shrine" is not "a \
+shrine". Prefer a pronoun or a rebuilt sentence to a looser synonym. Do \
+not add images, details or intensity to vary a sentence ("from her knees" \
+does not become "from the muck"; "angry shouts" do not become "ragged \
+screams"). Three or more \
 rhetorical questions in a row may be merged only if nothing is lost.
 
 Do not:

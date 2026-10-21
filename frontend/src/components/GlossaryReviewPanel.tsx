@@ -133,9 +133,17 @@ type RowIntent = "edit" | "merge";
 interface Props {
   bookId: string;
   pollWhileRunning: boolean;
+  /** Open this entry: switch to its pile, clear filters, expand and scroll to it. */
+  focusEntryId?: string | null;
+  onFocusHandled?: () => void;
 }
 
-export function GlossaryReviewPanel({ bookId, pollWhileRunning }: Props) {
+export function GlossaryReviewPanel({
+  bookId,
+  pollWhileRunning,
+  focusEntryId = null,
+  onFocusHandled,
+}: Props) {
   const patchGlossaryEntry = usePatchGlossaryWorkingEntry(bookId);
   const { data, isLoading, isError, error } = useWorkingGlossary(bookId, {
     enabled: true,
@@ -153,6 +161,47 @@ export function GlossaryReviewPanel({ bookId, pollWhileRunning }: Props) {
       setOpenId(null);
     }
   }, [data?.entries, openId]);
+
+  useEffect(() => {
+    if (!focusEntryId || !data?.entries) return;
+    const entry = data.entries.find((e) => e.id === focusEntryId);
+    if (!entry) {
+      onFocusHandled?.();
+      return;
+    }
+    setStatusFilter(
+      isAwaitingAcceptance(entry)
+        ? "pending"
+        : entry.status === "rejected"
+          ? "removed"
+          : "accepted",
+    );
+    setTermType("");
+    setSearch("");
+    setOpenId(entry.id);
+    setOpenIntent("edit");
+    // Scroll once the row is rendered with the new filters and the panel
+    // has finished laying out; retry for up to a second.
+    let tries = 0;
+    let timer = 0;
+    const scroll = () => {
+      const row = document.getElementById(`glossary-entry-${entry.id}`);
+      if (row) {
+        row.scrollIntoView({ block: "center" });
+        const top = row.getBoundingClientRect().top;
+        if (top >= 0 && top <= window.innerHeight) {
+          onFocusHandled?.();
+          return;
+        }
+      }
+      if (++tries < 10) timer = window.setTimeout(scroll, 100);
+      else onFocusHandled?.();
+    };
+    timer = window.setTimeout(scroll, 50);
+    return () => window.clearTimeout(timer);
+    // Runs when a new focus arrives; data changes must not restart the scroll.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusEntryId, data?.entries === undefined]);
 
   const termTypeOptionIds = useMemo(
     () => (data?.term_type_options ?? []).map((o) => o.id),
@@ -578,7 +627,7 @@ function GlossaryEntryRow({
   };
 
   return (
-    <li>
+    <li id={`glossary-entry-${entry.id}`} className="scroll-mt-24">
       <div
         className={cn(
           "transition-colors duration-200 ease-out",

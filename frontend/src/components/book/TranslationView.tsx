@@ -15,11 +15,13 @@ import {
   type BookDetail,
   type ChapterTranslation,
   type DeclaredEdit,
+  type GlossaryTerm,
   type QaIssue,
   type StyleMetrics,
   type TranslationEstimate,
   type TranslationFragment,
   type TranslationRun,
+  type TermSpan,
   type TranslationStage,
   type TranslatorNote,
   translationExportUrl,
@@ -30,13 +32,18 @@ import {
   useStopTranslation,
   useTranslation,
   useTranslationEstimate,
+  useTranslationTerms,
 } from "@/lib/api/hooks";
 import { cn, formatNumber } from "@/lib/utils";
 
 import { BOOK_PANEL_CONTAINER, BOOK_PANEL_SURFACE } from "./layout";
+import { HighlightedText, MissingTerms, TermProvider } from "./TermHighlight";
+import { englishTerms, useTerms } from "./terms";
 
 interface Props {
   book: BookDetail;
+  /** Open a glossary term in the Glossary tab. */
+  onOpenTerm: (termId: string) => void;
 }
 
 const STAGES: { id: TranslationStage; label: string; hint: string }[] = [
@@ -75,8 +82,9 @@ const EDIT_LABELS: Record<string, string> = {
  * starts, stops and continues runs; the stage switch shows whichever of the
  * draft, line-edited and final texts exist.
  */
-export function TranslationView({ book }: Props) {
+export function TranslationView({ book, onOpenTerm }: Props) {
   const translation = useTranslation(book.id);
+  const terms = useTranslationTerms(book.id);
   const [stage, setStage] = useState<TranslationStage>("polish");
   const [selected, setSelected] = useState<string[]>([]);
 
@@ -103,86 +111,96 @@ export function TranslationView({ book }: Props) {
   });
 
   return (
-    <div className={BOOK_PANEL_SURFACE}>
-      <div className={cn(BOOK_PANEL_CONTAINER, "py-8")}>
-        <RunCard
-          book={book}
-          run={translation.data?.run ?? null}
-          selected={selected}
-          onSelectedChange={setSelected}
-          byChapter={byChapter}
-        />
-
-        {translation.isError && (
-          <p className="mt-6 text-sm text-danger">Could not load the translation.</p>
-        )}
-
-        {translatedChapters.length > 0 && (
-          <div className="mt-8 flex flex-wrap items-center gap-3">
-            <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">Show</p>
-            <div className="inline-flex rounded-lg border border-ink-700 bg-ink-900 p-0.5">
-              {visibleStages.map((s) => (
-                <button
-                  key={s.id}
-                  type="button"
-                  title={s.hint}
-                  onClick={() => setStage(s.id)}
-                  aria-pressed={stage === s.id}
-                  className={cn(
-                    "rounded-md px-3 py-1 text-[12.5px] transition-colors",
-                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                    stage === s.id ? "bg-ink-700 text-ink-50" : "text-ink-400 hover:text-ink-100",
-                  )}
-                >
-                  {s.label}
-                </button>
-              ))}
-            </div>
-            <div className="ml-auto flex items-center gap-1">
-              <p
-                className="mr-1 font-mono text-[10px] uppercase tracking-wider text-ink-500"
-                title="Downloads the translated chapters at the stage shown. Missing fragments fall back to an earlier stage, or are marked as not translated."
-              >
-                Export English · {STAGES.find((s) => s.id === stage)?.label.toLowerCase()}
-              </p>
-              {(["pdf", "epub", "docx"] as const).map((fmt) => (
-                <a
-                  key={fmt}
-                  href={translationExportUrl(book.id, fmt, stage)}
-                  download
-                  className={cn(
-                    "inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12.5px] font-medium",
-                    "text-ink-100 hover:bg-ink-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                  )}
-                >
-                  <Download className="h-3.5 w-3.5" aria-hidden />
-                  {fmt.toUpperCase()}
-                </a>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {translatedChapters.map((chapter) => (
-          <ChapterBlock
-            key={chapter.id}
-            label={`Chapter ${book.chapters.indexOf(chapter) + 1}`}
-            sourceTitle={chapter.title}
-            paragraphs={chapter.paragraphs}
-            translation={byChapter.get(chapter.id)!}
-            stage={stage}
+    <TermProvider
+      terms={terms.data?.terms ?? NO_TERMS}
+      sourceSpans={terms.data?.paragraphs ?? NO_SPANS}
+      onOpenTerm={onOpenTerm}
+    >
+      <div className={BOOK_PANEL_SURFACE}>
+        <div className={cn(BOOK_PANEL_CONTAINER, "py-8")}>
+          <RunCard
+            book={book}
+            run={translation.data?.run ?? null}
+            selected={selected}
+            onSelectedChange={setSelected}
+            byChapter={byChapter}
           />
-        ))}
 
-        {translation.data && translatedChapters.length === 0 && (
-          <p className="mt-10 text-center text-sm text-ink-400">
-            Nothing translated yet. Pick a chapter above to try the pipeline on a small piece first.
-          </p>
-        )}
+          {translation.isError && (
+            <p className="mt-6 text-sm text-danger">Could not load the translation.</p>
+          )}
+
+          {translatedChapters.length > 0 && (
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">Show</p>
+              <div className="inline-flex rounded-lg border border-ink-700 bg-ink-900 p-0.5">
+                {visibleStages.map((s) => (
+                  <button
+                    key={s.id}
+                    type="button"
+                    title={s.hint}
+                    onClick={() => setStage(s.id)}
+                    aria-pressed={stage === s.id}
+                    className={cn(
+                      "rounded-md px-3 py-1 text-[12.5px] transition-colors",
+                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                      stage === s.id ? "bg-ink-700 text-ink-50" : "text-ink-400 hover:text-ink-100",
+                    )}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+              <div className="ml-auto flex items-center gap-1">
+                <p
+                  className="mr-1 font-mono text-[10px] uppercase tracking-wider text-ink-500"
+                  title="Downloads the translated chapters at the stage shown. Missing fragments fall back to an earlier stage, or are marked as not translated."
+                >
+                  Export English · {STAGES.find((s) => s.id === stage)?.label.toLowerCase()}
+                </p>
+                {(["pdf", "epub", "docx"] as const).map((fmt) => (
+                  <a
+                    key={fmt}
+                    href={translationExportUrl(book.id, fmt, stage)}
+                    download
+                    className={cn(
+                      "inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12.5px] font-medium",
+                      "text-ink-100 hover:bg-ink-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                    )}
+                  >
+                    <Download className="h-3.5 w-3.5" aria-hidden />
+                    {fmt.toUpperCase()}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {translatedChapters.map((chapter) => (
+            <ChapterBlock
+              key={chapter.id}
+              label={`Chapter ${book.chapters.indexOf(chapter) + 1}`}
+              sourceTitle={chapter.title}
+              paragraphs={chapter.paragraphs}
+              translation={byChapter.get(chapter.id)!}
+              stage={stage}
+            />
+          ))}
+
+          {translation.data && translatedChapters.length === 0 && (
+            <p className="mt-10 text-center text-sm text-ink-400">
+              Nothing translated yet. Pick a chapter above to try the pipeline on a small piece
+              first.
+            </p>
+          )}
+        </div>
       </div>
-    </div>
+    </TermProvider>
   );
 }
+
+const NO_TERMS: GlossaryTerm[] = [];
+const NO_SPANS: Record<string, TermSpan[]> = {};
 
 // ─── Run card ───────────────────────────────────────────
 
@@ -461,11 +479,25 @@ function ChapterBlock({
     .flatMap((f) => f.stages[stage]?.paragraphs ?? [])
     .find((p) => p.paragraph_id === titleId)?.text;
 
+  // Agreed glossary terms the English of this stage does not use.
+  const termCtx = useTerms();
+  const termWarnings = useMemo(() => {
+    if (!termCtx) return 0;
+    let n = 0;
+    for (const f of translation.fragments) {
+      for (const p of f.stages[stage]?.paragraphs ?? []) {
+        const spans = termCtx.sourceSpans[p.paragraph_id] ?? [];
+        if (spans.length) n += englishTerms(p.text, spans, termCtx.termsById).missing.length;
+      }
+    }
+    return n;
+  }, [termCtx, translation.fragments, stage]);
+
   return (
     <section className="mt-10">
       <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-ink-800 pb-2">
         <h2 className="font-serif text-2xl text-accent">{label}</h2>
-        {metrics && <MetricsRow metrics={metrics} />}
+        {metrics && <MetricsRow metrics={metrics} termWarnings={termWarnings} />}
       </div>
       {sourceTitle && (
         <div className="mt-4 grid gap-x-8 gap-y-1 md:grid-cols-2">
@@ -484,7 +516,7 @@ function ChapterBlock({
   );
 }
 
-function MetricsRow({ metrics }: { metrics: StyleMetrics }) {
+function MetricsRow({ metrics, termWarnings }: { metrics: StyleMetrics; termWarnings: number }) {
   const items: { label: string; value: string; over: boolean }[] = [
     {
       label: "She/He openers",
@@ -512,6 +544,7 @@ function MetricsRow({ metrics }: { metrics: StyleMetrics }) {
       value: String(metrics.even_runs ?? "—"),
       over: (metrics.even_runs ?? 0) > 0,
     },
+    { label: "Term warnings", value: String(termWarnings), over: termWarnings > 0 },
   ];
   return (
     <dl className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10.5px]">
@@ -526,6 +559,43 @@ function MetricsRow({ metrics }: { metrics: StyleMetrics }) {
     </dl>
   );
 }
+
+/** Polish and English side by side, with glossary terms marked on both. */
+function ParagraphPair({
+  source,
+  english,
+  paragraphId,
+}: {
+  source: string;
+  english: string;
+  paragraphId: string;
+}) {
+  const ctx = useTerms();
+  const sourceSpans = ctx?.sourceSpans[paragraphId] ?? NO_SPAN_LIST;
+  const { spans, missing } = useMemo(
+    () =>
+      ctx && sourceSpans.length
+        ? englishTerms(english, sourceSpans, ctx.termsById)
+        : { spans: NO_SPAN_LIST, missing: [] },
+    [ctx, english, sourceSpans],
+  );
+  const warnIds = useMemo(() => new Set(missing.map((t) => t.id)), [missing]);
+  return (
+    <>
+      <p className="font-serif text-[15px] leading-relaxed text-ink-400">
+        <HighlightedText text={source} spans={sourceSpans} warnIds={warnIds} />
+      </p>
+      <div>
+        <p className="whitespace-pre-line font-serif text-[15px] leading-relaxed text-ink-100">
+          <HighlightedText text={english} spans={spans} />
+        </p>
+        <MissingTerms missing={missing} />
+      </div>
+    </>
+  );
+}
+
+const NO_SPAN_LIST: TermSpan[] = [];
 
 function FragmentBlock({
   fragment,
@@ -584,13 +654,12 @@ function FragmentBlock({
       <div className="space-y-4">
         {fragment.paragraph_ids.map((pid) => (
           <div key={pid} className="grid gap-x-8 gap-y-1 md:grid-cols-2">
-            <p className="font-serif text-[15px] leading-relaxed text-ink-400">
-              {sourceById.get(pid) ?? ""}
-            </p>
-            <div>
-              <p className="whitespace-pre-line font-serif text-[15px] leading-relaxed text-ink-100">
-                {textById.get(pid) ?? ""}
-              </p>
+            <ParagraphPair
+              source={sourceById.get(pid) ?? ""}
+              english={textById.get(pid) ?? ""}
+              paragraphId={pid}
+            />
+            <div className="md:col-start-2">
               <Annotations notes={notes.get(pid)} edits={edits.get(pid)} qa={qa.get(pid)} />
             </div>
           </div>

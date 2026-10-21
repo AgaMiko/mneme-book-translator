@@ -18,6 +18,9 @@ import { BOOK_PANEL_CONTAINER, BOOK_PANEL_SURFACE } from "./layout";
 
 interface Props {
   book: BookDetail;
+  /** A glossary entry to open and scroll to (from the Translation tab). */
+  focusEntryId?: string | null;
+  onFocusHandled?: () => void;
 }
 
 /**
@@ -25,7 +28,7 @@ interface Props {
  * and the terms follow immediately below it — no sticky bar, no jump
  * links, because there is nothing between them to jump over.
  */
-export function GlossaryView({ book }: Props) {
+export function GlossaryView({ book, focusEntryId = null, onFocusHandled }: Props) {
   const queryClient = useQueryClient();
   const estimate = useGlossaryExtractionEstimate(book.id, true);
   const startGlossary = useStartGlossaryExtraction(book.id);
@@ -67,6 +70,8 @@ export function GlossaryView({ book }: Props) {
         <div className="mt-8">
           <GlossaryReviewPanel
             bookId={book.id}
+            focusEntryId={focusEntryId}
+            onFocusHandled={onFocusHandled}
             pollWhileRunning={book.glossary_extraction_status === "running"}
           />
         </div>

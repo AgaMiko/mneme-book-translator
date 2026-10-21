@@ -24,8 +24,6 @@ glossary run, voice profiles of the characters who speak in the fragment
 from __future__ import annotations
 
 import asyncio
-import os
-import unicodedata
 from collections import defaultdict
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any, Literal
@@ -56,7 +54,7 @@ from app.generation.prompt_manager.prompts.translate_fragment_prompt import (
     render_fixed_context,
     render_fragment_context,
 )
-from app.models.book import Book, Chapter
+from app.models.book import Book, Chapter, Paragraph
 from app.models.speakers import WindowSpeaker
 from app.models.translation import (
     TRANSLATION_STAGES,
@@ -68,6 +66,7 @@ from app.models.translation import (
 from app.models.voice import CharacterVoice
 from app.services.fragmenter import ChapterInput, ParagraphInput, plan_fragments
 from app.services.glossary_service import load_working_glossary_for_latest_run
+from app.services.term_matching import TermIndex, find_terms, is_form_of
 from app.services.translation_cache import RunCaches, delete_leftover_caches
 from app.services.translation_qa import (
     DASHES_MAX_PER_1K,
@@ -160,34 +159,6 @@ async def ensure_fragments(session: AsyncSession, book: Book) -> list[Translatio
 
 
 # ─── Prompt inputs ───────────────────────────────────────
-
-
-def _fold(text: str) -> str:
-    """Lower case without diacritics (ł has no decomposition, so map it by hand)."""
-    decomposed = unicodedata.normalize("NFKD", text.lower().replace("ł", "l"))
-    return "".join(c for c in decomposed if not unicodedata.combining(c))
-
-
-def is_form_of(canonical: str, variant: str) -> bool:
-    """True when ``variant`` looks like a case form or spelling of ``canonical``.
-
-    Glossary extraction stores more than inflections in ``variants``: aliases,
-    descriptions and sometimes a different name altogether ("Vynmor" under
-    "Naelori", "adept" under "Elantria"). Translation prompts present variants
-    as forms of the term, so a wrong one makes the model rename things. Only
-    forms that share each word's stem pass: same number of words, and every
-    word pair shares a prefix of at least 3 letters and of all but the last
-    3 letters of the shorter word (Miro/Mira, Einardzie/Einard, Hanna/Hania,
-    Pyłu/Pyłem).
-    """
-    a_words, b_words = _fold(canonical).split(), _fold(variant).split()
-    if not a_words or len(a_words) != len(b_words) or a_words == b_words:
-        return False
-    for a, b in zip(a_words, b_words, strict=True):
-        common = len(os.path.commonprefix([a, b]))
-        if common < max(3, min(len(a), len(b)) - 3):
-            return False
-    return True
 
 
 async def load_glossary_rows(
@@ -1124,3 +1095,63 @@ def run_json(run: TranslationRun | None) -> dict[str, Any] | None:
         "started_at": run.started_at.isoformat(),
         "completed_at": run.completed_at.isoformat() if run.completed_at else None,
     }
+
+
+# ─── Glossary terms in the source (Translation tab highlighting) ──
+
+_TERM_VIEW_CACHE: dict[UUID, tuple[tuple[Any, ...], dict[str, Any]]] = {}
+_TERM_NOTE_CHARS = 200
+
+
+async def build_term_view(session: AsyncSession, *, book_id: UUID) -> dict[str, Any]:
+    """Accepted glossary terms and where they occur in each source paragraph.
+
+    ``terms``: id, source form, English target, type and a short note.
+    ``paragraphs``: paragraph id -> ``[{term_id, start, end}]`` character spans
+    in the source text. Cached per book until the glossary or the text changes.
+    """
+    _run, entries = await load_working_glossary_for_latest_run(session, book_id=book_id)
+    accepted = [e for e in entries if e.status in ("accepted", "adjusted")]
+    paragraphs = (
+        await session.execute(
+            select(Paragraph.id, Paragraph.text)
+            .join(Chapter, Chapter.id == Paragraph.chapter_id)
+            .where(Chapter.book_id == book_id)
+        )
+    ).all()
+    fingerprint = (
+        len(accepted),
+        max((e.updated_at for e in accepted), default=None),
+        len(paragraphs),
+    )
+    cached = _TERM_VIEW_CACHE.get(book_id)
+    if cached is not None and cached[0] == fingerprint:
+        return cached[1]
+
+    terms_out: list[dict[str, Any]] = []
+    for e in accepted:
+        rec = e.translation_recommendation or {}
+        note = str(rec.get("author_notes") or e.meaning or "").strip()
+        if len(note) > _TERM_NOTE_CHARS:
+            note = note[: _TERM_NOTE_CHARS - 1].rstrip() + "\u2026"
+        terms_out.append(
+            {
+                "id": str(e.id),
+                "source": e.canonical_form,
+                "target": str(rec.get("proposed_target") or "").strip() or e.canonical_form,
+                "term_type": e.term_type,
+                "note": note or None,
+            }
+        )
+    index = TermIndex.build(
+        [(str(e.id), e.canonical_form, list(e.variants or [])) for e in accepted]
+    )
+    spans: dict[str, list[dict[str, Any]]] = {}
+    for pid, text in paragraphs:
+        found = find_terms(text or "", index)
+        if found:
+            spans[str(pid)] = [{"term_id": t, "start": a, "end": b} for t, a, b in found]
+
+    view = {"terms": terms_out, "paragraphs": spans}
+    _TERM_VIEW_CACHE[book_id] = (fingerprint, view)
+    return view

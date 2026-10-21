@@ -99,3 +99,22 @@ class TranslationEstimateOut(BaseModel):
     total_tokens: int
     cost_usd: float
     stages: list[TranslationStageEstimateOut]
+
+
+class GlossaryTermOut(BaseModel):
+    id: str
+    source: str
+    target: str
+    term_type: str
+    note: str | None
+
+
+class TermSpanOut(BaseModel):
+    term_id: str
+    start: int
+    end: int
+
+
+class TranslationTermsResponse(BaseModel):
+    terms: list[GlossaryTermOut]
+    paragraphs: dict[str, list[TermSpanOut]]

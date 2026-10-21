@@ -53,6 +53,15 @@ class StageResult[T]:
     usage: dict[str, Any] | None
 
 
+def stage_thinking(settings: Settings, stage: str) -> str | None:
+    level = {
+        "faithful": settings.TRANSLATION_THINKING_FAITHFUL,
+        "line_edit": settings.TRANSLATION_THINKING_LINE_EDIT,
+        "polish": settings.TRANSLATION_THINKING_POLISH,
+    }.get(stage)
+    return level.strip().lower() if level and level.strip() else None
+
+
 def stage_model(settings: Settings, stage: str) -> str:
     specific = {
         "faithful": settings.TRANSLATION_FAITHFUL_MODEL,
@@ -94,16 +103,25 @@ def _alignment_problem(paragraphs: list[ParagraphOut], expected_ids: list[str]) 
 
 async def _generate_aligned[T: BaseModel](
     *,
+    fixed_context: str,
+    cached_content: str | None,
     prompt: str,
     schema: type[T],
     expected_ids: list[str],
-    model: str,
+    stage: str,
     temperature: float,
     settings: Settings,
 ) -> StageResult[T]:
+    """Call the model; ``prompt`` is everything after the fixed context.
+
+    With ``cached_content`` the fixed context is already in that cache and is
+    not sent again; otherwise it is put in front of ``prompt``.
+    """
+    model = stage_model(settings, stage)
+    base = prompt if cached_content else f"{fixed_context}\n\n{prompt}"
     problem: str | None = None
     for attempt in range(2):
-        full_prompt = prompt
+        full_prompt = base
         if problem:
             full_prompt += (
                 "\n\n## Correction\n\nYour previous answer had the wrong paragraphs "
@@ -117,6 +135,8 @@ async def _generate_aligned[T: BaseModel](
             temperature=temperature,
             timeout_s=_TIMEOUT_S,
             max_output_tokens=_MAX_OUTPUT_TOKENS,
+            thinking_level=stage_thinking(settings, stage),
+            cached_content=cached_content,
         )
         if isinstance(response.parsed, schema):
             parsed = response.parsed
@@ -137,6 +157,8 @@ async def _generate_aligned[T: BaseModel](
 @observe(name="translate_fragment_faithful", as_type="generation")
 async def translate_fragment_faithful(
     *,
+    fixed_context: str,
+    cached_content: str | None,
     context: str,
     source: list[tuple[str, str]],
     target_language: str,
@@ -145,10 +167,12 @@ async def translate_fragment_faithful(
     """Stage 1. ``source`` is ``[(short_id, text)]``."""
     prompt = build_faithful_prompt(context=context, target_language=target_language, source=source)
     return await _generate_aligned(
+        fixed_context=fixed_context,
+        cached_content=cached_content,
         prompt=prompt,
         schema=FaithfulFragment,
         expected_ids=[pid for pid, _ in source],
-        model=stage_model(settings, "faithful"),
+        stage="faithful",
         temperature=0.3,
         settings=settings,
     )
@@ -157,6 +181,8 @@ async def translate_fragment_faithful(
 @observe(name="line_edit_fragment", as_type="generation")
 async def line_edit_fragment(
     *,
+    fixed_context: str,
+    cached_content: str | None,
     context: str,
     source: list[tuple[str, str]],
     faithful: list[tuple[str, str]],
@@ -176,10 +202,12 @@ async def line_edit_fragment(
         rhythm=rhythm,
     )
     return await _generate_aligned(
+        fixed_context=fixed_context,
+        cached_content=cached_content,
         prompt=prompt,
         schema=LineEditedFragment,
         expected_ids=[pid for pid, _ in source],
-        model=stage_model(settings, "line_edit"),
+        stage="line_edit",
         temperature=0.5,
         settings=settings,
     )
@@ -188,6 +216,8 @@ async def line_edit_fragment(
 @observe(name="polish_fragment", as_type="generation")
 async def polish_fragment(
     *,
+    fixed_context: str,
+    cached_content: str | None,
     context: str,
     source: list[tuple[str, str]],
     line_edited: list[tuple[str, str]],
@@ -204,10 +234,12 @@ async def polish_fragment(
         metrics_block=metrics_block,
     )
     return await _generate_aligned(
+        fixed_context=fixed_context,
+        cached_content=cached_content,
         prompt=prompt,
         schema=PolishedFragment,
         expected_ids=[pid for pid, _ in source],
-        model=stage_model(settings, "polish"),
+        stage="polish",
         temperature=0.4,
         settings=settings,
     )

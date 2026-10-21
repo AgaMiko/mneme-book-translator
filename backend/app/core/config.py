@@ -53,6 +53,14 @@ class Settings(BaseSettings):
     TRANSLATION_POLISH_MODEL: str | None = None
     # How many fragments are translated at the same time.
     TRANSLATION_CONCURRENCY: int = 4
+    # Thinking per stage: "minimal" | "low" | "medium" | "high", or empty for
+    # the model's default. Thinking is billed as output and is most of the
+    # cost, so only the line edit (where judgement matters most) gets medium.
+    TRANSLATION_THINKING_FAITHFUL: str | None = "low"
+    TRANSLATION_THINKING_LINE_EDIT: str | None = "medium"
+    TRANSLATION_THINKING_POLISH: str | None = "low"
+    # Cache the shared prompt prefix (rules, style sheet, glossary) per run.
+    TRANSLATION_CACHE: bool = True
     # Optional: override per-million-token USD prices used in glossary cost estimates.
     GEMINI_INPUT_PRICE_USD_PER_MTOK: float | None = None
     GEMINI_OUTPUT_PRICE_USD_PER_MTOK: float | None = None

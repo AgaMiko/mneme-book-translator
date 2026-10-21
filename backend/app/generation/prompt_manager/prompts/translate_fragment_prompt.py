@@ -16,8 +16,11 @@ in ``docs/step5-translation-pipeline.md`` §4:
 - author placeholders copied as is; source typos translated as intended
   and reported.
 
-All three stages share ``RULES_CORE``, ``STYLE_SHEET`` and the context block
-built by ``render_context``. Each stage adds its own task section.
+Prompt order: the fixed part (``render_fixed_context``: rules, style sheet,
+glossary) first, then the stage's task, then the per-fragment context
+(``render_fragment_context``: chapter, voices, neighbours) and the text.
+The ``build_*_prompt`` functions return everything after the fixed part; the
+chain puts the fixed part in front, or points at a cache that holds it.
 """
 
 from __future__ import annotations
@@ -303,27 +306,43 @@ def render_paragraphs(paragraphs: list[tuple[str, str]]) -> str:
     return "\n\n".join(f"[{pid}]\n{text}" for pid, text in paragraphs)
 
 
-def render_context(
+def render_fixed_context(
     *,
     book_title: str,
-    chapter_title: str,
     source_language: str,
     target_language: str,
     glossary: list[GlossaryRow],
+) -> str:
+    """The part of every prompt that is the same for the whole book.
+
+    Rules, style sheet and glossary. It always comes first, so Gemini can
+    reuse it from a cache: an explicit one per run (``translation_cache``) or
+    its automatic prefix caching. Anything that changes per chapter or per
+    fragment must stay out of it, or the cached prefix stops matching.
+    """
+    spelling = "British English" if target_language.lower().startswith("en") else target_language
+    return "\n\n".join(
+        [
+            f'You are a literary translator working on the novel "{book_title}", '
+            f"translating from {source_language} into {target_language}.",
+            RULES_CORE.format(target_language=target_language),
+            STYLE_SHEET.format(target_language=target_language, spelling=spelling),
+            f"## Accepted glossary ({len(glossary)} terms)\n\n{render_glossary(glossary)}",
+        ]
+    )
+
+
+def render_fragment_context(
+    *,
+    chapter_title: str,
     voices: list[VoiceRow],
     previous_source: str,
     previous_target: str,
     next_source: str,
 ) -> str:
-    """Shared context: book, glossary, voices, neighbouring text."""
-    spelling = "British English" if target_language.lower().startswith("en") else target_language
+    """The part of the prompt that changes per fragment: chapter, voices, neighbours."""
     blocks = [
-        f'You are a literary translator working on the novel "{book_title}", '
-        f"translating from {source_language} into {target_language}. "
-        f"Current chapter: {chapter_title}.",
-        RULES_CORE.format(target_language=target_language),
-        STYLE_SHEET.format(target_language=target_language, spelling=spelling),
-        f"## Accepted glossary ({len(glossary)} terms)\n\n{render_glossary(glossary)}",
+        f"## Current chapter\n\n{chapter_title}",
         f"## Voice profiles\n\n{render_voices(voices)}",
     ]
     neighbours: list[str] = []
@@ -352,8 +371,8 @@ def build_faithful_prompt(
 ) -> str:
     return "\n\n".join(
         [
-            context,
             FAITHFUL_TASK.format(target_language=target_language),
+            context,
             "## Source paragraphs\n\n" + render_paragraphs(source),
         ]
     )
@@ -370,8 +389,8 @@ def build_line_edit_prompt(
 ) -> str:
     return "\n\n".join(
         [
-            context,
             LINE_EDIT_TASK.format(target_language=target_language),
+            context,
             "## Problems found by automatic checks\n\n"
             + ("\n".join(f"- {c}" for c in checks) if checks else "(none)"),
             "## Rhythm and repetition in the draft\n\n"
@@ -392,8 +411,8 @@ def build_polish_prompt(
 ) -> str:
     return "\n\n".join(
         [
-            context,
             POLISH_TASK.format(target_language=target_language, metrics_block=metrics_block),
+            context,
             "## Source paragraphs (for checking meaning)\n\n" + render_paragraphs(source),
             "## Line-edited translation to polish\n\n" + render_paragraphs(line_edited),
         ]

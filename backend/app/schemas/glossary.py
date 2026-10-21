@@ -84,3 +84,31 @@ class GlossaryWorkingEntryPatchIn(BaseModel):
             "Provide proposed_target and/or suggestion, set accept or reject, "
             "or set merge_into_entry_id.",
         )
+
+
+class GlossaryImportSourceOut(BaseModel):
+    """Another book whose glossary has reviewed terms that can be imported."""
+
+    book_id: UUID
+    title: str | None
+    original_filename: str | None
+    created_at: datetime
+    accepted: int
+    removed: int
+
+
+class GlossaryImportSourcesResponse(BaseModel):
+    sources: list[GlossaryImportSourceOut]
+
+
+class GlossaryImportIn(BaseModel):
+    source_book_id: UUID
+
+
+class GlossaryImportResponse(BaseModel):
+    """Counts: new terms, proposals replaced by the other book's decision,
+    and terms already reviewed here (kept, variants combined)."""
+
+    added: int
+    updated: int
+    kept: int

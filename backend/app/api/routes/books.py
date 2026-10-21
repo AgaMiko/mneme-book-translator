@@ -48,6 +48,10 @@ from app.schemas.book import (
     VoicePassEstimateResponse,
 )
 from app.schemas.glossary import (
+    GlossaryImportIn,
+    GlossaryImportResponse,
+    GlossaryImportSourceOut,
+    GlossaryImportSourcesResponse,
     GlossaryWorkingEntryOut,
     GlossaryWorkingEntryPatchIn,
     WorkingGlossaryResponse,
@@ -144,7 +148,9 @@ async def upload_book(
 
     fallback_title = Path(file.filename).stem
     try:
-        parsed = parse_docx(storage_path, fallback_title=fallback_title, source_language=source_language)
+        parsed = parse_docx(
+            storage_path, fallback_title=fallback_title, source_language=source_language
+        )
     except Exception as exc:
         storage_path.unlink(missing_ok=True)
         log.exception("parse_failed", filename=file.filename)
@@ -474,6 +480,110 @@ async def continue_glossary_extraction(
     )
     log.info("glossary_extraction_continue_scheduled", book_id=str(book_id))
     return GlossaryExtractionStartResponse(book_id=book_id)
+
+
+@router.post(
+    "/{book_id}/glossary-extraction/expand",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=GlossaryExtractionStartResponse,
+    summary="Read the manuscript again and add missing terms to the current glossary",
+)
+async def expand_glossary(
+    book_id: UUID,
+    background: BackgroundTasks,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> GlossaryExtractionStartResponse:
+    """Runs every window on the latest glossary run in place. Reviewed terms
+    are kept as they are; only new terms (as proposals) and variants are added.
+    """
+    if not settings.GEMINI_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="GEMINI_API_KEY is not configured.",
+        )
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
+    run, _entries = await glossary_service.load_working_glossary_for_latest_run(
+        session, book_id=book_id
+    )
+    if run is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This book has no glossary yet. Run an extraction or import one first.",
+        )
+
+    result = await session.execute(
+        update(Book)
+        .where(Book.id == book_id, Book.glossary_extraction_status != "running")
+        .values(
+            glossary_extraction_status="running",
+            glossary_extraction_cancel_requested=False,
+        ),
+    )
+    await session.commit()
+    if rowcount(result) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Glossary extraction is already running for this book.",
+        )
+
+    background.add_task(
+        glossary_service.extract_book_glossary,
+        book_id=book_id,
+        settings=settings,
+        expand=True,
+    )
+    log.info("glossary_expand_scheduled", book_id=str(book_id))
+    return GlossaryExtractionStartResponse(book_id=book_id)
+
+
+@router.get(
+    "/{book_id}/glossary-import-sources",
+    response_model=GlossaryImportSourcesResponse,
+    summary="Other books with reviewed glossary terms to import",
+)
+async def list_glossary_import_sources(
+    book_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> GlossaryImportSourcesResponse:
+    sources = await glossary_service.list_glossary_import_sources(session, book_id=book_id)
+    return GlossaryImportSourcesResponse(
+        sources=[GlossaryImportSourceOut.model_validate(s) for s in sources]
+    )
+
+
+@router.post(
+    "/{book_id}/glossary-import",
+    response_model=GlossaryImportResponse,
+    summary="Copy the reviewed terms of another book's glossary into this book's",
+)
+async def import_glossary(
+    book_id: UUID,
+    body: GlossaryImportIn,
+    session: AsyncSession = Depends(get_session),
+) -> GlossaryImportResponse:
+    if body.source_book_id == book_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Choose a different book to import from.",
+        )
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
+    if book.glossary_extraction_status == "running":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Wait for the glossary extraction to finish, or stop it, before importing.",
+        )
+    try:
+        counts = await glossary_service.import_glossary_from_book(
+            session, book_id=book_id, source_book_id=body.source_book_id
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    return GlossaryImportResponse(**counts)
 
 
 @router.post(

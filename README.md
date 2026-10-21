@@ -28,6 +28,7 @@ This repo is a working Docker stack: upload a `.docx`, parse it into chapters an
 - Extract title-adjacent metadata asynchronously after upload.
 - Estimate, start, stop, continue, and reset glossary extraction.
 - Review working glossary terms, translations, variants, and statuses.
+- Import the reviewed glossary of another book (a new version of the manuscript, or the next book in a series), then expand it: Mneme reads the manuscript again and adds only the missing terms as proposals. Terms you accepted or removed are never renamed, rewritten or merged away by extraction.
 - Identify character speaker windows as the first pass of voice extraction.
 - Draft, review, edit, accept, reject, regenerate, and reset character voice profiles.
 - Translate the book, or chosen chapters, fragment by fragment (about 1,200 words each), with a cost estimate before you start, live progress, and stop and continue. See [How translation works](#how-translation-works).

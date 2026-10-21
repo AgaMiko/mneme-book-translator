@@ -6,6 +6,7 @@ import { GlossaryReviewPanel } from "@/components/GlossaryReviewPanel";
 import {
   bookKeys,
   useContinueGlossaryExtraction,
+  useExpandGlossary,
   useGlossaryExtractionEstimate,
   useStartGlossaryExtraction,
   useStopGlossaryExtraction,
@@ -34,6 +35,7 @@ export function GlossaryView({ book, focusEntryId = null, onFocusHandled }: Prop
   const startGlossary = useStartGlossaryExtraction(book.id);
   const continueGlossary = useContinueGlossaryExtraction(book.id);
   const stopGlossary = useStopGlossaryExtraction(book.id);
+  const expandGlossary = useExpandGlossary(book.id);
   /**
    * Same query key the review panel below uses — react-query serves both
    * from one fetch, so the run card can name the run without a second
@@ -64,6 +66,7 @@ export function GlossaryView({ book, focusEntryId = null, onFocusHandled }: Prop
           startGlossary={startGlossary}
           continueGlossary={continueGlossary}
           stopGlossary={stopGlossary}
+          expandGlossary={expandGlossary}
           run={working.data?.run ?? null}
         />
 

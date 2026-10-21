@@ -14,6 +14,8 @@ import {
   type GlossaryExtractionEstimate,
   type GlossaryExtractionStartResponse,
   type GlossaryExtractionStopResponse,
+  type GlossaryImportResult,
+  type GlossaryImportSource,
   type GlossaryWorkingEntry,
   type StartTranslationBody,
   type TranslationEstimate,
@@ -37,6 +39,7 @@ export const bookKeys = {
   glossaryEstimate: (id: string) => [...bookKeys.all, "glossary-estimate", id] as const,
   voiceEstimate: (id: string) => [...bookKeys.all, "voice-estimate", id] as const,
   workingGlossary: (id: string) => [...bookKeys.all, "working-glossary", id] as const,
+  glossaryImportSources: (id: string) => [...bookKeys.all, "glossary-import-sources", id] as const,
   workingVoices: (id: string) => [...bookKeys.all, "working-voices", id] as const,
   workingSpeakers: (id: string) => [...bookKeys.all, "working-speakers", id] as const,
   translation: (id: string) => [...bookKeys.all, "translation", id] as const,
@@ -185,6 +188,47 @@ export function useContinueGlossaryExtraction(
       void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
       void qc.invalidateQueries({ queryKey: bookKeys.lists() });
       void qc.invalidateQueries({ queryKey: bookKeys.workingGlossary(bookId) });
+    },
+  });
+}
+
+/** Read the manuscript again and add missing terms to the current glossary. */
+export function useExpandGlossary(
+  bookId: string,
+): UseMutationResult<GlossaryExtractionStartResponse, Error, void> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.expandGlossary(bookId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
+      void qc.invalidateQueries({ queryKey: bookKeys.lists() });
+      void qc.invalidateQueries({ queryKey: bookKeys.workingGlossary(bookId) });
+    },
+  });
+}
+
+export function useGlossaryImportSources(
+  bookId: string,
+  enabled: boolean,
+): UseQueryResult<GlossaryImportSource[], Error> {
+  return useQuery({
+    queryKey: bookKeys.glossaryImportSources(bookId),
+    queryFn: () => api.getGlossaryImportSources(bookId),
+    enabled,
+  });
+}
+
+export function useImportGlossary(
+  bookId: string,
+): UseMutationResult<GlossaryImportResult, Error, string> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (sourceBookId: string) => api.importGlossary(bookId, sourceBookId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
+      void qc.invalidateQueries({ queryKey: bookKeys.lists() });
+      void qc.invalidateQueries({ queryKey: bookKeys.workingGlossary(bookId) });
+      void qc.invalidateQueries({ queryKey: bookKeys.translationTerms(bookId) });
     },
   });
 }

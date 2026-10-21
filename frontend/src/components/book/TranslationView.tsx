@@ -41,10 +41,12 @@ interface Props {
 const STAGES: { id: TranslationStage; label: string; hint: string }[] = [
   { id: "faithful", label: "Faithful", hint: "Complete and accurate, before editing" },
   { id: "line_edit", label: "Line edit", hint: "Edited into natural English prose" },
-  { id: "polish", label: "Polish", hint: "Final pass against the style targets" },
+  // "Polish" would be ambiguous next to the Polish source, so the last stage
+  // is called "Final" everywhere in the UI (its API id stays `polish`).
+  { id: "polish", label: "Final", hint: "Final edit against the style targets" },
 ];
 
-// Polish-brief targets (mirrors backend translation_qa).
+// Style targets from the final-edit brief (mirrors backend translation_qa).
 const TARGETS = { shePct: 15, ellipses: 3, dashes: 6 };
 
 const NOTE_LABELS: Record<string, string> = {
@@ -66,7 +68,7 @@ const EDIT_LABELS: Record<string, string> = {
 /**
  * Step 5: translate fragments in three stages and read the result next to
  * the source. The run card starts, stops and continues runs; the stage
- * switch shows the faithful, line-edited or polished text.
+ * switch shows the faithful, line-edited or final English text.
  */
 export function TranslationView({ book }: Props) {
   const translation = useTranslation(book.id);
@@ -125,7 +127,7 @@ export function TranslationView({ book }: Props) {
                 className="mr-1 font-mono text-[10px] uppercase tracking-wider text-ink-500"
                 title="Downloads the translated chapters at the stage shown. Missing fragments fall back to an earlier stage, or are marked as not translated."
               >
-                Export {STAGES.find((s) => s.id === stage)?.label.toLowerCase()}
+                Export English · {STAGES.find((s) => s.id === stage)?.label.toLowerCase()}
               </p>
               {(["pdf", "epub", "docx"] as const).map((fmt) => (
                 <a
@@ -259,7 +261,7 @@ function RunCard({
           </label>
           {book.chapters.map((c, idx) => {
             const ch = byChapter.get(c.id);
-            const polished = ch?.fragments.length
+            const finished = ch?.fragments.length
               ? ch.fragments.filter((f) => f.stages.polish).length
               : 0;
             const frags = ch?.fragments.length ?? 0;
@@ -278,9 +280,9 @@ function RunCard({
                   {String(idx + 1).padStart(2, "0")}
                 </span>
                 <span className="min-w-0 flex-1 truncate">{c.title ?? `Chapter ${idx + 1}`}</span>
-                {frags > 0 && polished > 0 && (
+                {frags > 0 && finished > 0 && (
                   <span className="font-mono text-[10px] text-ink-500">
-                    {polished}/{frags} polished
+                    {finished}/{frags} finished
                   </span>
                 )}
               </label>
@@ -306,7 +308,7 @@ function RunCard({
             onChange={(e) => setRetranslate(e.target.checked)}
             className="accent-[var(--color-accent)]"
           />
-          Translate again, including fragments that already have a polished translation
+          Translate again, including fragments that already have a final English version
         </label>
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -361,7 +363,7 @@ function RunCard({
 
 function summary(run: TranslationRun | null): string {
   if (!run)
-    return "No translation yet. Each fragment goes through a faithful pass, a line edit and a polish.";
+    return "No translation yet. Each fragment goes through a faithful translation, a line edit and a final edit.";
   const progress = `${run.fragments_completed}/${run.fragments_total} fragments`;
   switch (run.status) {
     case "running":
@@ -473,7 +475,7 @@ function MetricsRow({ metrics }: { metrics: StyleMetrics }) {
   return (
     <dl className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10.5px]">
       {items.map((i) => (
-        <div key={i.label} className="flex gap-1.5" title={`Target: see the polish brief`}>
+        <div key={i.label} className="flex gap-1.5" title="Target: see the final-edit brief">
           <dt className="text-ink-500">{i.label}</dt>
           <dd className={cn("tabular-nums", i.over ? "text-warning" : "text-ink-200")}>
             {i.value}
@@ -499,7 +501,7 @@ function FragmentBlock({
   if (!output) {
     const label =
       rs?.status === "running"
-        ? `Translating${rs.last_stage ? ` · ${rs.last_stage.replace("_", " ")} done` : ""}…`
+        ? `Translating${rs.last_stage ? ` · ${STAGES.find((s) => s.id === rs.last_stage)?.label.toLowerCase()} done` : ""}…`
         : rs?.status === "failed"
           ? "Failed"
           : rs?.status === "pending"

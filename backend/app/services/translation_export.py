@@ -487,7 +487,13 @@ def render(book: ExportBook, fmt: ExportFormat) -> bytes:
     return RENDERERS[fmt](book)
 
 
+# File-name words for each stage. The last stage is "final", not "polish",
+# so the name can't be read as the Polish language.
+_STAGE_FILE_NAMES = {"faithful": "faithful", "line_edit": "line-edit", "polish": "final"}
+
+
 def export_filename(book: ExportBook, fmt: ExportFormat) -> str:
-    """ASCII file name, e.g. ``Zaplataczka_polish.pdf``."""
+    """ASCII file name, e.g. ``Zaplataczka_EN_final.pdf``."""
     base = re.sub(r"[^A-Za-z0-9]+", "_", book.title).strip("_") or "translation"
-    return f"{base}_{book.stage}.{fmt}"
+    lang = re.sub(r"[^A-Za-z]", "", book.language).upper() or "EN"
+    return f"{base}_{lang}_{_STAGE_FILE_NAMES.get(book.stage, book.stage)}.{fmt}"

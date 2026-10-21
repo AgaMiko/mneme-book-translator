@@ -41,9 +41,7 @@ def _book() -> ExportBook:
 
 
 def test_heading_blocks_split_pov_chapter_and_epigraph() -> None:
-    blocks = heading_blocks(
-        "Mira\n\nChapter 5. A Great Many Herbs\n\n“Line one.”\n– Attribution"
-    )
+    blocks = heading_blocks("Mira\n\nChapter 5. A Great Many Herbs\n\n“Line one.”\n– Attribution")
     assert [(b.kind, b.text) for b in blocks] == [
         ("pov", "Mira"),
         ("chapter", "Chapter 5. A Great Many Herbs"),
@@ -93,4 +91,4 @@ def test_docx_renders() -> None:
 
 
 def test_export_filename_is_ascii() -> None:
-    assert export_filename(_book(), "pdf") == "Zap_ataczka_polish.pdf"
+    assert export_filename(_book(), "pdf") == "Zap_ataczka_EN_final.pdf"

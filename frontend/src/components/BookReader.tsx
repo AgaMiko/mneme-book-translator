@@ -84,6 +84,17 @@ export function BookReader({ bookId, onBack }: Props) {
 
   const handleScrollHandled = useCallback(() => setChapterScrollTarget(null), []);
 
+  /** A glossary term clicked in the Translation tab: open it in the glossary. */
+  const [glossaryFocus, setGlossaryFocus] = useState<string | null>(null);
+  const handleOpenTerm = useCallback(
+    (termId: string) => {
+      setGlossaryFocus(termId);
+      setActiveTab("glossary");
+    },
+    [setActiveTab],
+  );
+  const handleGlossaryFocusHandled = useCallback(() => setGlossaryFocus(null), []);
+
   if (isLoading) {
     return (
       <div className="mx-auto max-w-prose space-y-4 px-6 py-12" aria-busy="true">
@@ -126,9 +137,17 @@ export function BookReader({ bookId, onBack }: Props) {
               onScrollHandled={handleScrollHandled}
             />
           )}
-          {activeTab === "glossary" && <GlossaryView book={book} />}
+          {activeTab === "glossary" && (
+            <GlossaryView
+              book={book}
+              focusEntryId={glossaryFocus}
+              onFocusHandled={handleGlossaryFocusHandled}
+            />
+          )}
           {activeTab === "voices" && <VoiceView book={book} />}
-          {activeTab === "translation" && <TranslationView book={book} />}
+          {activeTab === "translation" && (
+            <TranslationView book={book} onOpenTerm={handleOpenTerm} />
+          )}
         </div>
       </div>
     </div>

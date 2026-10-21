@@ -18,6 +18,7 @@ import {
   type StartTranslationBody,
   type TranslationEstimate,
   type TranslationRun,
+  type TranslationTerms,
   type TranslationView,
   type UploadBookResponse,
   type VoiceExtractionEstimate,
@@ -39,6 +40,7 @@ export const bookKeys = {
   workingVoices: (id: string) => [...bookKeys.all, "working-voices", id] as const,
   workingSpeakers: (id: string) => [...bookKeys.all, "working-speakers", id] as const,
   translation: (id: string) => [...bookKeys.all, "translation", id] as const,
+  translationTerms: (id: string) => [...bookKeys.all, "translation-terms", id] as const,
   translationEstimate: (id: string, chapterIds: readonly string[] | null) =>
     [...bookKeys.all, "translation-estimate", id, chapterIds ?? "all"] as const,
 };
@@ -134,6 +136,7 @@ export function usePatchGlossaryWorkingEntry(
     mutationFn: ({ entryId, body }) => api.patchGlossaryWorkingEntry(bookId, entryId, body),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: bookKeys.workingGlossary(bookId) });
+      void qc.invalidateQueries({ queryKey: bookKeys.translationTerms(bookId) });
     },
   });
 }
@@ -412,5 +415,14 @@ export function useStopTranslation(bookId: string): UseMutationResult<void, Erro
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: bookKeys.translation(bookId) });
     },
+  });
+}
+
+/** Glossary terms found in the source paragraphs; refreshed when the glossary changes. */
+export function useTranslationTerms(bookId: string): UseQueryResult<TranslationTerms, Error> {
+  return useQuery({
+    queryKey: bookKeys.translationTerms(bookId),
+    queryFn: () => api.getTranslationTerms(bookId),
+    staleTime: 60_000,
   });
 }

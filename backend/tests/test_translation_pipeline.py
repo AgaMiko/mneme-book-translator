@@ -485,3 +485,32 @@ def test_one_step_mode() -> None:
     assert "Meaning wins over variety" in prompt
     assert "She/He openers" in prompt
     assert "{" not in prompt  # every placeholder filled
+
+
+def test_find_terms_matches_case_forms_and_respects_capitals() -> None:
+    from app.services.term_matching import TermIndex, find_terms
+
+    index = TermIndex.build(
+        [
+            ("mira", "Mira", ["Miro"]),
+            ("einard", "Einard", []),
+            ("splot", "splot", []),
+            ("rada", "Rada", []),
+            ("dar", "Dar Widzenia", []),
+            ("hania", "Hania", ["Hanna"]),
+            ("naelori", "Naelori", ["Vynmor"]),  # a wrong variant is ignored
+            ("zapasc", "Zapaść", []),
+        ]
+    )
+    text = (
+        "Miro, Einardzie! Splocie i splątany. Radość, a potem Rada. "
+        "Dar Widzenia, Hanna, katedra Vynmor. Zapadła cisza."
+    )
+    hits = [(t, text[a:b]) for t, a, b in find_terms(text, index)]
+    assert ("mira", "Miro") in hits
+    assert ("einard", "Einardzie") in hits
+    assert ("splot", "Splocie") in hits
+    assert ("rada", "Rada") in hits
+    assert ("dar", "Dar Widzenia") in hits
+    assert ("hania", "Hanna") in hits
+    assert all(word not in {w for _, w in hits} for word in ("splątany", "Radość", "Vynmor", "Zapadła"))

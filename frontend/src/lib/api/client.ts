@@ -378,6 +378,28 @@ export const TranslationEstimateSchema = z.object({
 });
 export type TranslationEstimate = z.infer<typeof TranslationEstimateSchema>;
 
+export const GlossaryTermSchema = z.object({
+  id: z.string(),
+  source: z.string(),
+  target: z.string(),
+  term_type: z.string(),
+  note: z.string().nullable(),
+});
+export type GlossaryTerm = z.infer<typeof GlossaryTermSchema>;
+
+export const TermSpanSchema = z.object({
+  term_id: z.string(),
+  start: z.number().int(),
+  end: z.number().int(),
+});
+export type TermSpan = z.infer<typeof TermSpanSchema>;
+
+export const TranslationTermsSchema = z.object({
+  terms: z.array(GlossaryTermSchema),
+  paragraphs: z.record(z.array(TermSpanSchema)),
+});
+export type TranslationTerms = z.infer<typeof TranslationTermsSchema>;
+
 export type StartTranslationBody = {
   chapter_ids?: string[] | null;
   retranslate?: boolean;
@@ -580,6 +602,9 @@ export const api = {
 
   getTranslation: async (id: string): Promise<TranslationView> =>
     handleResponse(await fetch(`${API_URL}/books/${id}/translation`), TranslationViewSchema),
+
+  getTranslationTerms: async (id: string): Promise<TranslationTerms> =>
+    handleResponse(await fetch(`${API_URL}/books/${id}/translation/terms`), TranslationTermsSchema),
 
   getTranslationEstimate: async (
     id: string,

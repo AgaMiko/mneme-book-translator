@@ -36,6 +36,7 @@ from app.schemas.translation import (
     TranslationEstimateOut,
     TranslationRunOut,
     TranslationStageEstimateOut,
+    TranslationTermsResponse,
     TranslationViewResponse,
 )
 from app.services import translation_export, translation_service
@@ -252,3 +253,18 @@ async def export_translation(
         media_type=translation_export.MEDIA_TYPES[format],
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.get(
+    "/{book_id}/translation/terms",
+    response_model=TranslationTermsResponse,
+    summary="Accepted glossary terms and where they occur in the source paragraphs",
+)
+async def get_translation_terms(
+    book_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> TranslationTermsResponse:
+    if await session.get(Book, book_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
+    view = await translation_service.build_term_view(session, book_id=book_id)
+    return TranslationTermsResponse.model_validate(view)

@@ -12,7 +12,9 @@ from app.services.translation_service import speakers_for_range
 
 
 def _para(words: int, text: str | None = None) -> ParagraphInput:
-    return ParagraphInput(id=uuid4(), text=text if text is not None else " ".join(["słowo"] * words))
+    return ParagraphInput(
+        id=uuid4(), text=text if text is not None else " ".join(["słowo"] * words)
+    )
 
 
 def test_fragments_never_cross_chapters() -> None:
@@ -51,8 +53,8 @@ def test_style_metrics_counts_narration_only() -> None:
 
 def test_hard_checks_find_leftover_polish_and_placeholders() -> None:
     issues = hard_checks(
-        source=[("a", "Miro, chodź. xxxxxxx"), ("b", "– Tak.")],
-        target=[("a", "Miro, come here. Elżka waited."), ("b", "– Yes.")],
+        source=[("a", "Miro, chodź. xxxxxxx"), ("b", "\u2013 Tak.")],
+        target=[("a", "Miro, come here. Elżka waited."), ("b", "\u2013 Yes.")],
         source_language="pl",
         allowed_words={"Elżka"},
     )
@@ -98,9 +100,49 @@ def test_stage_model_fallbacks() -> None:
 
 def test_estimate_scales_with_words() -> None:
     s = Settings(GEMINI_MODEL="gemini-3.1-flash-lite-preview")
-    small = estimate_translation(word_count=1000, fragment_count=None, glossary_terms=50, settings=s)
-    big = estimate_translation(word_count=100_000, fragment_count=None, glossary_terms=50, settings=s)
+    small = estimate_translation(
+        word_count=1000, fragment_count=None, glossary_terms=50, settings=s
+    )
+    big = estimate_translation(
+        word_count=100_000, fragment_count=None, glossary_terms=50, settings=s
+    )
     assert small.fragment_count == 1
     assert big.fragment_count == 84
     assert big.cost_usd > small.cost_usd
     assert [st.stage for st in big.stages] == ["faithful", "line_edit", "polish"]
+
+
+def test_repetitions_skip_names_glossary_and_function_words() -> None:
+    from app.services.translation_qa import find_repetitions
+
+    paras = [
+        ("p1", "The lantern swayed. Mira watched the lantern. Mira smiled at the Weaver."),
+        ("p2", "The Weaver nodded, and the Weaver left."),
+    ]
+    words = [r.word for r in find_repetitions(paras, ignore={"Weaver"})]
+    assert words == ["lantern"]
+
+
+def test_even_runs_found_and_short_sentences_break_them() -> None:
+    from app.services.translation_qa import find_even_runs
+
+    even = "One two three four five six seven. " * 4
+    assert len(find_even_runs([("p1", even.strip())])) == 1
+    varied = (
+        "One two three four five six seven. Stop. "
+        "One two three four five six seven eight nine ten eleven twelve thirteen fourteen. "
+        "One two three four five six seven."
+    )
+    assert find_even_runs([("p1", varied)]) == []
+
+
+def test_estimate_counts_thinking_for_non_lite_models() -> None:
+    lite = Settings(GEMINI_MODEL="gemini-3.1-flash-lite-preview")
+    flash = Settings(GEMINI_MODEL="gemini-3.8-flash")
+    a = estimate_translation(
+        word_count=10_000, fragment_count=None, glossary_terms=50, settings=lite
+    )
+    b = estimate_translation(
+        word_count=10_000, fragment_count=None, glossary_terms=50, settings=flash
+    )
+    assert b.stages[0].output_tokens == 4 * a.stages[0].output_tokens

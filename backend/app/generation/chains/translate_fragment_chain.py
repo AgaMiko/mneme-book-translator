@@ -161,16 +161,19 @@ async def line_edit_fragment(
     source: list[tuple[str, str]],
     faithful: list[tuple[str, str]],
     checks: list[str],
+    rhythm: list[str],
     target_language: str,
     settings: Settings,
 ) -> StageResult[LineEditedFragment]:
-    """Stage 2. ``checks`` are QA problems found in the faithful text."""
+    """Stage 2. ``checks`` are QA problems and ``rhythm`` the repeated words and
+    even-length sentence runs found in the faithful text."""
     prompt = build_line_edit_prompt(
         context=context,
         target_language=target_language,
         source=source,
         faithful=faithful,
         checks=checks,
+        rhythm=rhythm,
     )
     return await _generate_aligned(
         prompt=prompt,

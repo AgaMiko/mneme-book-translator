@@ -301,6 +301,9 @@ export const StyleMetricsSchema = z.object({
   ellipses_per_1k: z.number(),
   dashes_per_1k: z.number(),
   stock_total: z.number(),
+  repetitions: z.number().optional(),
+  repetitions_per_1k: z.number().optional(),
+  even_runs: z.number().optional(),
 });
 export type StyleMetrics = z.infer<typeof StyleMetricsSchema>;
 

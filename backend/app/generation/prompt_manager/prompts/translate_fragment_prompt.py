@@ -155,6 +155,17 @@ Check your rewrite against the source paragraph, not against the faithful \
 translation: the faithful text is a draft, not the standard.
 
 - Vary sentence openings. Avoid runs of "She… She… She…" or "He… He…".
+- Sentence rhythm: vary sentence length. Translating sentence by sentence \
+tends to give runs of sentences of about the same length; mix short, \
+medium and long ones so the prose has movement. Short sentences for \
+impact and action, longer ones for reflection and description, as the \
+author does in the source. Keep the author's deliberate effects (a run of \
+short fragments, a long breathless sentence).
+- Word repetition: do not use the same word again within a few lines. \
+Polish avoids repetition through inflection and synonyms; English needs a \
+synonym, a pronoun or a rebuilt sentence. Keep a repetition only where the \
+source repeats on purpose (anaphora, a refrain, emphasis), and keep \
+glossary terms and names exactly as they are.
 - Merge or split sentences for {target_language} rhythm. Cut Polish-style \
 chains of "and… and…" or "so… so…".
 - Fix stiff or word-for-word phrases. No modern slang in narration.
@@ -168,7 +179,8 @@ Report every such addition as an added_clarification note.
 - Do not flatten voices: keep each character's register as the voice \
 strategy describes.
 - Keep glossary terms, names, placeholders, epigraphs and letters exactly.
-- Fix every problem listed under "Problems found by automatic checks".
+- Fix every problem listed under "Problems found by automatic checks", and \
+look at each spot listed under "Rhythm and repetition in the draft".
 
 Return one paragraph for each paragraph id, in the same order.
 """
@@ -200,8 +212,19 @@ semicolons or full stops elsewhere.
 - Stock phrases (the weight of, a beat, ghost of a smile, a flicker of, a \
 wave of, couldn't help but, suddenly…): replace with something concrete, or \
 cut.
-- Also fix clunky lines (especially converted units), long clause chains, \
-repeated words within a few lines, repeated dialogue tags. Three or more \
+- Also fix clunky lines (especially converted units), long clause chains \
+and repeated dialogue tags.
+- Sentence rhythm: vary sentence length. Translating sentence by sentence \
+tends to give runs of sentences of about the same length; mix short, \
+medium and long ones so the prose has movement. Short sentences for \
+impact and action, longer ones for reflection and description, as the \
+author does in the source. Keep the author's deliberate effects (a run of \
+short fragments, a long breathless sentence).
+- Word repetition: do not use the same word again within a few lines. \
+Polish avoids repetition through inflection and synonyms; English needs a \
+synonym, a pronoun or a rebuilt sentence. Keep a repetition only where the \
+source repeats on purpose (anaphora, a refrain, emphasis), and keep \
+glossary terms and names exactly as they are. Three or more \
 rhetorical questions in a row may be merged only if nothing is lost.
 
 Do not:
@@ -328,6 +351,7 @@ def build_line_edit_prompt(
     source: list[tuple[str, str]],
     faithful: list[tuple[str, str]],
     checks: list[str],
+    rhythm: list[str],
 ) -> str:
     return "\n\n".join(
         [
@@ -335,6 +359,8 @@ def build_line_edit_prompt(
             LINE_EDIT_TASK.format(target_language=target_language),
             "## Problems found by automatic checks\n\n"
             + ("\n".join(f"- {c}" for c in checks) if checks else "(none)"),
+            "## Rhythm and repetition in the draft\n\n"
+            + ("\n".join(f"- {r}" for r in rhythm) if rhythm else "(none found)"),
             "## Source paragraphs\n\n" + render_paragraphs(source),
             "## Faithful translation to edit\n\n" + render_paragraphs(faithful),
         ]

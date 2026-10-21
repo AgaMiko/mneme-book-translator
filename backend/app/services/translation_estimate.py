@@ -4,8 +4,9 @@ Same approach as ``glossary_extraction_estimate``: characters ÷ 4 for
 tokens. Per fragment there are three calls (faithful, line edit, polish).
 Each call sends the shared context (rules, style sheet, glossary, voices,
 neighbouring text) plus the source; the line edit and polish also send the
-previous stage's English. Output is the English text plus notes, with an
-allowance for thinking tokens.
+previous stage's English. Output is the English text plus notes, plus
+thinking tokens (none for Lite models, about three times the visible output
+for Gemini 3.8 Flash).
 """
 
 from __future__ import annotations
@@ -37,7 +38,14 @@ _VOICE_PROFILE_CHARS = 1_200
 _VOICES_PER_FRAGMENT = 3
 _NEIGHBOUR_WORDS = 400
 _NOTES_OUTPUT_CHARS = 1_200
-_THINKING_ALLOWANCE = 0.5  # extra output tokens as a share of visible output
+# Thinking tokens as a share of visible output, measured on chapter 5 of
+# Zaplataczka (2026-10-21): Flash-Lite 0, Gemini 3.8 Flash about 3.0.
+_THINKING_RATIO_LITE = 0.0
+_THINKING_RATIO_DEFAULT = 3.0
+
+
+def thinking_ratio(model: str) -> float:
+    return _THINKING_RATIO_LITE if "lite" in model.lower() else _THINKING_RATIO_DEFAULT
 
 
 def _tokens(chars: float) -> int:
@@ -92,9 +100,9 @@ def estimate_translation(
         if stage != "faithful":
             input_chars += target_chars
         visible_out = target_chars + fragments * _NOTES_OUTPUT_CHARS
-        input_tokens = _tokens(input_chars)
-        output_tokens = _tokens(visible_out * (1 + _THINKING_ALLOWANCE))
         model = stage_model(settings, stage)
+        input_tokens = _tokens(input_chars)
+        output_tokens = _tokens(visible_out * (1 + thinking_ratio(model)))
         in_price, out_price = resolve_gemini_usd_per_million_tokens(model)
         if settings.GEMINI_INPUT_PRICE_USD_PER_MTOK is not None:
             in_price = settings.GEMINI_INPUT_PRICE_USD_PER_MTOK

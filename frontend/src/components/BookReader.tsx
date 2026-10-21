@@ -4,7 +4,7 @@ import { BookHeader } from "@/components/book/BookHeader";
 import { ChapterRail } from "@/components/book/ChapterRail";
 import { GlossaryView } from "@/components/book/GlossaryView";
 import { ManuscriptView } from "@/components/book/ManuscriptView";
-import { BOOK_TAB_IDS, DEFAULT_BOOK_TAB, type TabCounts } from "@/components/book/tabs";
+import { DEFAULT_BOOK_TAB, startTabFor, type TabCounts } from "@/components/book/tabs";
 import { TranslationView } from "@/components/book/TranslationView";
 import { VoiceView } from "@/components/book/VoiceView";
 import { useBookTab } from "@/hooks/useBookTab";
@@ -22,7 +22,14 @@ interface Props {
  */
 export function BookReader({ bookId, onBack }: Props) {
   const { data: book, isLoading, isError } = useBook(bookId);
-  const [activeTab, setActiveTab] = useBookTab(bookId, BOOK_TAB_IDS, DEFAULT_BOOK_TAB);
+  const translation = useTranslation(bookId);
+  const translationRun = translation.data?.run ?? null;
+
+  // Open on the stage the book has reached, once both queries have answered.
+  const translationKnown = translation.isSuccess || translation.isError;
+  const startTab =
+    book && translationKnown ? startTabFor(book, translationRun?.status ?? null) : null;
+  const [activeTab, setActiveTab] = useBookTab(bookId, startTab, DEFAULT_BOOK_TAB);
 
   /**
    * Which chapter is in view. Owned here rather than in `ManuscriptView`
@@ -45,9 +52,6 @@ export function BookReader({ bookId, onBack }: Props) {
     enabled: book?.glossary_extraction_status === "completed",
     refetchIntervalMs: book?.voice_extraction_status === "running" ? 1500 : false,
   });
-
-  const translation = useTranslation(bookId);
-  const translationRun = translation.data?.run ?? null;
 
   const counts: TabCounts = useMemo(() => {
     const glossaryEntries = glossary.data?.entries ?? [];

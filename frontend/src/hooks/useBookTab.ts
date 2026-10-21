@@ -1,37 +1,33 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 /**
- * Tiny URL-synced state for the active book tab.
+ * Active tab of an open book.
  *
- * - Reads `?tab=...` on mount so a reload preserves the working view.
- * - Writes back via `history.replaceState` (no extra entry per click).
- * - Resets to the default whenever `bookId` changes — opening a fresh
- *   book always starts on Manuscript.
+ * A book opens on the stage it has reached (`startTab`), computed by the
+ * caller from the book's pipeline state: a fresh upload opens on the
+ * manuscript, a book with voices extracted opens on voices, and so on.
+ * `startTab` is `null` while that state is still loading; the tab is set
+ * once it arrives, and only once per book, so a status change while you
+ * work never moves you to another tab.
+ *
+ * The tab used to be read from `?tab=` in the URL. The URL does not say
+ * which book is open, so the last book's tab leaked into the next one
+ * (a new upload opened on Translation). It is no longer read or written.
  */
 export function useBookTab<T extends string>(
   bookId: string,
-  validTabs: readonly T[],
-  defaultTab: T,
+  startTab: T | null,
+  fallbackTab: T,
 ): [T, (tab: T) => void] {
-  const readFromUrl = useCallback((): T => {
-    if (typeof window === "undefined") return defaultTab;
-    const param = new URLSearchParams(window.location.search).get("tab");
-    return validTabs.includes(param as T) ? (param as T) : defaultTab;
-  }, [defaultTab, validTabs]);
-
-  const [tab, setTabState] = useState<T>(readFromUrl);
+  const [tab, setTab] = useState<T>(startTab ?? fallbackTab);
+  const initialisedFor = useRef<string | null>(null);
 
   useEffect(() => {
-    setTabState(readFromUrl());
-  }, [bookId, readFromUrl]);
+    if (initialisedFor.current === bookId || startTab === null) return;
+    initialisedFor.current = bookId;
+    setTab(startTab);
+  }, [bookId, startTab]);
 
-  const setTab = useCallback((next: T) => {
-    setTabState(next);
-    if (typeof window === "undefined") return;
-    const url = new URL(window.location.href);
-    url.searchParams.set("tab", next);
-    window.history.replaceState({}, "", url.toString());
-  }, []);
-
-  return [tab, setTab];
+  const select = useCallback((next: T) => setTab(next), []);
+  return [tab, select];
 }

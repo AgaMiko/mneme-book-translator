@@ -155,3 +155,21 @@ export type BookTab = BookTabDef["id"];
 export const BOOK_TAB_IDS: readonly BookTab[] = BOOK_TABS.map((t) => t.id);
 
 export const DEFAULT_BOOK_TAB: BookTab = "manuscript";
+
+/**
+ * The tab a book opens on: the furthest stage that has been started.
+ * A fresh upload opens on the manuscript; a book whose voices are done
+ * opens on voices; once a translation run exists, on translation.
+ */
+export function startTabFor(
+  book: BookDetail,
+  translationStatus: TabCounts["translationStatus"],
+): BookTab {
+  if (translationStatus !== null) return "translation";
+  const started = (s: string) => s !== "idle";
+  if (started(book.voice_extraction_status) || started(book.speakers_extraction_status)) {
+    return "voices";
+  }
+  if (started(book.glossary_extraction_status)) return "glossary";
+  return "manuscript";
+}

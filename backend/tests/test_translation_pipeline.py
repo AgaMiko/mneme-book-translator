@@ -138,14 +138,30 @@ def test_even_runs_found_and_short_sentences_break_them() -> None:
 
 def test_estimate_counts_thinking_for_non_lite_models() -> None:
     lite = Settings(GEMINI_MODEL="gemini-3.1-flash-lite-preview")
-    flash = Settings(GEMINI_MODEL="gemini-3.8-flash")
+    flash = Settings(
+        GEMINI_MODEL="gemini-3.8-flash",
+        TRANSLATION_THINKING_FAITHFUL="",
+        TRANSLATION_THINKING_LINE_EDIT="",
+        TRANSLATION_THINKING_POLISH="",
+    )
     a = estimate_translation(
         word_count=10_000, fragment_count=None, glossary_terms=50, settings=lite
     )
     b = estimate_translation(
         word_count=10_000, fragment_count=None, glossary_terms=50, settings=flash
     )
-    assert b.stages[0].output_tokens == 4 * a.stages[0].output_tokens
+    # Default thinking adds about 3.2x the visible output; Flash-Lite adds none.
+    assert 4.1 < b.stages[0].output_tokens / a.stages[0].output_tokens < 4.3
+    high = Settings(GEMINI_MODEL="gemini-3.8-flash")  # default: high thinking everywhere
+    c = estimate_translation(
+        word_count=10_000, fragment_count=None, glossary_terms=50, settings=high
+    )
+    assert c.cost_usd > b.cost_usd
+    no_cache = Settings(GEMINI_MODEL="gemini-3.8-flash", TRANSLATION_CACHE=False)
+    d = estimate_translation(
+        word_count=10_000, fragment_count=None, glossary_terms=50, settings=no_cache
+    )
+    assert d.cost_usd > c.cost_usd
 
 
 def test_fixed_context_has_nothing_fragment_specific() -> None:
@@ -179,11 +195,7 @@ def test_stage_thinking_levels() -> None:
     from app.generation.chains.translate_fragment_chain import stage_thinking
 
     s = Settings(GEMINI_MODEL="m")
-    assert [stage_thinking(s, st) for st in ("faithful", "line_edit", "polish")] == [
-        "low",
-        "medium",
-        "low",
-    ]
+    assert [stage_thinking(s, st) for st in ("faithful", "line_edit", "polish")] == ["high"] * 3
     assert (
         stage_thinking(Settings(GEMINI_MODEL="m", TRANSLATION_THINKING_POLISH=""), "polish") is None
     )

@@ -41,7 +41,8 @@ function nextStep(book: BookDetail): Step {
   if (voices === "running") return { label: "Watch voice run", tab: "voices" };
   if (voices !== "completed") return { label: "Extract voices", tab: "voices" };
 
-  return { label: "Review terms", tab: "glossary" };
+  // Glossary and voices are done: translation is next.
+  return { label: "Translate", tab: "translation" };
 }
 
 export function computeNextAction(

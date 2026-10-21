@@ -380,6 +380,17 @@ export type StartTranslationBody = {
   retranslate?: boolean;
 };
 
+export type ExportFormat = "pdf" | "epub" | "docx";
+
+/** Download URL for the translated book (a plain link; the API sends a file). */
+export function translationExportUrl(
+  bookId: string,
+  format: ExportFormat,
+  stage: TranslationStage,
+): string {
+  return `${API_URL}/books/${bookId}/translation/export?format=${format}&stage=${stage}`;
+}
+
 // ─── Errors ─────────────────────────────────────────────
 
 export class ApiError extends Error {

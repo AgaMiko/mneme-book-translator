@@ -2,6 +2,7 @@ import {
   AlertCircle,
   CheckCircle2,
   Circle,
+  Download,
   Loader2,
   PauseCircle,
   TriangleAlert,
@@ -20,6 +21,7 @@ import {
   type TranslationRun,
   type TranslationStage,
   type TranslatorNote,
+  translationExportUrl,
 } from "@/lib/api/client";
 import {
   useContinueTranslation,
@@ -116,6 +118,28 @@ export function TranslationView({ book }: Props) {
                 >
                   {s.label}
                 </button>
+              ))}
+            </div>
+            <div className="ml-auto flex items-center gap-1">
+              <p
+                className="mr-1 font-mono text-[10px] uppercase tracking-wider text-ink-500"
+                title="Downloads the translated chapters at the stage shown. Missing fragments fall back to an earlier stage, or are marked as not translated."
+              >
+                Export {STAGES.find((s) => s.id === stage)?.label.toLowerCase()}
+              </p>
+              {(["pdf", "epub", "docx"] as const).map((fmt) => (
+                <a
+                  key={fmt}
+                  href={translationExportUrl(book.id, fmt, stage)}
+                  download
+                  className={cn(
+                    "inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12.5px] font-medium",
+                    "text-ink-100 hover:bg-ink-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                  )}
+                >
+                  <Download className="h-3.5 w-3.5" aria-hidden />
+                  {fmt.toUpperCase()}
+                </a>
               ))}
             </div>
           </div>

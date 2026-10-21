@@ -12,6 +12,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         curl \
         build-essential \
         libpq-dev \
+        # PDF export (WeasyPrint) and the book font
+        libpango-1.0-0 \
+        libpangoft2-1.0-0 \
+        libharfbuzz-subset0 \
+        fonts-ebgaramond \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=ghcr.io/astral-sh/uv:0.5.11 /uv /uvx /usr/local/bin/

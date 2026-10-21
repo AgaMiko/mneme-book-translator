@@ -14,6 +14,7 @@ import json
 from functools import lru_cache
 from typing import TYPE_CHECKING, Any
 
+import httpx
 from google import genai
 from google.genai import types
 from google.genai.errors import APIError, ClientError, ServerError
@@ -142,7 +143,7 @@ async def generate(
 ) -> types.GenerateContentResponse:
     """Call Gemini with a JSON-schema-constrained response.
 
-    Retries on 5xx and 429 with exponential backoff. Other errors propagate
+    Retries on 5xx, 429 and dropped connections with exponential backoff. Other errors propagate
     immediately. Returns the raw SDK response — chain code is responsible
     for ``.parsed`` vs ``.text`` handling, since the right fallback depends
     on what each step considers an acceptable degradation.
@@ -182,6 +183,14 @@ async def generate(
             )
             if (not retryable) or attempt == max_retries - 1:
                 _log_gemini_api_error(exc, model=model, attempt=attempt)
+                raise
+            await asyncio.sleep(initial_backoff_s * (2**attempt))
+        except httpx.TransportError as exc:
+            # Dropped or reset connections ("Server disconnected without sending
+            # a response") happen on long runs; they are safe to retry.
+            last_exc = exc
+            if attempt == max_retries - 1:
+                log.warning("gemini_transport_error", model=model, attempt=attempt, error=str(exc))
                 raise
             await asyncio.sleep(initial_backoff_s * (2**attempt))
 

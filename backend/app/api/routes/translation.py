@@ -7,6 +7,8 @@
 - ``POST /books/{id}/translation/continue`` — resume a stopped or failed run.
 - ``POST /books/{id}/translation/stop`` — cooperative stop; fragments finish
   their current stage first.
+- ``GET  /books/{id}/translation/export?format=pdf|epub|docx&stage=…`` — the
+  translated book as a file.
 
 Runs execute as ``asyncio`` tasks, like voice extraction.
 """
@@ -17,9 +19,10 @@ import asyncio
 from typing import TYPE_CHECKING
 from uuid import UUID  # noqa: TC003 - FastAPI resolves path params at runtime
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
+from starlette.concurrency import run_in_threadpool
 
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
@@ -32,7 +35,7 @@ from app.schemas.translation import (
     TranslationStageEstimateOut,
     TranslationViewResponse,
 )
-from app.services import translation_service
+from app.services import translation_export, translation_service
 from app.services.translation_estimate import estimate_translation
 from app.services.translation_service import TranslationConflictError
 
@@ -205,3 +208,33 @@ async def stop_translation(
             detail="No translation is running for this book.",
         )
     return {"book_id": str(book_id)}
+
+
+@router.get(
+    "/{book_id}/translation/export",
+    summary="Download the translated book as PDF, EPUB or DOCX",
+    response_class=Response,
+)
+async def export_translation(
+    book_id: UUID,
+    format: translation_export.ExportFormat = Query(default="pdf"),
+    stage: translation_service.TranslationStageName = Query(default="polish"),
+    session: AsyncSession = Depends(get_session),
+) -> Response:
+    try:
+        book = await translation_export.assemble_book(session, book_id=book_id, stage=stage)
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    if not book.chapters:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Nothing is translated yet, so there is nothing to export.",
+        )
+    # Rendering is CPU-bound (PDF layout can take a while for a whole book).
+    data = await run_in_threadpool(translation_export.render, book, format)
+    filename = translation_export.export_filename(book, format)
+    return Response(
+        content=data,
+        media_type=translation_export.MEDIA_TYPES[format],
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

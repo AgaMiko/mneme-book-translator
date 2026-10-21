@@ -217,8 +217,12 @@ async def test_run_caches_are_deleted_on_close(monkeypatch) -> None:  # type: ig
     async def fake_delete(*, settings, name):  # type: ignore[no-untyped-def]
         deleted.append(name)
 
+    async def fake_prewarm(*, settings, model, prefix):  # type: ignore[no-untyped-def]
+        raise AssertionError("no OpenAI model in this test")
+
     monkeypatch.setattr(translation_cache, "create_cache", fake_create)
     monkeypatch.setattr(translation_cache, "delete_cache", fake_delete)
+    monkeypatch.setattr(translation_cache, "prewarm_cache", fake_prewarm)
     s = Settings(GEMINI_MODEL="m", GEMINI_API_KEY="k")
     caches = await translation_cache.RunCaches.open(
         settings=s, run_id=uuid4(), fixed_context="rules", models={"flash", "broken"}
@@ -278,8 +282,10 @@ async def test_gpt_models_go_to_openai_with_reasoning_effort(monkeypatch) -> Non
     assert result.model == "gpt-6-luna"
     assert result.output.paragraphs[0].text == "Yes."
     assert calls[0]["reasoning_effort"] == "high"
-    assert calls[0]["prompt"].startswith("RULES")  # fixed part first, for prefix caching
+    assert calls[0]["prefix"] == "RULES"  # sent as its own cacheable block
+    assert "RULES" not in calls[0]["prompt"]
     assert calls[0]["prompt_cache_key"].startswith("mneme-")
+    assert calls[0]["service_tier"] == "flex"
 
 
 def test_openai_usage_maps_to_gemini_keys() -> None:
@@ -325,3 +331,39 @@ def test_only_case_forms_count_as_glossary_variants() -> None:
         ("Mira", "Mira"),  # the canonical form itself
     ]:
         assert not is_form_of(canonical, variant), (canonical, variant)
+
+
+async def test_openai_models_are_prewarmed_not_given_gemini_caches(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from app.services import translation_cache
+
+    prewarmed: list[str] = []
+
+    async def fake_prewarm(*, settings, model, prefix):  # type: ignore[no-untyped-def]
+        prewarmed.append(model)
+
+    async def fail_create(**kwargs):  # type: ignore[no-untyped-def]
+        raise AssertionError("OpenAI models must not get a Gemini cache")
+
+    monkeypatch.setattr(translation_cache, "prewarm_cache", fake_prewarm)
+    monkeypatch.setattr(translation_cache, "create_cache", fail_create)
+    caches = await translation_cache.RunCaches.open(
+        settings=Settings(GEMINI_MODEL="m", OPENAI_API_KEY="k"),
+        run_id=uuid4(),
+        fixed_context="rules",
+        models={"gpt-6-luna", "gpt-6.1-sol"},
+    )
+    assert sorted(prewarmed) == ["gpt-6-luna", "gpt-6.1-sol"]
+    assert caches.name_for("gpt-6-luna") is None
+    await caches.close()
+
+
+def test_openai_input_marks_the_prefix_as_a_cache_breakpoint() -> None:
+    from app.generation.providers.openai import _input
+
+    content = _input("RULES", "rest")[0]["content"]
+    assert content[0] == {
+        "type": "input_text",
+        "text": "RULES",
+        "prompt_cache_breakpoint": {"mode": "explicit"},
+    }
+    assert content[1] == {"type": "input_text", "text": "rest"}

@@ -20,6 +20,10 @@ Clean-up, so a cache never keeps costing money after its run:
 If a cache cannot be created (model without caching, prefix too short,
 quota), the run continues without it; the prompt order still lets Gemini's
 automatic prefix caching apply.
+
+OpenAI models get no explicit cache to manage: ``open`` only prewarms
+OpenAI's own prefix cache (see ``providers/openai.py``), which expires by
+itself after 30 minutes.
 """
 
 from __future__ import annotations
@@ -35,7 +39,7 @@ from app.generation.providers.gemini import (
     delete_caches_with_prefix,
     refresh_cache,
 )
-from app.generation.providers.openai import is_openai_model
+from app.generation.providers.openai import is_openai_model, prewarm_cache
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -65,7 +69,20 @@ class RunCaches:
     ) -> RunCaches:
         names: dict[str, str] = {}
         if settings.TRANSLATION_CACHE:
-            # OpenAI caches repeated prefixes by itself; explicit caches are Gemini's.
+            # OpenAI: write the prefix cache once so the first parallel calls
+            # already read from it. It expires on its own; nothing to delete.
+            for model in sorted(m for m in models if is_openai_model(m)):
+                try:
+                    await prewarm_cache(settings=settings, model=model, prefix=fixed_context)
+                    log.info("translation_cache_prewarmed", run_id=str(run_id), model=model)
+                except Exception as exc:
+                    log.warning(
+                        "translation_cache_prewarm_failed",
+                        run_id=str(run_id),
+                        model=model,
+                        error=f"{type(exc).__name__}: {exc}"[:500],
+                    )
+            # Gemini: an explicit cache per model, deleted when the run ends.
             for model in sorted(m for m in models if not is_openai_model(m)):
                 try:
                     names[model] = await create_cache(

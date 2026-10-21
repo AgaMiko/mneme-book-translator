@@ -16,7 +16,6 @@ OpenAI (``providers/openai.py``), everything else to Gemini.
 
 from __future__ import annotations
 
-import hashlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -35,7 +34,7 @@ from app.generation.prompt_manager.prompts.translate_fragment_prompt import (
     build_polish_prompt,
 )
 from app.generation.providers.gemini import generate as gemini_generate
-from app.generation.providers.openai import ModelResult, is_openai_model
+from app.generation.providers.openai import ModelResult, cache_key_for, is_openai_model
 from app.generation.providers.openai import generate as openai_generate
 
 if TYPE_CHECKING:
@@ -107,37 +106,39 @@ def _alignment_problem(paragraphs: list[ParagraphOut], expected_ids: list[str]) 
     return "; ".join(parts)
 
 
-def _cache_key(fixed_context: str) -> str:
-    """Stable key for OpenAI prompt caching: same fixed context, same key."""
-    return "mneme-" + hashlib.sha256(fixed_context.encode()).hexdigest()[:24]
-
-
 async def _call_model(
     *,
+    fixed_context: str,
     prompt: str,
     schema: type[BaseModel],
     model: str,
     stage: str,
     temperature: float,
     cached_content: str | None,
-    cache_key: str,
     settings: Settings,
 ) -> ModelResult:
-    """Send one call to the provider that serves ``model``."""
+    """Send one call to the provider that serves ``model``.
+
+    ``prompt`` is everything after the fixed context. OpenAI gets the fixed
+    context as a separate, cacheable block; Gemini gets it in front of the
+    prompt, or not at all when an explicit cache (``cached_content``) holds it.
+    """
     thinking = stage_thinking(settings, stage)
     if is_openai_model(model):
         return await openai_generate(
+            prefix=fixed_context,
             prompt=prompt,
             schema=schema,
             model=model,
             settings=settings,
             temperature=temperature,
             reasoning_effort=thinking,
-            prompt_cache_key=cache_key,
+            prompt_cache_key=cache_key_for(fixed_context),
+            service_tier=settings.TRANSLATION_OPENAI_SERVICE_TIER or None,
             timeout_s=_TIMEOUT_S,
         )
     response = await gemini_generate(
-        prompt=prompt,
+        prompt=prompt if cached_content else f"{fixed_context}\n\n{prompt}",
         schema=schema,
         model=model,
         settings=settings,
@@ -161,29 +162,24 @@ async def _generate_aligned[T: BaseModel](
     temperature: float,
     settings: Settings,
 ) -> StageResult[T]:
-    """Call the model; ``prompt`` is everything after the fixed context.
-
-    With ``cached_content`` the fixed context is already in that cache and is
-    not sent again; otherwise it is put in front of ``prompt``.
-    """
+    """Call the model; ``prompt`` is everything after the fixed context."""
     model = stage_model(settings, stage)
-    base = prompt if cached_content else f"{fixed_context}\n\n{prompt}"
     problem: str | None = None
     for attempt in range(2):
-        full_prompt = base
+        full_prompt = prompt
         if problem:
             full_prompt += (
                 "\n\n## Correction\n\nYour previous answer had the wrong paragraphs "
                 f"({problem}). Return exactly these ids, in this order: " + ", ".join(expected_ids)
             )
         result = await _call_model(
+            fixed_context=fixed_context,
             prompt=full_prompt,
             schema=schema,
             model=model,
             stage=stage,
             temperature=temperature,
             cached_content=cached_content,
-            cache_key=_cache_key(fixed_context),
             settings=settings,
         )
         if isinstance(result.parsed, schema):

@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     TRANSLATION_THINKING_POLISH: str | None = "high"
     # Cache the shared prompt prefix (rules, style sheet, glossary) per run.
     TRANSLATION_CACHE: bool = True
+    # OpenAI service tier for translation calls: "flex" is half price and
+    # slower; empty uses the standard tier.
+    TRANSLATION_OPENAI_SERVICE_TIER: str | None = "flex"
     # Optional: override per-million-token USD prices used in glossary cost estimates.
     GEMINI_INPUT_PRICE_USD_PER_MTOK: float | None = None
     GEMINI_OUTPUT_PRICE_USD_PER_MTOK: float | None = None

@@ -69,10 +69,11 @@ const EDIT_LABELS: Record<string, string> = {
 
 /**
  * Step 5: translate fragments and read the result next to the source. By
- * default each fragment gets a faithful draft and one revision into the
- * final English (a three-stage mode adds a separate line edit). The run card
- * shows the pipeline the next run will use and starts, stops and continues
- * runs; the stage switch shows the draft, line-edited or final text.
+ * default each fragment is translated in one step straight into the final
+ * English; two- and three-step modes add a faithful draft and a separate
+ * line edit. The run card shows the pipeline the next run will use and
+ * starts, stops and continues runs; the stage switch shows whichever of the
+ * draft, line-edited and final texts exist.
  */
 export function TranslationView({ book }: Props) {
   const translation = useTranslation(book.id);
@@ -311,8 +312,9 @@ function RunCard({
           <p className="mt-2 text-xs leading-relaxed text-ink-400">
             About {formatNumber(estimate.data.fragment_count)} fragment
             {estimate.data.fragment_count === 1 ? "" : "s"} ·{" "}
-            {formatNumber(estimate.data.word_count)} words · {estimate.data.stages.length} calls per
-            fragment · ~{formatNumber(estimate.data.total_tokens)} tokens ·{" "}
+            {formatNumber(estimate.data.word_count)} words · {estimate.data.stages.length} call
+            {estimate.data.stages.length === 1 ? "" : "s"} per fragment · ~
+            {formatNumber(estimate.data.total_tokens)} tokens ·{" "}
             <span className="text-accent">≈ ${estimate.data.cost_usd.toFixed(2)}</span>. A rough
             estimate; thinking tokens vary by model.
           </p>
@@ -402,8 +404,7 @@ function Pipeline({ estimate }: { estimate: TranslationEstimate }) {
 }
 
 function summary(run: TranslationRun | null): string {
-  if (!run)
-    return "No translation yet. Each fragment gets a faithful draft, then is revised into the final English.";
+  if (!run) return "No translation yet. The next run's steps and models are shown below.";
   const progress = `${run.fragments_completed}/${run.fragments_total} fragments`;
   switch (run.status) {
     case "running":

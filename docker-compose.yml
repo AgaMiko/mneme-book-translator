@@ -34,7 +34,8 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       GEMINI_MODEL: ${GEMINI_MODEL:-gemini-3.1-flash-lite-preview}
       # Fragment translation. Each stage falls back to TRANSLATION_MODEL, then GEMINI_MODEL.
-      # Default: Luna faithful draft + one Sol revision (2 stages), high thinking, Flex.
+      # Default: one step, Sol straight into the final text, high thinking, Flex.
+      # TRANSLATION_STAGE_COUNT=2 adds a Luna draft before Sol; 3 adds a separate final edit.
       TRANSLATION_MODEL: ${TRANSLATION_MODEL:-gpt-6.1-sol}
       TRANSLATION_FAITHFUL_MODEL: ${TRANSLATION_FAITHFUL_MODEL:-gpt-6-luna}
       TRANSLATION_LINE_EDIT_MODEL: ${TRANSLATION_LINE_EDIT_MODEL:-}
@@ -45,7 +46,7 @@ services:
       TRANSLATION_THINKING_POLISH: ${TRANSLATION_THINKING_POLISH:-high}
       TRANSLATION_CACHE: ${TRANSLATION_CACHE:-true}
       TRANSLATION_OPENAI_SERVICE_TIER: ${TRANSLATION_OPENAI_SERVICE_TIER:-flex}
-      TRANSLATION_STAGE_COUNT: ${TRANSLATION_STAGE_COUNT:-2}
+      TRANSLATION_STAGE_COUNT: ${TRANSLATION_STAGE_COUNT:-1}
       LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
       LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
       LANGFUSE_HOST: ${LANGFUSE_HOST:-https://cloud.langfuse.com}

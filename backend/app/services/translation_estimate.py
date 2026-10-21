@@ -24,6 +24,7 @@ from app.generation.chains.translate_fragment_chain import (
 from app.generation.prompt_manager.prompts.translate_fragment_prompt import (
     FAITHFUL_TASK,
     LINE_EDIT_TASK,
+    ONE_STEP_TASK,
     POLISH_TASK,
     RULES_CORE,
     STYLE_SHEET,
@@ -65,7 +66,7 @@ _OPENAI_THINKING_RATIO: dict[str, dict[str, dict[str, float]]] = {
         "medium": {"faithful": 0.6, "line_edit": 0.6, "polish": 0.6},
     },
     "gpt-6.1-sol": {
-        "high": {"faithful": 1.8, "line_edit": 3.1, "polish": 2.7},
+        "high": {"faithful": 1.8, "line_edit": 3.1, "polish": 2.7, "one_step": 3.6},
         "medium": {"faithful": 0.4, "line_edit": 0.4, "polish": 0.3},
     },
 }
@@ -73,14 +74,18 @@ _CACHED_INPUT_SHARE_OF_PRICE = 0.1
 
 
 def thinking_ratio(model: str, level: str | None, stage: str) -> float:
+    """``stage`` may be "one_step"; where that was not measured, the line edit's
+    ratio is used (the one-step call uses the line-edit settings)."""
     if "lite" in model.lower():
         return 0.0
     for prefix, by_level in _OPENAI_THINKING_RATIO.items():
         if model.lower().startswith(prefix) and level in by_level:
-            return by_level[level][stage]
+            ratios = by_level[level]
+            return ratios.get(stage, ratios["line_edit"])
     if level is None:
         return _THINKING_RATIO_MODEL_DEFAULT
-    return _THINKING_RATIO_BY_LEVEL.get(level, {}).get(stage, _THINKING_RATIO_MODEL_DEFAULT)
+    ratios = _THINKING_RATIO_BY_LEVEL.get(level, {})
+    return ratios.get(stage, ratios.get("line_edit", _THINKING_RATIO_MODEL_DEFAULT))
 
 
 def _tokens(chars: float) -> int:
@@ -128,15 +133,20 @@ def estimate_translation(
     tasks = {"faithful": FAITHFUL_TASK, "line_edit": LINE_EDIT_TASK, "polish": POLISH_TASK}
 
     stages: list[StageEstimate] = []
-    for stage in calls_per_fragment(settings):
-        input_chars = fragments * (context_chars_per_call + len(tasks[stage])) + source_chars
-        if stage != "faithful":
+    calls = calls_per_fragment(settings)
+    for i, stage in enumerate(calls):
+        one_step = len(calls) == 1
+        task = ONE_STEP_TASK if one_step else tasks[stage]
+        input_chars = fragments * (context_chars_per_call + len(task)) + source_chars
+        if i > 0:  # every call after the first also reads the previous English
             input_chars += target_chars
         visible_out = target_chars + fragments * _NOTES_OUTPUT_CHARS
         model = stage_model(settings, stage)
         fixed_tokens = _tokens(fragments * fixed_chars_per_call)
         input_tokens = _tokens(input_chars) + fixed_tokens
-        ratio = thinking_ratio(model, stage_thinking(settings, stage), stage)
+        ratio = thinking_ratio(
+            model, stage_thinking(settings, stage), "one_step" if one_step else stage
+        )
         output_tokens = _tokens(visible_out * (1 + ratio))
         in_price, out_price = resolve_gemini_usd_per_million_tokens(model)
         if is_openai_model(model) and settings.TRANSLATION_OPENAI_SERVICE_TIER == "flex":

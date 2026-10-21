@@ -457,3 +457,25 @@ def test_current_renditions_use_one_run_per_fragment() -> None:
     current = current_renditions(rows)  # type: ignore[arg-type]
     assert {k[1] for k in current} == {"faithful", "polish"}
     assert all(v.run_id == new_run for v in current.values())
+
+
+def test_one_step_mode() -> None:
+    from app.generation.chains.translate_fragment_chain import calls_per_fragment
+    from app.generation.prompt_manager.prompts.translate_fragment_prompt import (
+        build_one_step_prompt,
+    )
+    from app.services.translation_service import _run_models
+
+    one = Settings(GEMINI_MODEL="m", TRANSLATION_STAGE_COUNT=1)
+    assert calls_per_fragment(one) == ("line_edit",)
+    assert _run_models(one) == {"polish": "gpt-6.1-sol"}
+    est = estimate_translation(word_count=5491, fragment_count=6, glossary_terms=178, settings=one)
+    assert [s.stage for s in est.stages] == ["line_edit"]
+
+    prompt = build_one_step_prompt(
+        context="ctx", target_language="English", source=[("p1", "Tak.")]
+    )
+    assert "translation (one pass)" in prompt
+    assert "Meaning wins over variety" in prompt
+    assert "She/He openers" in prompt
+    assert "{" not in prompt  # every placeholder filled

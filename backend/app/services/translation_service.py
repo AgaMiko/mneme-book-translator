@@ -48,6 +48,7 @@ from app.generation.chains.translate_fragment_chain import (
     revise_fragment,
     stage_model,
     translate_fragment_faithful,
+    translate_fragment_one_step,
 )
 from app.generation.prompt_manager.prompts.translate_fragment_prompt import (
     GlossaryRow,
@@ -379,6 +380,8 @@ async def start_translation_run(
 
 def _run_models(settings: Settings) -> dict[str, str]:
     """Model per stored stage; in two-step mode the final stage is the revision."""
+    if settings.TRANSLATION_STAGE_COUNT == 1:
+        return {"polish": stage_model(settings, "line_edit")}
     if settings.TRANSLATION_STAGE_COUNT == 2:
         return {
             "faithful": stage_model(settings, "faithful"),
@@ -712,8 +715,20 @@ async def _translate_fragment(
             return bool(run.cancel_requested)
 
         try:
+            if settings.TRANSLATION_STAGE_COUNT == 1 and "polish" not in existing:
+                # One-step mode: straight from the source to the final text.
+                result = await translate_fragment_one_step(
+                    fixed_context=ctx.fixed_context,
+                    cached_content=ctx.cache_for("line_edit"),
+                    context=context,
+                    source=source_short,
+                    target_language=target_language,
+                    settings=settings,
+                )
+                existing["polish"] = await save("polish", result, {"one_step": True})
+
             faithful = existing.get("faithful")
-            if faithful is None:
+            if faithful is None and "polish" not in existing:
                 result = await translate_fragment_faithful(
                     fixed_context=ctx.fixed_context,
                     cached_content=ctx.cache_for("faithful"),

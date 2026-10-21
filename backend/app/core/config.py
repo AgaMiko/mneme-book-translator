@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     TRANSLATION_THINKING_POLISH: str | None = "high"
     # Cache the shared prompt prefix (rules, style sheet, glossary) per run.
     TRANSLATION_CACHE: bool = True
+    # 3 = faithful draft, line edit, final edit. 2 = faithful draft, then one
+    # revision that does the line edit and the final edit's style targets;
+    # it uses the line-edit model and thinking level and is stored as the
+    # final stage.
+    TRANSLATION_STAGE_COUNT: int = 3
     # OpenAI service tier for translation calls: "flex" is half price and
     # slower; empty uses the standard tier.
     TRANSLATION_OPENAI_SERVICE_TIER: str | None = "flex"

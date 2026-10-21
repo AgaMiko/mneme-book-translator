@@ -16,7 +16,11 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from app.generation.chains.translate_fragment_chain import stage_model, stage_thinking
+from app.generation.chains.translate_fragment_chain import (
+    calls_per_fragment,
+    stage_model,
+    stage_thinking,
+)
 from app.generation.prompt_manager.prompts.translate_fragment_prompt import (
     FAITHFUL_TASK,
     LINE_EDIT_TASK,
@@ -24,7 +28,6 @@ from app.generation.prompt_manager.prompts.translate_fragment_prompt import (
     RULES_CORE,
     STYLE_SHEET,
 )
-from app.models.translation import TRANSLATION_STAGES
 from app.services.fragmenter import TARGET_WORDS
 from app.services.gemini_model_pricing import resolve_gemini_usd_per_million_tokens
 
@@ -105,7 +108,7 @@ def estimate_translation(
     tasks = {"faithful": FAITHFUL_TASK, "line_edit": LINE_EDIT_TASK, "polish": POLISH_TASK}
 
     stages: list[StageEstimate] = []
-    for stage in TRANSLATION_STAGES:
+    for stage in calls_per_fragment(settings):
         input_chars = fragments * (context_chars_per_call + len(tasks[stage])) + source_chars
         if stage != "faithful":
             input_chars += target_chars

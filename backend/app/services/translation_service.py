@@ -42,8 +42,10 @@ from app.core.config import get_settings
 from app.core.db import get_sessionmaker, rowcount
 from app.core.logging import get_logger
 from app.generation.chains.translate_fragment_chain import (
+    calls_per_fragment,
     line_edit_fragment,
     polish_fragment,
+    revise_fragment,
     stage_model,
     translate_fragment_faithful,
 )
@@ -359,7 +361,7 @@ async def start_translation_run(
         book_id=book_id,
         chapter_ids=sorted(wanted) if wanted else None,
         fragments_total=len(selected),
-        models={stage: stage_model(settings, stage) for stage in TRANSLATION_STAGES},
+        models=_run_models(settings),
     )
     session.add(run)
     await session.flush()
@@ -372,6 +374,16 @@ async def start_translation_run(
         fragments=len(selected),
     )
     return run
+
+
+def _run_models(settings: Settings) -> dict[str, str]:
+    """Model per stored stage; in two-step mode the final stage is the revision."""
+    if settings.TRANSLATION_STAGE_COUNT == 2:
+        return {
+            "faithful": stage_model(settings, "faithful"),
+            "polish": stage_model(settings, "line_edit"),
+        }
+    return {stage: stage_model(settings, stage) for stage in TRANSLATION_STAGES}
 
 
 async def request_stop(session: AsyncSession, *, book_id: UUID) -> bool:
@@ -715,8 +727,34 @@ async def _translate_fragment(
                 await session.commit()
                 return False
 
+            if settings.TRANSLATION_STAGE_COUNT == 2:
+                # Two-step mode: one revision (line edit + style targets),
+                # stored as the final stage.
+                if "polish" not in existing:
+                    faithful_short = short_from_rendition(faithful)
+                    draft_metrics = style_metrics([t for _, t in faithful_short])
+                    result = await revise_fragment(
+                        fixed_context=ctx.fixed_context,
+                        cached_content=ctx.cache_for("line_edit"),
+                        context=context,
+                        source=source_short,
+                        faithful=faithful_short,
+                        checks=checks_for(faithful_short),
+                        rhythm=rhythm_to_fix(faithful_short, ignore=ctx.glossary_words),
+                        metrics_block=_metrics_block(
+                            draft_metrics,
+                            to_fix=sentences_to_fix(faithful_short, draft_metrics),
+                            rhythm=[],
+                            checks=[],
+                        ),
+                        target_language=target_language,
+                        settings=settings,
+                    )
+                    await save("polish", result, {"two_step": True})
+                existing["polish"] = existing.get("polish") or faithful
+
             line_edited = existing.get("line_edit")
-            if line_edited is None:
+            if line_edited is None and "polish" not in existing:
                 faithful_short = short_from_rendition(faithful)
                 result = await line_edit_fragment(
                     fixed_context=ctx.fixed_context,
@@ -865,7 +903,7 @@ async def run_translation(*, run_id: UUID, settings: Settings) -> None:
         settings=settings,
         run_id=run_id,
         fixed_context=ctx.fixed_context,
-        models={stage_model(settings, s) for s in TRANSLATION_STAGES},
+        models={stage_model(settings, s) for s in calls_per_fragment(settings)},
     )
     try:
         await _run_jobs(run_id=run_id, book=book, jobs=jobs, worker=worker)

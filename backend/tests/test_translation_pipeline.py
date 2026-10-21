@@ -434,3 +434,26 @@ def test_default_pipeline_is_luna_draft_and_one_sol_revision_on_flex() -> None:
     # Measured on chapters 3 and 5 (5,491 words): $0.67 on Flex.
     est = estimate_translation(word_count=5491, fragment_count=6, glossary_terms=178, settings=s)
     assert 0.45 < est.cost_usd < 0.95
+
+
+def test_current_renditions_use_one_run_per_fragment() -> None:
+    from types import SimpleNamespace
+
+    from app.services.translation_service import current_renditions
+
+    frag, old_run, new_run, running = uuid4(), uuid4(), uuid4(), uuid4()
+
+    def r(run, stage):  # type: ignore[no-untyped-def]
+        return SimpleNamespace(fragment_id=frag, run_id=run, stage=stage)
+
+    rows = [
+        r(old_run, "faithful"),
+        r(old_run, "line_edit"),
+        r(old_run, "polish"),
+        r(new_run, "faithful"),  # two-step run: no line edit
+        r(new_run, "polish"),
+        r(running, "faithful"),  # a re-run still in progress
+    ]
+    current = current_renditions(rows)  # type: ignore[arg-type]
+    assert {k[1] for k in current} == {"faithful", "polish"}
+    assert all(v.run_id == new_run for v in current.values())

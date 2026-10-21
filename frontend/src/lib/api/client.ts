@@ -357,6 +357,7 @@ export const TranslationViewSchema = z.object({
 export type TranslationView = z.infer<typeof TranslationViewSchema>;
 
 export const TranslationEstimateSchema = z.object({
+  service_tier: z.string().nullable().optional(),
   word_count: z.number().int(),
   fragment_count: z.number().int(),
   glossary_terms: z.number().int(),
@@ -366,6 +367,8 @@ export const TranslationEstimateSchema = z.object({
     z.object({
       stage: TranslationStageSchema,
       model: z.string(),
+      thinking: z.string().nullable().optional(),
+      stored_as: TranslationStageSchema,
       calls: z.number().int(),
       input_tokens: z.number().int(),
       output_tokens: z.number().int(),

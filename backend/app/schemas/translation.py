@@ -80,6 +80,11 @@ class StartTranslationIn(BaseModel):
 class TranslationStageEstimateOut(BaseModel):
     stage: TranslationStage
     model: str
+    thinking: str | None = Field(default=None, description="Thinking level, or None for default.")
+    stored_as: TranslationStage = Field(
+        description="The stage this call's text is saved as (two-step mode saves the revision "
+        "as the final stage)."
+    )
     calls: int
     input_tokens: int
     output_tokens: int
@@ -87,6 +92,7 @@ class TranslationStageEstimateOut(BaseModel):
 
 
 class TranslationEstimateOut(BaseModel):
+    service_tier: str | None = Field(default=None, description="OpenAI service tier, e.g. flex.")
     word_count: int
     fragment_count: int
     glossary_terms: int

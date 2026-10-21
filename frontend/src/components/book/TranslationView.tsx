@@ -17,6 +17,7 @@ import {
   type DeclaredEdit,
   type QaIssue,
   type StyleMetrics,
+  type TranslationEstimate,
   type TranslationFragment,
   type TranslationRun,
   type TranslationStage,
@@ -39,11 +40,12 @@ interface Props {
 }
 
 const STAGES: { id: TranslationStage; label: string; hint: string }[] = [
-  { id: "faithful", label: "Faithful", hint: "Complete and accurate, before editing" },
+  { id: "faithful", label: "Draft", hint: "Faithful draft: complete and accurate, not yet edited" },
+  // Only three-stage runs have a separate line edit.
   { id: "line_edit", label: "Line edit", hint: "Edited into natural English prose" },
   // "Polish" would be ambiguous next to the Polish source, so the last stage
   // is called "Final" everywhere in the UI (its API id stays `polish`).
-  { id: "polish", label: "Final", hint: "Final edit against the style targets" },
+  { id: "polish", label: "Final", hint: "The finished English" },
 ];
 
 // Style targets from the final-edit brief (mirrors backend translation_qa).
@@ -66,9 +68,11 @@ const EDIT_LABELS: Record<string, string> = {
 };
 
 /**
- * Step 5: translate fragments in three stages and read the result next to
- * the source. The run card starts, stops and continues runs; the stage
- * switch shows the faithful, line-edited or final English text.
+ * Step 5: translate fragments and read the result next to the source. By
+ * default each fragment gets a faithful draft and one revision into the
+ * final English (a three-stage mode adds a separate line edit). The run card
+ * shows the pipeline the next run will use and starts, stops and continues
+ * runs; the stage switch shows the draft, line-edited or final text.
  */
 export function TranslationView({ book }: Props) {
   const translation = useTranslation(book.id);
@@ -301,8 +305,10 @@ function RunCard({
           })}
         </div>
 
+        {estimate.data && <Pipeline estimate={estimate.data} />}
+
         {estimate.data && (
-          <p className="mt-3 text-xs leading-relaxed text-ink-400">
+          <p className="mt-2 text-xs leading-relaxed text-ink-400">
             About {formatNumber(estimate.data.fragment_count)} fragment
             {estimate.data.fragment_count === 1 ? "" : "s"} ·{" "}
             {formatNumber(estimate.data.word_count)} words · {estimate.data.stages.length} calls per
@@ -369,6 +375,29 @@ function RunCard({
         )}
       </div>
     </section>
+  );
+}
+
+/** The steps the next run will take, e.g. "Draft gpt-6-luna → Final gpt-6.1-sol". */
+function Pipeline({ estimate }: { estimate: TranslationEstimate }) {
+  const label = (id: TranslationStage) => STAGES.find((s) => s.id === id)?.label ?? id;
+  return (
+    <p className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12px] text-ink-300">
+      <span className="font-mono text-[10px] uppercase tracking-wider text-ink-500">Next run</span>
+      {estimate.stages.map((s, i) => (
+        <span key={s.stage} className="inline-flex items-center gap-1.5">
+          {i > 0 && <span className="text-ink-600">→</span>}
+          <span>
+            {label(s.stored_as)}{" "}
+            <span className="font-mono text-[11px] text-ink-100">{s.model}</span>
+            {s.thinking && <span className="text-ink-500"> ({s.thinking} thinking)</span>}
+          </span>
+        </span>
+      ))}
+      {estimate.service_tier && (
+        <span className="text-ink-500">· {estimate.service_tier} tier</span>
+      )}
+    </p>
   );
 }
 

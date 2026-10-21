@@ -27,7 +27,7 @@ from starlette.concurrency import run_in_threadpool
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
 from app.core.logging import get_logger
-from app.generation.chains.translate_fragment_chain import stage_model
+from app.generation.chains.translate_fragment_chain import stage_model, stage_thinking
 from app.generation.providers.openai import is_openai_model
 from app.models.book import Book, Chapter
 from app.models.translation import TRANSLATION_STAGES
@@ -132,7 +132,9 @@ async def get_translation_estimate(
     est = estimate_translation(
         word_count=words, fragment_count=None, glossary_terms=len(glossary), settings=settings
     )
+    stage_count = len(est.stages)
     return TranslationEstimateOut(
+        service_tier=settings.TRANSLATION_OPENAI_SERVICE_TIER or None,
         word_count=est.word_count,
         fragment_count=est.fragment_count,
         glossary_terms=est.glossary_terms,
@@ -142,12 +144,14 @@ async def get_translation_estimate(
             TranslationStageEstimateOut(
                 stage=s.stage,  # type: ignore[arg-type]
                 model=s.model,
+                thinking=stage_thinking(settings, s.stage),
+                stored_as="polish" if i == stage_count - 1 else s.stage,  # type: ignore[arg-type]
                 calls=s.calls,
                 input_tokens=s.input_tokens,
                 output_tokens=s.output_tokens,
                 cost_usd=s.cost_usd,
             )
-            for s in est.stages
+            for i, s in enumerate(est.stages)
         ],
     )
 

@@ -44,6 +44,7 @@ from app.models.translation import (
     FragmentRendition,
     TranslationFragment,
 )
+from app.services.translation_service import current_renditions
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -153,9 +154,7 @@ async def assemble_book(
         .scalars()
         .all()
     )
-    latest: dict[tuple[UUID, str], FragmentRendition] = {}
-    for r in renditions:
-        latest[(r.fragment_id, r.stage)] = r
+    latest = current_renditions(renditions)
     allowed = TRANSLATION_STAGES[: TRANSLATION_STAGES.index(stage) + 1][::-1]
 
     by_chapter: dict[UUID, list[TranslationFragment]] = {}

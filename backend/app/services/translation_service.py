@@ -81,6 +81,7 @@ from app.services.translation_qa import (
 from app.services.voice_service import _strategy_from_recommendation
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
     from uuid import UUID
 
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -977,11 +978,35 @@ async def _run_jobs(
 # ─── Read model ──────────────────────────────────────────
 
 
+def current_renditions(
+    renditions: Sequence[FragmentRendition],
+) -> dict[tuple[UUID, str], FragmentRendition]:
+    """The renditions that make up each fragment's current translation.
+
+    For every fragment, one run counts: the latest run that produced a final
+    stage, or the latest run at all when none has. Only that run's stages are
+    returned, so a two-step translation never shows a line edit left over
+    from an older three-step run, and a re-run in progress does not hide the
+    previous finished text. ``renditions`` must be sorted by ``created_at``.
+    """
+    final_run: dict[UUID, UUID] = {}
+    any_run: dict[UUID, UUID] = {}
+    for r in renditions:
+        any_run[r.fragment_id] = r.run_id
+        if r.stage == "polish":
+            final_run[r.fragment_id] = r.run_id
+    out: dict[tuple[UUID, str], FragmentRendition] = {}
+    for r in renditions:
+        if r.run_id == final_run.get(r.fragment_id, any_run[r.fragment_id]):
+            out[(r.fragment_id, r.stage)] = r
+    return out
+
+
 async def build_translation_view(session: AsyncSession, *, book_id: UUID) -> dict[str, Any]:
     """Latest run, plus per-chapter translations of each stage.
 
-    For each fragment, each stage shows its most recent rendition from any
-    run. Chapters without any translation are listed with ``fragments: []``.
+    For each fragment, the stages of its current run (``current_renditions``).
+    Chapters without any translation are listed with ``fragments: []``.
     """
     run = await latest_run(session, book_id=book_id)
     fragments = (
@@ -1007,9 +1032,7 @@ async def build_translation_view(session: AsyncSession, *, book_id: UUID) -> dic
         .scalars()
         .all()
     )
-    latest: dict[tuple[UUID, str], FragmentRendition] = {}
-    for r in renditions:
-        latest[(r.fragment_id, r.stage)] = r  # ascending order: last write wins
+    latest = current_renditions(renditions)
 
     run_fragment_status: dict[UUID, dict[str, Any]] = {}
     if run is not None:

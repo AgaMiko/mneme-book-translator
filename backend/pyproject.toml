@@ -16,7 +16,8 @@ dependencies = [
     "python-docx>=1.1.2",
     "structlog>=24.4.0",
     "google-genai>=1.73.1",
-    "langfuse"
+    "langfuse",
+    "weasyprint>=62",
 ]
 
 [dependency-groups]

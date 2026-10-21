@@ -26,7 +26,7 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from langfuse import propagate_attributes
 from sqlalchemy import select, update
@@ -86,6 +86,9 @@ _PREVIOUS_CONTEXT_WORDS = 250
 _NEXT_CONTEXT_WORDS = 150
 _MEANING_NOTE_CHARS = 160
 _STALE_RUN_ERROR = "The server restarted while this run was in progress. Start it again to resume."
+
+
+TranslationStageName = Literal["faithful", "line_edit", "polish"]
 
 
 class TranslationConflictError(RuntimeError):

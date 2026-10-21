@@ -4,9 +4,10 @@ Same approach as ``glossary_extraction_estimate``: characters ÷ 4 for
 tokens. Per fragment there are three calls (faithful, line edit, polish).
 Each call sends the shared context (rules, style sheet, glossary, voices,
 neighbouring text) plus the source; the line edit and polish also send the
-previous stage's English. Output is the English text plus notes, plus
-thinking tokens (none for Lite models, about three times the visible output
-for Gemini 3.8 Flash).
+previous stage's English. The fixed part (rules, style sheet, glossary) is
+priced as cached input when the run cache is on. Output is the English text
+plus notes, plus thinking tokens, which depend on the model and the thinking
+level of each stage (measured on chapter 5 of Zaplataczka).
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ import math
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from app.generation.chains.translate_fragment_chain import stage_model
+from app.generation.chains.translate_fragment_chain import stage_model, stage_thinking
 from app.generation.prompt_manager.prompts.translate_fragment_prompt import (
     FAITHFUL_TASK,
     LINE_EDIT_TASK,
@@ -39,13 +40,24 @@ _VOICES_PER_FRAGMENT = 3
 _NEIGHBOUR_WORDS = 400
 _NOTES_OUTPUT_CHARS = 1_200
 # Thinking tokens as a share of visible output, measured on chapter 5 of
-# Zaplataczka (2026-10-21): Flash-Lite 0, Gemini 3.8 Flash about 3.0.
-_THINKING_RATIO_LITE = 0.0
-_THINKING_RATIO_DEFAULT = 3.0
+# Zaplataczka with Gemini 3.8 Flash (2026-10-21). Flash-Lite does not think.
+# At "high", the final edit thinks the most (it checks every target).
+_THINKING_RATIO_BY_LEVEL: dict[str, dict[str, float]] = {
+    "minimal": {"faithful": 0.0, "line_edit": 0.0, "polish": 0.0},
+    "low": {"faithful": 0.0, "line_edit": 0.0, "polish": 0.0},
+    "medium": {"faithful": 4.0, "line_edit": 4.0, "polish": 4.0},
+    "high": {"faithful": 7.5, "line_edit": 7.5, "polish": 12.5},
+}
+_THINKING_RATIO_MODEL_DEFAULT = 3.2
+_CACHED_INPUT_SHARE_OF_PRICE = 0.1
 
 
-def thinking_ratio(model: str) -> float:
-    return _THINKING_RATIO_LITE if "lite" in model.lower() else _THINKING_RATIO_DEFAULT
+def thinking_ratio(model: str, level: str | None, stage: str) -> float:
+    if "lite" in model.lower():
+        return 0.0
+    if level is None:
+        return _THINKING_RATIO_MODEL_DEFAULT
+    return _THINKING_RATIO_BY_LEVEL.get(level, {}).get(stage, _THINKING_RATIO_MODEL_DEFAULT)
 
 
 def _tokens(chars: float) -> int:
@@ -83,12 +95,10 @@ def estimate_translation(
 ) -> TranslationEstimate:
     fragments = fragment_count or (math.ceil(word_count / TARGET_WORDS) if word_count else 0)
     target_words = word_count * _TARGET_WORDS_PER_SOURCE_WORD
+    # The fixed part (rules, style sheet, glossary) is cached per run.
+    fixed_chars_per_call = len(RULES_CORE) + len(STYLE_SHEET) + glossary_terms * _GLOSSARY_ROW_CHARS
     context_chars_per_call = (
-        len(RULES_CORE)
-        + len(STYLE_SHEET)
-        + glossary_terms * _GLOSSARY_ROW_CHARS
-        + _VOICES_PER_FRAGMENT * _VOICE_PROFILE_CHARS
-        + _NEIGHBOUR_WORDS * _SOURCE_CHARS_PER_WORD
+        _VOICES_PER_FRAGMENT * _VOICE_PROFILE_CHARS + _NEIGHBOUR_WORDS * _SOURCE_CHARS_PER_WORD
     )
     source_chars = word_count * _SOURCE_CHARS_PER_WORD
     target_chars = target_words * _TARGET_CHARS_PER_WORD
@@ -101,14 +111,21 @@ def estimate_translation(
             input_chars += target_chars
         visible_out = target_chars + fragments * _NOTES_OUTPUT_CHARS
         model = stage_model(settings, stage)
-        input_tokens = _tokens(input_chars)
-        output_tokens = _tokens(visible_out * (1 + thinking_ratio(model)))
+        fixed_tokens = _tokens(fragments * fixed_chars_per_call)
+        input_tokens = _tokens(input_chars) + fixed_tokens
+        ratio = thinking_ratio(model, stage_thinking(settings, stage), stage)
+        output_tokens = _tokens(visible_out * (1 + ratio))
         in_price, out_price = resolve_gemini_usd_per_million_tokens(model)
         if settings.GEMINI_INPUT_PRICE_USD_PER_MTOK is not None:
             in_price = settings.GEMINI_INPUT_PRICE_USD_PER_MTOK
         if settings.GEMINI_OUTPUT_PRICE_USD_PER_MTOK is not None:
             out_price = settings.GEMINI_OUTPUT_PRICE_USD_PER_MTOK
-        cost = (input_tokens * in_price + output_tokens * out_price) / 1_000_000
+        fixed_price = in_price * (_CACHED_INPUT_SHARE_OF_PRICE if settings.TRANSLATION_CACHE else 1)
+        cost = (
+            (input_tokens - fixed_tokens) * in_price
+            + fixed_tokens * fixed_price
+            + output_tokens * out_price
+        ) / 1_000_000
         stages.append(
             StageEstimate(
                 stage=stage,

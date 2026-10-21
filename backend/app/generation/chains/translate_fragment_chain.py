@@ -37,8 +37,10 @@ from app.generation.providers.gemini import generate as gemini_generate
 if TYPE_CHECKING:
     from app.core.config import Settings
 
-# A 1,500-word fragment is about 3k output tokens; thinking models need room.
-_MAX_OUTPUT_TOKENS = 32_768
+# A 1,500-word fragment is about 3k output tokens, but the limit also counts
+# thinking tokens: at "high" thinking a final edit used up 32k and the JSON
+# was cut off. 65,536 is the Gemini 3.x Flash maximum.
+_MAX_OUTPUT_TOKENS = 65_536
 _TIMEOUT_S = 420
 
 

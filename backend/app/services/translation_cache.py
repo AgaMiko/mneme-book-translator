@@ -35,6 +35,7 @@ from app.generation.providers.gemini import (
     delete_caches_with_prefix,
     refresh_cache,
 )
+from app.generation.providers.openai import is_openai_model
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -64,7 +65,8 @@ class RunCaches:
     ) -> RunCaches:
         names: dict[str, str] = {}
         if settings.TRANSLATION_CACHE:
-            for model in sorted(models):
+            # OpenAI caches repeated prefixes by itself; explicit caches are Gemini's.
+            for model in sorted(m for m in models if not is_openai_model(m)):
                 try:
                     names[model] = await create_cache(
                         settings=settings,

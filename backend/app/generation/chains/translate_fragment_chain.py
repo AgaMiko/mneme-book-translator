@@ -10,11 +10,13 @@ order. If the model returns other ids, the call is repeated once with the
 problem stated; a second failure raises ``FragmentAlignmentError``.
 
 Models come from settings: ``TRANSLATION_<STAGE>_MODEL``, then
-``TRANSLATION_MODEL``, then ``GEMINI_MODEL``.
+``TRANSLATION_MODEL``, then ``GEMINI_MODEL``. Models named ``gpt-…`` go to
+OpenAI (``providers/openai.py``), everything else to Gemini.
 """
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -33,6 +35,8 @@ from app.generation.prompt_manager.prompts.translate_fragment_prompt import (
     build_polish_prompt,
 )
 from app.generation.providers.gemini import generate as gemini_generate
+from app.generation.providers.openai import ModelResult, is_openai_model
+from app.generation.providers.openai import generate as openai_generate
 
 if TYPE_CHECKING:
     from app.core.config import Settings
@@ -103,6 +107,49 @@ def _alignment_problem(paragraphs: list[ParagraphOut], expected_ids: list[str]) 
     return "; ".join(parts)
 
 
+def _cache_key(fixed_context: str) -> str:
+    """Stable key for OpenAI prompt caching: same fixed context, same key."""
+    return "mneme-" + hashlib.sha256(fixed_context.encode()).hexdigest()[:24]
+
+
+async def _call_model(
+    *,
+    prompt: str,
+    schema: type[BaseModel],
+    model: str,
+    stage: str,
+    temperature: float,
+    cached_content: str | None,
+    cache_key: str,
+    settings: Settings,
+) -> ModelResult:
+    """Send one call to the provider that serves ``model``."""
+    thinking = stage_thinking(settings, stage)
+    if is_openai_model(model):
+        return await openai_generate(
+            prompt=prompt,
+            schema=schema,
+            model=model,
+            settings=settings,
+            temperature=temperature,
+            reasoning_effort=thinking,
+            prompt_cache_key=cache_key,
+            timeout_s=_TIMEOUT_S,
+        )
+    response = await gemini_generate(
+        prompt=prompt,
+        schema=schema,
+        model=model,
+        settings=settings,
+        temperature=temperature,
+        timeout_s=_TIMEOUT_S,
+        max_output_tokens=_MAX_OUTPUT_TOKENS,
+        thinking_level=thinking,
+        cached_content=cached_content,
+    )
+    return ModelResult(parsed=response.parsed, text=response.text, usage=_usage(response))
+
+
 async def _generate_aligned[T: BaseModel](
     *,
     fixed_context: str,
@@ -129,28 +176,27 @@ async def _generate_aligned[T: BaseModel](
                 "\n\n## Correction\n\nYour previous answer had the wrong paragraphs "
                 f"({problem}). Return exactly these ids, in this order: " + ", ".join(expected_ids)
             )
-        response = await gemini_generate(
+        result = await _call_model(
             prompt=full_prompt,
             schema=schema,
             model=model,
-            settings=settings,
+            stage=stage,
             temperature=temperature,
-            timeout_s=_TIMEOUT_S,
-            max_output_tokens=_MAX_OUTPUT_TOKENS,
-            thinking_level=stage_thinking(settings, stage),
             cached_content=cached_content,
+            cache_key=_cache_key(fixed_context),
+            settings=settings,
         )
-        if isinstance(response.parsed, schema):
-            parsed = response.parsed
-        elif response.text:
-            parsed = schema.model_validate_json(response.text)
+        if isinstance(result.parsed, schema):
+            parsed = result.parsed
+        elif result.text:
+            parsed = schema.model_validate_json(result.text)
         else:
             raise RuntimeError("Translation returned an empty response.")
         for p in parsed.paragraphs:  # type: ignore[attr-defined]
             p.paragraph_id = p.paragraph_id.strip()
         problem = _alignment_problem(parsed.paragraphs, expected_ids)  # type: ignore[attr-defined]
         if problem is None:
-            return StageResult(output=parsed, model=model, usage=_usage(response))
+            return StageResult(output=parsed, model=model, usage=result.usage)
         if attempt == 1:
             break
     raise FragmentAlignmentError(problem or "paragraph mismatch")

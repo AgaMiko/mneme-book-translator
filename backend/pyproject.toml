@@ -18,6 +18,7 @@ dependencies = [
     "google-genai>=1.73.1",
     "langfuse",
     "weasyprint>=62",
+    "openai>=1.60",
 ]
 
 [dependency-groups]

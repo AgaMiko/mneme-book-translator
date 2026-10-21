@@ -27,7 +27,10 @@ from starlette.concurrency import run_in_threadpool
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
 from app.core.logging import get_logger
+from app.generation.chains.translate_fragment_chain import stage_model
+from app.generation.providers.openai import is_openai_model
 from app.models.book import Book, Chapter
+from app.models.translation import TRANSLATION_STAGES
 from app.schemas.translation import (
     StartTranslationIn,
     TranslationEstimateOut,
@@ -69,7 +72,14 @@ def _schedule_run(run_id: UUID, settings: Settings) -> None:
 
 
 def _require_key(settings: Settings) -> None:
-    if not settings.GEMINI_API_KEY:
+    """Every provider used by a translation stage needs its API key."""
+    models = {stage_model(settings, s) for s in TRANSLATION_STAGES}
+    if any(is_openai_model(m) for m in models) and not settings.OPENAI_API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="OPENAI_API_KEY is not configured (needed for the gpt-… translation model).",
+        )
+    if any(not is_openai_model(m) for m in models) and not settings.GEMINI_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="GEMINI_API_KEY is not configured.",

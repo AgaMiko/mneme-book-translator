@@ -431,6 +431,32 @@ def _is_reviewed(entry: GlossaryEntry) -> bool:
     return entry.status in REVIEWED_STATUSES
 
 
+async def _resolve_entry(
+    session: AsyncSession, extraction_run_id: UUID, ref: str
+) -> GlossaryEntry | None:
+    """The run's entry the model refers to, by id or, failing that, by canonical form.
+
+    The model sometimes writes the term's name, or a mangled id, where an
+    entry id belongs. One bad reference should not stop a whole run.
+    """
+    try:
+        entry = await session.get(GlossaryEntry, UUID(ref.strip()))
+    except ValueError:
+        entry = None
+    if entry is None:
+        entry = (
+            await session.execute(
+                select(GlossaryEntry).where(
+                    GlossaryEntry.extraction_run_id == extraction_run_id,
+                    GlossaryEntry.canonical_form == ref.strip(),
+                )
+            )
+        ).scalar_one_or_none()
+    if entry is None or entry.extraction_run_id != extraction_run_id:
+        return None
+    return entry
+
+
 def _dedupe_new_terms_in_delta(entries: list[NewTerm]) -> list[NewTerm]:
     """Fold duplicate ``canonical_form`` in one LLM delta; merge variant lists."""
     merged: dict[str, NewTerm] = {}
@@ -654,15 +680,16 @@ async def apply_delta(
     them. This matters when a run expands an existing or imported glossary.
     """
     for m in delta.merges:
-        winner = await session.get(GlossaryEntry, UUID(m.winner_id))
-        loser = await session.get(GlossaryEntry, UUID(m.loser_id))
-        if winner is None or loser is None:
-            raise ValueError("merge references unknown entry id")
-        if (
-            winner.extraction_run_id != extraction_run_id
-            or loser.extraction_run_id != extraction_run_id
-        ):
-            raise ValueError("merge entries do not belong to this extraction run")
+        winner = await _resolve_entry(session, extraction_run_id, m.winner_id)
+        loser = await _resolve_entry(session, extraction_run_id, m.loser_id)
+        if winner is None or loser is None or winner.id == loser.id:
+            log.warning(
+                "glossary_merge_skipped_unknown_entry",
+                winner_id=m.winner_id,
+                loser_id=m.loser_id,
+                window_number=window_number,
+            )
+            continue
         if _is_reviewed(loser):
             log.info(
                 "glossary_merge_skipped_reviewed_entry",
@@ -680,8 +707,8 @@ async def apply_delta(
     await session.flush()
 
     for r in delta.refinements:
-        entry = await session.get(GlossaryEntry, UUID(r.entry_id))
-        if entry is None or entry.extraction_run_id != extraction_run_id:
+        entry = await _resolve_entry(session, extraction_run_id, r.entry_id)
+        if entry is None:
             continue
         if _is_reviewed(entry):
             continue
@@ -742,8 +769,8 @@ async def apply_delta(
     await session.flush()
 
     for ext in delta.extensions:
-        entry = await session.get(GlossaryEntry, UUID(ext.entry_id))
-        if entry is None or entry.extraction_run_id != extraction_run_id:
+        entry = await _resolve_entry(session, extraction_run_id, ext.entry_id)
+        if entry is None:
             continue
         cur = list(entry.variants or [])
         entry.variants = _unique_variants(cur + ext.new_variants)

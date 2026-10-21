@@ -1,8 +1,8 @@
 # Step 5 & Step 6 — fragment translation and author flag review
 
-Status: design written 2026-10-20. Built 2026-10-21: fragments, the translate chain (three-stage and two-step modes), style metrics, rhythm and repetition checks, translator notes, polish declared edits, a cost estimate, the Translation tab, and PDF/EPUB/DOCX export (sections 2, 3, 4, 11 and part of 8). Not built yet: style sheet entity, glossary propagation and placeholder tokens, epithet claims, the flags table and Step 6 review actions, special passages.
+Status: design written 2026-10-20. Built 2026-10-21: fragments, the translate chain (one-, two- and three-step modes), style metrics, rhythm and repetition checks, translator notes, polish declared edits, a cost estimate, the Translation tab, and PDF/EPUB/DOCX export (sections 2, 3, 4, 11 and part of 8). Not built yet: style sheet entity, glossary propagation and placeholder tokens, epithet claims, the flags table and Step 6 review actions, special passages.
 
-**Change to section 3 after testing:** the default is now two steps, not three. See "Model and pipeline tests" at the end.
+**Change to section 3 after testing:** the default is now one step: Sol translates straight into the final text. See "Model and pipeline tests" at the end.
 
 This doc turns the manual translation of *Zaplataczka* (→ *The Weaveress*, ~102k Polish words, 2026-10-19) into an app pipeline. The manual run used parallel agents with a shared glossary and brief, then a line-edit pass and a polish pass. Its working files are in `translations/zaplataczka/` (untracked, in the main checkout): `BRIEF.md`, `POLISH_BRIEF.md`, `glossary.md`, `terms/batch_*.md`, `AUTHOR_QUERIES.md`, `style_metrics.py`, `build_pdf.py`, plus `pass1/`, `v2_lineedit/`, `en/` and `out/`. Every design choice below points back either to code that exists today or to something that went wrong, or worked, in that run.
 
@@ -539,11 +539,18 @@ Luna's faithful drafts were fine; its errors came from the final edit, where it 
 | Luna draft + Sol high line edit and final | 18 | ~$26 |
 | Luna draft + one Sol high revision (two steps) | 26 (vs 14 for the row above) | ~$13 |
 
-In the three-step runs the line edit changed about 85% of paragraphs and the final edit only about 31% (95% similar), mainly lowering She/He openers and repeated words, at about 40% of the cost. One revision that gets the line-edit instructions and the style targets together did better at half the price, so it is the default (`TRANSLATION_STAGE_COUNT=2`).
+In the three-step runs the line edit changed about 85% of paragraphs and the final edit only about 31% (95% similar), mainly lowering She/He openers and repeated words, at about 40% of the cost. One revision that gets the line-edit instructions and the style targets together did better at half the price.
+
+| Setting (chapters 3 and 5, Flex, cache) | Blind wins of 40 | Slips | Whole book |
+|---|---|---|---|
+| Two steps (Luna draft + one Sol revision) | 10 | 7 | ~$13 |
+| One step (Sol straight into the final text) | 30 | 3 | ~$14 |
+
+One step won in both chapters (14 to 6 in chapter 3, 16 to 4 in chapter 5). It was the only setting that kept "the year 200 before the Rending" and the trailing ellipsis in "Today…": in two steps both errors started in Luna's draft and Sol kept them. Its measured style is weaker (She/He openers 14.8% vs 8.5%, repeated words 17.0 vs 11.2 per 1,000), because the style targets cannot be measured on a draft that does not exist; in blind reading this mattered less than fidelity and natural phrasing. One step is the default (`TRANSLATION_STAGE_COUNT=1`); the Luna draft costs only about 3% of a run, so cost did not decide it.
 
 Other findings:
 
 - **Thinking level:** low or medium thinking let meaning drift through (added intensity, a lost stammer). All stages default to high.
 - **Caching:** prompts start with the fixed part (rules, style sheet, glossary). Gemini runs use an explicit cache per run that is deleted afterwards; OpenAI runs prewarm OpenAI's own cache before the fragments start. About half of all input is then read from the cache.
 - **Glossary variants:** extraction stored aliases and other names as variants (Vynmor under Naelori). Prompts now get only real case forms; fixing extraction and review is a separate task.
-- **Still wrong in every setting:** "z roku dwusetnego przed Rozdarciem" (the year 200 before the Rending) became "two hundred years before"; a trailing ellipsis in dialogue was dropped; some glossary terms drift (adept/trainee, weave/design).
+- **Still open:** some glossary terms drift in every setting (adept/trainee, weave/design, "The Rending" with a capital "The"), and one step repeats words more often than the multi-step modes.

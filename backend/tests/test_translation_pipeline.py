@@ -422,15 +422,21 @@ def test_two_step_mode() -> None:
     assert "Return the text unchanged" not in prompt
 
 
-def test_default_pipeline_is_luna_draft_and_one_sol_revision_on_flex() -> None:
+def test_default_pipeline_is_one_sol_step_on_flex() -> None:
     from app.generation.chains.translate_fragment_chain import calls_per_fragment, stage_thinking
 
     s = Settings(GEMINI_MODEL="gemini-3.1-flash-lite-preview")
-    assert calls_per_fragment(s) == ("faithful", "line_edit")
-    assert stage_model(s, "faithful") == "gpt-6-luna"
+    assert calls_per_fragment(s) == ("line_edit",)
     assert stage_model(s, "line_edit") == "gpt-6.1-sol"
     assert stage_thinking(s, "line_edit") == "high"
     assert s.TRANSLATION_OPENAI_SERVICE_TIER == "flex"
+    # Measured on chapters 3 and 5 (5,491 words): $0.70 on Flex.
+    est = estimate_translation(word_count=5491, fragment_count=6, glossary_terms=178, settings=s)
+    assert 0.5 < est.cost_usd < 0.95
+
+
+def test_two_step_estimate_matches_measured_cost() -> None:
+    s = Settings(GEMINI_MODEL="gemini-3.1-flash-lite-preview", TRANSLATION_STAGE_COUNT=2)
     # Measured on chapters 3 and 5 (5,491 words): $0.67 on Flex.
     est = estimate_translation(word_count=5491, fragment_count=6, glossary_terms=178, settings=s)
     assert 0.45 < est.cost_usd < 0.95
@@ -466,7 +472,7 @@ def test_one_step_mode() -> None:
     )
     from app.services.translation_service import _run_models
 
-    one = Settings(GEMINI_MODEL="m", TRANSLATION_STAGE_COUNT=1)
+    one = Settings(GEMINI_MODEL="m")  # one step is the default
     assert calls_per_fragment(one) == ("line_edit",)
     assert _run_models(one) == {"polish": "gpt-6.1-sol"}
     est = estimate_translation(word_count=5491, fragment_count=6, glossary_terms=178, settings=one)

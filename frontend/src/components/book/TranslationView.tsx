@@ -435,6 +435,16 @@ function MetricsRow({ metrics }: { metrics: StyleMetrics }) {
       over: metrics.dashes_per_1k > TARGETS.dashes,
     },
     { label: "Stock phrases", value: String(metrics.stock_total), over: metrics.stock_total > 0 },
+    {
+      label: "Repeated words /1k",
+      value: String(metrics.repetitions_per_1k ?? "—"),
+      over: false,
+    },
+    {
+      label: "Even-length runs",
+      value: String(metrics.even_runs ?? "—"),
+      over: (metrics.even_runs ?? 0) > 0,
+    },
   ];
   return (
     <dl className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10.5px]">

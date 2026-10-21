@@ -67,6 +67,7 @@ from app.services.translation_qa import (
     SHE_HE_MAX_PCT,
     StyleMetrics,
     hard_checks,
+    rhythm_to_fix,
     sentences_to_fix,
     style_metrics,
 )
@@ -436,6 +437,8 @@ class _BookContext:
         self.glossary_by_id = glossary_by_id
         self.voices = voices
         self.speaker_windows = speaker_windows
+        # Glossary target words may repeat: they are fixed terms, not style.
+        self.glossary_words = {w.strip(".,;:'\"") for row in glossary for w in row.target.split()}
         self.allowed_source_words = {
             w for row in glossary for w in row.target.split() if not w.isascii()
         }
@@ -489,7 +492,9 @@ async def _latest_target_text(
     return "\n\n".join(p.get("text", "") for p in rows[0].paragraphs)
 
 
-def _metrics_block(m: StyleMetrics, *, to_fix: list[str], checks: list[str]) -> str:
+def _metrics_block(
+    m: StyleMetrics, *, to_fix: list[str], rhythm: list[str], checks: list[str]
+) -> str:
     lines = [
         f"- Narration sentences starting with She/He: {m.she_he_pct}% "
         f"(target ≤ {SHE_HE_MAX_PCT:g}%)",
@@ -503,6 +508,11 @@ def _metrics_block(m: StyleMetrics, *, to_fix: list[str], checks: list[str]) -> 
     if to_fix:
         lines.append(
             "\nSentences behind the missed targets:\n" + "\n".join(f"- {t}" for t in to_fix)
+        )
+    if rhythm:
+        lines.append(
+            "\nRhythm and repetition (look at each; keep only deliberate effects):\n"
+            + "\n".join(f"- {r}" for r in rhythm)
         )
     if checks:
         lines.append(
@@ -669,6 +679,7 @@ async def _translate_fragment(
                     source=source_short,
                     faithful=faithful_short,
                     checks=checks_for(faithful_short),
+                    rhythm=rhythm_to_fix(faithful_short, ignore=ctx.glossary_words),
                     target_language=target_language,
                     settings=settings,
                 )
@@ -688,6 +699,7 @@ async def _translate_fragment(
                     metrics_block=_metrics_block(
                         metrics,
                         to_fix=sentences_to_fix(line_short, metrics),
+                        rhythm=rhythm_to_fix(line_short, ignore=ctx.glossary_words),
                         checks=checks_for(line_short),
                     ),
                     target_language=target_language,

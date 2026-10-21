@@ -7,6 +7,12 @@ Two kinds:
   per 1,000 words, stock-phrase hits. Targets come from the polish brief.
   These are measured, not enforced: the polish prompt receives them, and the
   UI shows them per chapter.
+- **Rhythm checks**: content words repeated within a few lines, and runs
+  of sentences of about the same length. Direct translation tends to
+  produce both (Polish varies words by inflection, and sentence-for-sentence
+  translation evens out length). These are hints for the line edit and
+  polish, listed with the exact spots; deliberate repetition in the source
+  is allowed.
 - **Hard checks** that point at a translation error: leftover source-language
   letters, Polish dialogue dashes at the start of a paragraph, markdown escape
   backslashes, author placeholders that went missing.
@@ -50,6 +56,30 @@ _QUOTED = re.compile(r'"[^"\n]*"|\u201c[^\u201d\n]*\u201d')
 _SENTENCE_SPLIT = re.compile(r"(?<=[.!?\u2026])\s+")
 _SHE_HE_OPENER = re.compile(r"^[*_\s]*(She|He)\b")
 
+# Rhythm checks.
+REPEAT_WINDOW_CONTENT_WORDS = 20  # about 40-60 running words
+EVEN_RUN_MIN_SENTENCES = 4
+EVEN_RUN_TOLERANCE = 0.25
+EVEN_RUN_MIN_WORDS = 6
+
+_STOPWORDS = frozenset(
+    """a about above after again against all almost also although always am an and another any
+    anyone anything are around as at away back be because been before behind being below beside
+    between both but by can could did didn't do does doesn't doing don't done down during each
+    either enough even ever every few for from further get got had hadn't has have haven't
+    having he he'd he's her here hers herself him himself his how i i'd i'm if in into is isn't
+    it it's its itself just know last least less like little made make many may me might more
+    most much must my myself never no nor not nothing now of off often on once one only onto or
+    other others our ours ourselves out over own perhaps quite rather said same say says see
+    seemed she she'd she's should since so some something still such than that that's the their
+    theirs them themselves then there there's these they they'd they're this those though
+    through thus to too toward towards under until up upon us very was wasn't way we we'd we're
+    were weren't what when where whether which while who whom whose why will with within
+    without would wouldn't yet you you'd you're your yours yourself""".split()  # noqa: SIM905 - easier to read and edit as text
+)
+_WORD = re.compile(r"[A-Za-z][A-Za-z'\u2019]*")
+_ANY_SENTENCE_SPLIT = re.compile(r"(?<=[.!?\u2026])[\"\u201d\u2019]?\s+")
+
 
 @dataclass(slots=True)
 class StyleMetrics:
@@ -59,6 +89,12 @@ class StyleMetrics:
     ellipses: int = 0
     em_dashes: int = 0
     stock: dict[str, int] = field(default_factory=dict)
+    repetitions: int = 0
+    even_runs: int = 0
+
+    @property
+    def repetitions_per_1k(self) -> float:
+        return round(1000 * self.repetitions / max(1, self.words), 1)
 
     @property
     def she_he_pct(self) -> float:
@@ -87,6 +123,8 @@ class StyleMetrics:
             ellipses=self.ellipses + other.ellipses,
             em_dashes=self.em_dashes + other.em_dashes,
             stock=stock,
+            repetitions=self.repetitions + other.repetitions,
+            even_runs=self.even_runs + other.even_runs,
         )
 
     def over_target(self) -> list[str]:
@@ -117,6 +155,7 @@ class StyleMetrics:
             ellipses_per_1k=self.ellipses_per_1k,
             dashes_per_1k=self.dashes_per_1k,
             stock_total=self.stock_total,
+            repetitions_per_1k=self.repetitions_per_1k,
         )
         return d
 
@@ -129,6 +168,8 @@ class StyleMetrics:
             ellipses=int(d.get("ellipses", 0)),
             em_dashes=int(d.get("em_dashes", 0)),
             stock=dict(d.get("stock") or {}),
+            repetitions=int(d.get("repetitions", 0)),
+            even_runs=int(d.get("even_runs", 0)),
         )
 
 
@@ -166,8 +207,120 @@ def sentences_to_fix(
     return out
 
 
+def _stem(word: str) -> str:
+    w = word.lower().replace("\u2019", "'")
+    for suffix in ("'s", "ingly", "edly", "ing", "ed", "ly", "es", "s"):
+        if w.endswith(suffix) and len(w) - len(suffix) >= 4:
+            return w[: -len(suffix)]
+    return w
+
+
+@dataclass(slots=True)
+class Repetition:
+    paragraph_id: str
+    word: str
+
+
+def find_repetitions(
+    paragraphs: list[tuple[str, str]], *, ignore: set[str] | None = None
+) -> list[Repetition]:
+    """Content words used again within ``REPEAT_WINDOW_CONTENT_WORDS`` content words.
+
+    Skips function words, words under four letters, names (capitalised words
+    that never appear in lower case) and ``ignore`` (glossary terms, which must stay fixed).
+    Reports each word once per paragraph, at its second use.
+    """
+    ignore_stems = {_stem(w) for w in (ignore or set())}
+    # A capitalised word that never appears in lower case here is a name.
+    lowercase_words = {
+        m.group(0).lower()
+        for _, text in paragraphs
+        for m in _WORD.finditer(text)
+        if m.group(0)[0].islower()
+    }
+    stream: list[tuple[str, str, str]] = []  # (paragraph id, stem, surface)
+    for pid, text in paragraphs:
+        for m in _WORD.finditer(text):
+            surface = m.group(0)
+            low = surface.lower().replace("\u2019", "'")
+            if len(low) < 4 or low in _STOPWORDS:
+                continue
+            if surface[0].isupper() and surface.lower() not in lowercase_words:
+                continue
+            stem = _stem(surface)
+            if stem in ignore_stems:
+                continue
+            stream.append((pid, stem, surface))
+    out: list[Repetition] = []
+    last_seen: dict[str, int] = {}
+    reported: set[tuple[str, str]] = set()
+    for pos, (pid, stem, surface) in enumerate(stream):
+        prev = last_seen.get(stem)
+        if (
+            prev is not None
+            and pos - prev <= REPEAT_WINDOW_CONTENT_WORDS
+            and (pid, stem) not in reported
+        ):
+            reported.add((pid, stem))
+            out.append(Repetition(pid, surface.lower()))
+        last_seen[stem] = pos
+    return out
+
+
+@dataclass(slots=True)
+class EvenRun:
+    paragraph_id: str
+    lengths: list[int]
+    first_sentence: str
+
+
+def find_even_runs(paragraphs: list[tuple[str, str]]) -> list[EvenRun]:
+    """Runs of 4+ consecutive sentences of about the same length (±25%).
+
+    Sentences under six words end a run: they already vary the rhythm.
+    """
+    out: list[EvenRun] = []
+    for pid, text in paragraphs:
+        sentences = [" ".join(s.split()) for s in _ANY_SENTENCE_SPLIT.split(text) if s.strip()]
+        lengths = [len(s.split()) for s in sentences]
+        i = 0
+        while i < len(lengths):
+            j = i
+            while j < len(lengths) and lengths[j] >= EVEN_RUN_MIN_WORDS:
+                window = lengths[i : j + 1]
+                mean = sum(window) / len(window)
+                if any(abs(n - mean) > EVEN_RUN_TOLERANCE * mean for n in window):
+                    break
+                j += 1
+            if j - i >= EVEN_RUN_MIN_SENTENCES:
+                out.append(EvenRun(pid, lengths[i:j], sentences[i]))
+                i = j
+            else:
+                i += 1
+    return out
+
+
+def rhythm_to_fix(
+    paragraphs: list[tuple[str, str]], *, ignore: set[str] | None = None, limit: int = 20
+) -> list[str]:
+    """Repeated words and even-length sentence runs, as ``[id] …`` lines."""
+    out: list[str] = []
+    for r in find_even_runs(paragraphs):
+        lengths = ", ".join(str(n) for n in r.lengths)
+        out.append(
+            f"[{r.paragraph_id}] {len(r.lengths)} sentences in a row of similar length "
+            f"({lengths} words), starting: {r.first_sentence[:80]}"
+        )
+    for rep_ in find_repetitions(paragraphs, ignore=ignore):
+        out.append(f'[{rep_.paragraph_id}] "{rep_.word}" is used again within a few lines')
+    return out[:limit]
+
+
 def style_metrics(paragraphs: list[str]) -> StyleMetrics:
     m = StyleMetrics()
+    pairs = [(str(i), t) for i, t in enumerate(paragraphs)]
+    m.repetitions = len(find_repetitions(pairs))
+    m.even_runs = len(find_even_runs(pairs))
     for text in paragraphs:
         m.words += len(text.split())
         m.ellipses += text.count("\u2026") + text.count("...")

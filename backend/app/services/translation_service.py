@@ -36,6 +36,7 @@ from app.constants.voice_extraction import (
     VOICE_EXTRACTION_OVERLAP_WORDS,
     VOICE_EXTRACTION_WINDOW_WORDS,
 )
+from app.core.config import get_settings
 from app.core.db import get_sessionmaker, rowcount
 from app.core.logging import get_logger
 from app.generation.chains.translate_fragment_chain import (
@@ -47,7 +48,8 @@ from app.generation.chains.translate_fragment_chain import (
 from app.generation.prompt_manager.prompts.translate_fragment_prompt import (
     GlossaryRow,
     VoiceRow,
-    render_context,
+    render_fixed_context,
+    render_fragment_context,
 )
 from app.models.book import Book, Chapter
 from app.models.speakers import WindowSpeaker
@@ -61,6 +63,7 @@ from app.models.translation import (
 from app.models.voice import CharacterVoice
 from app.services.fragmenter import ChapterInput, ParagraphInput, plan_fragments
 from app.services.glossary_service import load_working_glossary_for_latest_run
+from app.services.translation_cache import RunCaches, delete_leftover_caches
 from app.services.translation_qa import (
     DASHES_MAX_PER_1K,
     ELLIPSES_MAX_PER_1K,
@@ -352,7 +355,8 @@ async def request_stop(session: AsyncSession, *, book_id: UUID) -> bool:
 
 
 async def reconcile_stale_translation_runs_on_startup() -> None:
-    """Mark runs left ``running`` by a dead process as failed."""
+    """Mark runs left ``running`` by a dead process as failed, and delete their caches."""
+    await delete_leftover_caches(get_settings())
     session_maker = get_sessionmaker()
     async with session_maker() as session:
         result = await session.execute(
@@ -440,11 +444,20 @@ class _BookContext:
         self.glossary_by_id = glossary_by_id
         self.voices = voices
         self.speaker_windows = speaker_windows
+        # Set by ``run_translation`` once the fixed context and caches exist.
+        self.fixed_context = ""
+        self.caches: RunCaches | None = None
+        self.settings: Settings | None = None
         # Glossary target words may repeat: they are fixed terms, not style.
         self.glossary_words = {w.strip(".,;:'\"") for row in glossary for w in row.target.split()}
         self.allowed_source_words = {
             w for row in glossary for w in row.target.split() if not w.isascii()
         }
+
+    def cache_for(self, stage: str) -> str | None:
+        if self.caches is None or self.settings is None:
+            return None
+        return self.caches.name_for(stage_model(self.settings, stage))
 
     def source_pairs(self, fragment: TranslationFragment) -> list[tuple[str, str]]:
         pairs = [(str(pid), self.paragraph_text.get(pid, "")) for pid in fragment.paragraph_ids]
@@ -591,12 +604,8 @@ async def _translate_fragment(
             if prev is not None
             else None
         )
-        context = render_context(
-            book_title=book.title,
+        context = render_fragment_context(
             chapter_title=ctx.chapter_title.get(fragment.chapter_id, ""),
-            source_language=book.manuscript_language or book.source_language,
-            target_language="English" if book.target_language == "en" else book.target_language,
-            glossary=ctx.glossary,
             voices=ctx.voices_for(fragment),
             previous_source=_tail_words(ctx.source_text(prev), _PREVIOUS_CONTEXT_WORDS)
             if prev is not None
@@ -663,6 +672,8 @@ async def _translate_fragment(
             faithful = existing.get("faithful")
             if faithful is None:
                 result = await translate_fragment_faithful(
+                    fixed_context=ctx.fixed_context,
+                    cached_content=ctx.cache_for("faithful"),
                     context=context,
                     source=source_short,
                     target_language=target_language,
@@ -678,6 +689,8 @@ async def _translate_fragment(
             if line_edited is None:
                 faithful_short = short_from_rendition(faithful)
                 result = await line_edit_fragment(
+                    fixed_context=ctx.fixed_context,
+                    cached_content=ctx.cache_for("line_edit"),
                     context=context,
                     source=source_short,
                     faithful=faithful_short,
@@ -696,6 +709,8 @@ async def _translate_fragment(
                 line_short = short_from_rendition(line_edited)
                 metrics = style_metrics([t for _, t in line_short])
                 result = await polish_fragment(
+                    fixed_context=ctx.fixed_context,
+                    cached_content=ctx.cache_for("polish"),
                     context=context,
                     source=source_short,
                     line_edited=line_short,
@@ -791,6 +806,13 @@ async def run_translation(*, run_id: UUID, settings: Settings) -> None:
         voices=voices,
         speaker_windows=windows,
     )
+    ctx.settings = settings
+    ctx.fixed_context = render_fixed_context(
+        book_title=book.title,
+        source_language=book.manuscript_language or book.source_language,
+        target_language="English" if book.target_language == "en" else book.target_language,
+        glossary=glossary,
+    )
     fragment_by_id = {f.id: f for f in fragments}
     order = {f.id: f.position for f in fragments}
     jobs = sorted(pending, key=lambda r: order.get(r[1], 0))
@@ -809,6 +831,28 @@ async def run_translation(*, run_id: UUID, settings: Settings) -> None:
                 settings=settings,
             )
 
+    ctx.caches = await RunCaches.open(
+        settings=settings,
+        run_id=run_id,
+        fixed_context=ctx.fixed_context,
+        models={stage_model(settings, s) for s in TRANSLATION_STAGES},
+    )
+    try:
+        await _run_jobs(run_id=run_id, book=book, jobs=jobs, worker=worker)
+    finally:
+        # Delete the caches however the run ends, so they stop costing money.
+        await ctx.caches.close()
+
+
+async def _run_jobs(
+    *,
+    run_id: UUID,
+    book: Book,
+    jobs: list[Any],
+    worker: Any,
+) -> None:
+    """Run the fragment workers, then record how the run ended."""
+    session_maker = get_sessionmaker()
     with propagate_attributes(session_id=str(book.id), trace_name="fragment_translation"):
         try:
             await asyncio.gather(*(worker(rf_id, f_id) for rf_id, f_id in jobs))

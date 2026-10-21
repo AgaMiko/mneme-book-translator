@@ -140,6 +140,8 @@ async def generate(
     max_retries: int = 4,
     initial_backoff_s: float = 1.0,
     max_output_tokens: int | None = 8192,
+    thinking_level: str | None = None,
+    cached_content: str | None = None,
 ) -> types.GenerateContentResponse:
     """Call Gemini with a JSON-schema-constrained response.
 
@@ -164,6 +166,15 @@ async def generate(
     }
     if max_output_tokens is not None:
         config_kwargs["max_output_tokens"] = max_output_tokens
+    if thinking_level:
+        # "minimal" | "low" | "medium" | "high"; None keeps the model's default.
+        config_kwargs["thinking_config"] = types.ThinkingConfig(
+            thinking_level=types.ThinkingLevel(thinking_level.upper())
+        )
+    if cached_content:
+        # Name of an explicit cache (see ``create_cache``); its contents are
+        # sent before ``prompt`` and billed at the cached-input rate.
+        config_kwargs["cached_content"] = cached_content
     config = types.GenerateContentConfig(**config_kwargs)
 
     last_exc: Exception | None = None
@@ -195,3 +206,70 @@ async def generate(
             await asyncio.sleep(initial_backoff_s * (2**attempt))
 
     raise RuntimeError("Gemini call failed unexpectedly") from last_exc
+
+
+# ─── Explicit context caches ────────────────────────────
+#
+# A cache holds a prompt prefix that many calls share (for translation: the
+# rules, style sheet and glossary). Cached tokens are billed at about 10% of
+# the input price, plus storage per hour, so a cache must not outlive its
+# run: callers delete it when done, every cache has an expiry time as a
+# safety net, and ``delete_caches_with_prefix`` clears leftovers on startup.
+
+_CACHE_TIMEOUT_MS = 120_000
+
+
+async def create_cache(
+    *,
+    settings: Settings,
+    model: str,
+    text: str,
+    display_name: str,
+    ttl_s: int,
+) -> str:
+    """Create a cache holding ``text`` for ``model``; return its name."""
+    if not settings.GEMINI_API_KEY:
+        raise GenerationDisabledError("GEMINI_API_KEY is not configured.")
+    client = _get_client(settings.GEMINI_API_KEY, _CACHE_TIMEOUT_MS)
+    cache = await client.aio.caches.create(
+        model=model,
+        config=types.CreateCachedContentConfig(
+            contents=[types.Content(role="user", parts=[types.Part(text=text)])],
+            display_name=display_name,
+            ttl=f"{ttl_s}s",
+        ),
+    )
+    if not cache.name:
+        raise RuntimeError("Gemini returned a cache without a name.")
+    return cache.name
+
+
+async def refresh_cache(*, settings: Settings, name: str, ttl_s: int) -> None:
+    """Push a cache's expiry ``ttl_s`` seconds into the future."""
+    if not settings.GEMINI_API_KEY:
+        return
+    client = _get_client(settings.GEMINI_API_KEY, _CACHE_TIMEOUT_MS)
+    await client.aio.caches.update(
+        name=name, config=types.UpdateCachedContentConfig(ttl=f"{ttl_s}s")
+    )
+
+
+async def delete_cache(*, settings: Settings, name: str) -> None:
+    if not settings.GEMINI_API_KEY:
+        return
+    client = _get_client(settings.GEMINI_API_KEY, _CACHE_TIMEOUT_MS)
+    await client.aio.caches.delete(name=name)
+
+
+async def delete_caches_with_prefix(*, settings: Settings, prefix: str) -> int:
+    """Delete every cache whose display name starts with ``prefix``."""
+    if not settings.GEMINI_API_KEY:
+        return 0
+    client = _get_client(settings.GEMINI_API_KEY, _CACHE_TIMEOUT_MS)
+    deleted = 0
+    pager = await client.aio.caches.list()
+    async for cache in pager:
+        if cache.name and (cache.display_name or "").startswith(prefix):
+            await client.aio.caches.delete(name=cache.name)
+            deleted += 1
+    return deleted

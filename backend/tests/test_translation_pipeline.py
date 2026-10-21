@@ -146,3 +146,81 @@ def test_estimate_counts_thinking_for_non_lite_models() -> None:
         word_count=10_000, fragment_count=None, glossary_terms=50, settings=flash
     )
     assert b.stages[0].output_tokens == 4 * a.stages[0].output_tokens
+
+
+def test_fixed_context_has_nothing_fragment_specific() -> None:
+    from app.generation.prompt_manager.prompts.translate_fragment_prompt import (
+        GlossaryRow,
+        build_faithful_prompt,
+        render_fixed_context,
+        render_fragment_context,
+    )
+
+    glossary = [GlossaryRow("Pył", "Dust", "translate_literally", [], None)]
+    fixed = render_fixed_context(
+        book_title="Zaplataczka",
+        source_language="Polish",
+        target_language="English",
+        glossary=glossary,
+    )
+    assert "Dust" in fixed
+    assert "Chapter 5" not in fixed
+    context = render_fragment_context(
+        chapter_title="Chapter 5", voices=[], previous_source="", previous_target="", next_source=""
+    )
+    rest = build_faithful_prompt(
+        context=context, target_language="English", source=[("p1", "Tak.")]
+    )
+    assert "Chapter 5" in rest
+    assert "Accepted glossary" not in rest  # the fixed part is sent separately or cached
+
+
+def test_stage_thinking_levels() -> None:
+    from app.generation.chains.translate_fragment_chain import stage_thinking
+
+    s = Settings(GEMINI_MODEL="m")
+    assert [stage_thinking(s, st) for st in ("faithful", "line_edit", "polish")] == [
+        "low",
+        "medium",
+        "low",
+    ]
+    assert (
+        stage_thinking(Settings(GEMINI_MODEL="m", TRANSLATION_THINKING_POLISH=""), "polish") is None
+    )
+
+
+async def test_run_caches_are_deleted_on_close(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    from app.services import translation_cache
+
+    created: list[str] = []
+    deleted: list[str] = []
+
+    async def fake_create(**kwargs):  # type: ignore[no-untyped-def]
+        if kwargs["model"] == "broken":
+            raise RuntimeError("caching not supported")
+        name = f"cachedContents/{kwargs['model']}"
+        created.append(name)
+        return name
+
+    async def fake_delete(*, settings, name):  # type: ignore[no-untyped-def]
+        deleted.append(name)
+
+    monkeypatch.setattr(translation_cache, "create_cache", fake_create)
+    monkeypatch.setattr(translation_cache, "delete_cache", fake_delete)
+    s = Settings(GEMINI_MODEL="m", GEMINI_API_KEY="k")
+    caches = await translation_cache.RunCaches.open(
+        settings=s, run_id=uuid4(), fixed_context="rules", models={"flash", "broken"}
+    )
+    assert caches.name_for("flash") == "cachedContents/flash"
+    assert caches.name_for("broken") is None  # falls back to sending the text
+    await caches.close()
+    assert deleted == created == ["cachedContents/flash"]
+
+    off = await translation_cache.RunCaches.open(
+        settings=Settings(GEMINI_MODEL="m", TRANSLATION_CACHE=False),
+        run_id=uuid4(),
+        fixed_context="rules",
+        models={"flash"},
+    )
+    assert off.name_for("flash") is None
+    await off.close()

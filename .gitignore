@@ -115,3 +115,7 @@ tmp/
 # Bind-mounted upload storage (see docker-compose.yml, README)
 data/uploads/*
 !data/uploads/.gitkeep
+
+# ---- Private book material (manual translations, design mockups) ----
+translations/
+Mneme - Redesign.dc.html

@@ -52,7 +52,7 @@ async def generate_structured(
         except OpenAIDisabledError as exc:
             # Background jobs already handle this one: the run fails with the reason.
             raise GenerationDisabledError(str(exc)) from exc
-        record_call(model, result.usage, service_tier)
+        record_call(model, result.usage, result.service_tier)
         return result
     response = await gemini_generate(
         prompt=prompt,

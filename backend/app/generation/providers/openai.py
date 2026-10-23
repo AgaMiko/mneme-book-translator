@@ -17,7 +17,9 @@ delete.
 
 Service tier: ``flex`` costs half of the standard price and answers more
 slowly; at busy times it can refuse a request with 429, which is retried
-with a longer wait.
+with a longer wait. When Flex is unavailable altogether
+(``flex_unavailable``), the call runs on the standard tier instead and the
+result says so, so its cost is counted at the full price.
 
 Thinking: the translation thinking level ("minimal" … "high") is passed as
 the reasoning effort. Reasoning models reject ``temperature``, so it is not
@@ -72,6 +74,8 @@ class ModelResult:
     parsed: Any | None
     text: str | None
     usage: dict[str, Any] | None
+    # The tier the call ran on: standard (None) when Flex was unavailable.
+    service_tier: str | None = None
 
 
 @lru_cache(maxsize=4)
@@ -160,6 +164,16 @@ async def generate(
         try:
             response = await client.responses.parse(**kwargs)
         except (RateLimitError, InternalServerError, APIConnectionError, APITimeoutError) as exc:
+            if flex and _flex_unavailable(exc):
+                # Waiting does not help ("use standard processing"): run this
+                # call on the standard tier, at the full price.
+                log.warning("openai_flex_unavailable_using_standard", model=model)
+                flex = False
+                service_tier = None
+                kwargs.pop("service_tier", None)
+                client = _get_client(settings.OPENAI_API_KEY, float(timeout_s))
+                backoff = initial_backoff_s
+                continue
             if attempt == max_retries - 1:
                 log.warning("openai_error", model=model, attempt=attempt, error=str(exc))
                 raise
@@ -172,8 +186,14 @@ async def generate(
             parsed=response.output_parsed,
             text=getattr(response, "output_text", None),
             usage=_usage(response),
+            service_tier=service_tier,
         )
     raise RuntimeError("OpenAI call failed unexpectedly")
+
+
+def _flex_unavailable(exc: Exception) -> bool:
+    """OpenAI's "Flex processing is temporarily unavailable" refusal."""
+    return isinstance(exc, RateLimitError) and getattr(exc, "code", None) == "flex_unavailable"
 
 
 async def prewarm_cache(*, settings: Settings, model: str, prefix: str) -> None:

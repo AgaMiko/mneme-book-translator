@@ -167,7 +167,7 @@ export const BOOK_TABS: readonly BookTabDef[] = [
           b.voice_extraction_windows_completed,
           b.voice_extraction_windows_total,
         );
-        return p ? `pass 2 · window ${p}` : "pass 2 running…";
+        return p ? `pass 2 · call ${p}` : "pass 2 running…";
       }
       if (counts.voicesTotal > 0) {
         return `${formatNumber(counts.voicesTotal)} profiles · ${formatNumber(counts.voicesPending)} pending`;

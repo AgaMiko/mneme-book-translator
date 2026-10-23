@@ -226,6 +226,26 @@ export const VoiceSelectedPassageSchema = z.object({
 });
 export type VoiceSelectedPassage = z.infer<typeof VoiceSelectedPassageSchema>;
 
+export const VoiceEvidenceLineSchema = z.object({
+  paragraph_id: z.string().uuid(),
+  chapter_number: z.number().int(),
+  text: z.string(),
+});
+export type VoiceEvidenceLine = z.infer<typeof VoiceEvidenceLineSchema>;
+
+export const VoiceFeatureSchema = z.object({
+  feature: z.string(),
+  lines: z.array(VoiceEvidenceLineSchema),
+});
+export type VoiceFeature = z.infer<typeof VoiceFeatureSchema>;
+
+export const VoiceRegisterShiftSchema = z.object({
+  situation: z.string(),
+  change: z.string(),
+  lines: z.array(VoiceEvidenceLineSchema),
+});
+export type VoiceRegisterShift = z.infer<typeof VoiceRegisterShiftSchema>;
+
 export const VoiceWorkingProfileSchema = z.object({
   id: z.string().uuid(),
   glossary_entry_id: z.string().uuid(),
@@ -243,6 +263,12 @@ export const VoiceWorkingProfileSchema = z.object({
   dialogue_volume_observed: z.number().int(),
   first_seen_window: z.number().int(),
   last_observed_window: z.number().int(),
+  /** Profiles built from all of a character's lines; 0 / [] for older profiles. */
+  line_count: z.number().int(),
+  low_evidence: z.boolean(),
+  lines_sampled: z.boolean(),
+  features: z.array(VoiceFeatureSchema),
+  register_shifts: z.array(VoiceRegisterShiftSchema),
   created_at: z.string(),
   updated_at: z.string(),
 });

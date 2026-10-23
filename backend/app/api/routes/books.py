@@ -72,6 +72,7 @@ from app.services import (
     glossary_service,
     speakers_service,
     stages,
+    voice_build_service,
     voice_service,
 )
 from app.services.glossary_extraction_estimate import estimate_glossary_extraction
@@ -348,12 +349,15 @@ async def get_voice_extraction_estimate(
         or 0,
     )
     plan = await speakers_service.plan_book(session, book_id=book_id)
+    profiles = await voice_build_service.profile_estimate_inputs(session, book_id=book_id)
     result = estimate_voice_extraction(
         word_count=book.word_count,
         character_count=character_count,
         settings=settings,
         speaker_chunks=sum(1 for c in plan.chunks if c.lines),
         dialogue_lines=len(plan.lines),
+        profile_unit_tokens=profiles[0] if profiles else None,
+        speaking_characters=profiles[1] if profiles else None,
     )
     return VoiceExtractionEstimateResponse(
         model=result.model,
@@ -794,7 +798,7 @@ def _schedule_extract_book_voices(
     soon as the request commits.
     """
     task = asyncio.create_task(
-        voice_service.extract_book_voices(
+        voice_build_service.build_book_voices(
             book_id=book_id,
             settings=settings,
             continue_extraction=continue_extraction,
@@ -947,18 +951,14 @@ async def run_voice_extraction(
             status_code=status.HTTP_409_CONFLICT,
             detail="Voice extraction is already running for this book.",
         )
-    if book.voice_extraction_status == "completed":
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Voice extraction already completed for this book.",
-        )
+    # A finished book can run again: reviewed profiles are kept, the rest rebuilt.
     if _voice_extraction_has_partial_progress(book):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="An interrupted extraction exists — use Continue to resume.",
         )
 
-    ok, reason = await voice_service.can_run_voice_extraction(session, book_id=book_id)
+    ok, reason = await voice_build_service.can_run(session, book_id=book_id)
     if not ok:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -1023,7 +1023,7 @@ async def continue_voice_extraction(
             status_code=status.HTTP_409_CONFLICT,
             detail="Voice extraction is already running for this book.",
         )
-    if not await voice_service.can_continue_voice_extraction(session, book_id=book_id):
+    if not await voice_build_service.can_continue(session, book_id=book_id):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
@@ -1059,7 +1059,7 @@ def _schedule_regenerate_flagged_voices(
     settings: Settings,
 ) -> None:
     task = asyncio.create_task(
-        voice_service.regenerate_flagged_voices(
+        voice_build_service.regenerate_flagged(
             book_id=book_id,
             settings=settings,
         )
@@ -1083,7 +1083,7 @@ def _schedule_regenerate_flagged_voices(
     "/{book_id}/voice-extraction/regenerate",
     status_code=status.HTTP_202_ACCEPTED,
     response_model=GlossaryExtractionStartResponse,
-    summary="Re-extract flagged voice profiles in their speaker windows only",
+    summary="Rebuild flagged voice profiles from their stored lines",
 )
 async def regenerate_flagged_voice_profiles(
     book_id: UUID,
@@ -1110,7 +1110,7 @@ async def regenerate_flagged_voice_profiles(
             detail="Voice extraction is already running for this book.",
         )
 
-    ok, reason = await voice_service.can_regenerate_flagged_voices(session, book_id=book_id)
+    ok, reason = await voice_build_service.can_regenerate(session, book_id=book_id)
     if not ok:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

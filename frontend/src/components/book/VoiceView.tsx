@@ -24,9 +24,12 @@ import type {
   CostGuardState,
   GlossaryExtractionStatus,
   RunOptions,
+  VoiceEvidenceLine,
   VoiceExtractionEstimate,
+  VoiceFeature,
   VoicePassEstimate,
   VoiceProfilePatchBody,
+  VoiceRegisterShift,
   VoiceSelectedPassage,
   VoiceWorkingProfile,
   WorkingSpeakersResponse,
@@ -462,7 +465,7 @@ function PassCard({
           {pass && (
             <dl className="grid grid-cols-2 gap-2.5">
               <EstimateCell
-                label={unit === "part" ? "Parts" : "Windows"}
+                label={`${unit.charAt(0).toUpperCase()}${unit.slice(1)}s`}
                 value={formatNumber(pass.window_count)}
               />
               <EstimateCell
@@ -697,6 +700,78 @@ function StatusChip({ status }: { status: string }) {
   );
 }
 
+function EvidenceLines({ lines }: { lines: VoiceEvidenceLine[] }) {
+  return (
+    <ul className="mt-1 space-y-1 border-l border-ink-700 pl-3">
+      {lines.map((line) => (
+        <li key={line.paragraph_id} className="text-xs leading-relaxed text-ink-400">
+          <span className="mr-1.5 font-mono text-[10px] text-ink-500">
+            ch. {line.chapter_number}
+          </span>
+          {line.text}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/** The features and register shifts behind a profile, each with its lines. */
+function EvidenceBlock({
+  features,
+  shifts,
+}: {
+  features: VoiceFeature[];
+  shifts: VoiceRegisterShift[];
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-4">
+      <Button
+        variant="ghost"
+        size="sm"
+        aria-expanded={open}
+        className="-ml-2"
+        onClick={() => setOpen((o) => !o)}
+      >
+        Evidence · {features.length} feature{features.length === 1 ? "" : "s"}
+        {shifts.length > 0
+          ? ` · ${shifts.length} register shift${shifts.length === 1 ? "" : "s"}`
+          : ""}
+        <ChevronDown
+          className={cn(
+            "h-3.5 w-3.5 transition-transform duration-200 ease-out",
+            open && "rotate-180",
+          )}
+          aria-hidden
+        />
+      </Button>
+      {open && (
+        <div className="mt-2 space-y-3 rounded-lg border border-ink-800 bg-ink-900 p-3">
+          {features.map((f, i) => (
+            <div key={`f${i}`}>
+              <p className="text-[13px] leading-snug text-ink-100">{f.feature}</p>
+              <EvidenceLines lines={f.lines} />
+            </div>
+          ))}
+          {shifts.length > 0 && (
+            <p className="pt-1 font-mono text-[10px] uppercase tracking-wider text-ink-500">
+              Register shifts
+            </p>
+          )}
+          {shifts.map((x, i) => (
+            <div key={`s${i}`}>
+              <p className="text-[13px] leading-snug text-ink-100">
+                <span className="text-ink-400">{x.situation}:</span> {x.change}
+              </p>
+              <EvidenceLines lines={x.lines} />
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function VoiceProfileCard({
   v,
   book,
@@ -750,7 +825,12 @@ function VoiceProfileCard({
       v.reference_passage_translation_proposed.trim();
 
   const metadataLine = [
-    `voice windows ${v.first_seen_window}→${v.last_observed_window}`,
+    ...(v.line_count > 0
+      ? [
+          `based on ${formatNumber(v.line_count)} line${v.line_count === 1 ? "" : "s"}` +
+            (v.lines_sampled ? " (a sample was sent)" : ""),
+        ]
+      : [`voice windows ${v.first_seen_window}→${v.last_observed_window}`]),
     ...(speakerWindows && speakerWindows.length > 0
       ? [`speaks in ${speakerWindows.length} windows`]
       : []),
@@ -774,6 +854,14 @@ function VoiceProfileCard({
             {v.needs_regeneration && (
               <span className="rounded-full border border-warning-border bg-warning-surface px-2 py-0.5 font-mono text-[9px] font-medium uppercase tracking-wider text-warning">
                 flagged
+              </span>
+            )}
+            {v.low_evidence && (
+              <span
+                className="rounded-full border border-ink-700 bg-ink-900 px-2 py-0.5 font-mono text-[9px] font-medium uppercase tracking-wider text-ink-400"
+                title="Fewer than three lines to build this profile from."
+              >
+                low evidence
               </span>
             )}
           </div>
@@ -848,6 +936,10 @@ function VoiceProfileCard({
             </ProfileBlock>
             <ProfileBlock label="Target voice strategy">{v.target_voice_strategy}</ProfileBlock>
           </div>
+
+          {(v.features.length > 0 || v.register_shifts.length > 0) && (
+            <EvidenceBlock features={v.features} shifts={v.register_shifts} />
+          )}
 
           {hasMulti ? (
             <div className="mt-4 space-y-4">
@@ -1087,11 +1179,11 @@ export function VoiceView({ book }: Props) {
             eyebrow="Pass 2 · Voices + passages"
             description={
               speakersIncomplete
-                ? "Builds profiles and reference passages. Without a complete Pass 1 it falls back to the full glossary character list per window."
-                : "Builds voice profiles and selects reference passages for the characters that speak."
+                ? "Needs a complete Pass 1: each profile is built from all of a character's lines."
+                : "One call per character (characters with few lines share one) with all their lines; writes the profile, the evidence behind it and reference passages. Accepted and adjusted profiles are kept on a re-run."
             }
             status={book.voice_extraction_status}
-            unit="window"
+            unit="call"
             windowsCompleted={book.voice_extraction_windows_completed}
             windowsTotal={book.voice_extraction_windows_total}
             lastError={book.voice_extraction_last_error}
@@ -1109,7 +1201,7 @@ export function VoiceView({ book }: Props) {
             reset={resetVoice}
             resetConfirm="This will permanently delete all character voice profiles and review progress. Continue?"
             nothingToReset={nothingToResetVoice}
-            disabled={actionsDisabled}
+            disabled={actionsDisabled || speakersIncomplete}
             estimateLoading={estimate.isLoading}
           />
         </div>

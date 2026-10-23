@@ -23,6 +23,25 @@ class VoiceSelectedPassageOut(BaseModel):
     status: str
 
 
+class VoiceEvidenceLineOut(BaseModel):
+    """A dialogue line cited as evidence for a feature."""
+
+    paragraph_id: UUID
+    chapter_number: int
+    text: str
+
+
+class VoiceFeatureOut(BaseModel):
+    feature: str
+    lines: list[VoiceEvidenceLineOut] = Field(default_factory=list)
+
+
+class VoiceRegisterShiftOut(BaseModel):
+    situation: str
+    change: str
+    lines: list[VoiceEvidenceLineOut] = Field(default_factory=list)
+
+
 class VoiceWorkingProfileOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -41,6 +60,12 @@ class VoiceWorkingProfileOut(BaseModel):
     dialogue_volume_observed: int
     first_seen_window: int
     last_observed_window: int
+    # Profiles built from all of the character's lines.
+    line_count: int = 0
+    low_evidence: bool = False
+    lines_sampled: bool = False
+    features: list[VoiceFeatureOut] = Field(default_factory=list)
+    register_shifts: list[VoiceRegisterShiftOut] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 

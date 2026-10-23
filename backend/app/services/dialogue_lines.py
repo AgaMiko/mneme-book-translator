@@ -69,7 +69,7 @@ _QUOTED = re.compile(r"„([^”\"]*)[”\"]|“([^”]*)”|\"([^\"]*)\"|«([^�
 
 
 @dataclass(frozen=True, slots=True)
-class DialogueLine:
+class LineCandidate:
     """One paragraph that may hold speech."""
 
     paragraph_id: UUID
@@ -129,14 +129,14 @@ def find_dialogue_lines(
     chapters: list[ChapterInput],
     *,
     convention: Convention | None = None,
-) -> list[DialogueLine]:
+) -> list[LineCandidate]:
     """Dialogue candidates in book order.
 
     ``chapters`` must be in book order with non-empty paragraphs only, as
     the fragmenter receives them.
     """
     conv = convention or detect_convention(chapters)
-    out: list[DialogueLine] = []
+    out: list[LineCandidate] = []
     offset = 0
     for chapter in chapters:
         for para in chapter.paragraphs:
@@ -145,7 +145,7 @@ def find_dialogue_lines(
             if found is not None:
                 marker, speech_text = found
                 out.append(
-                    DialogueLine(
+                    LineCandidate(
                         paragraph_id=para.id,
                         chapter_id=chapter.id,
                         text=text,

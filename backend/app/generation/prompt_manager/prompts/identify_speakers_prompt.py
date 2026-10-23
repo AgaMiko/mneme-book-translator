@@ -1,156 +1,94 @@
-"""Prompt template for the speaker-identification step (Pass 1).
+"""Prompt template for the speaker-attribution step (Pass 1).
 
 Paired with ``../models/identify_speakers_model.py``.
 
 What this prompt is for
 -----------------------
-Pass 1 of the voice pipeline. One LLM call per manuscript window. Its
-single job: list which glossary characters have at least one quoted
-speaking line in the window, with verbatim evidence per claim.
+Pass 1 of the voice pipeline. One LLM call per chunk of a chapter (about
+2,500 words). The chunk is shown in full; the paragraphs that may hold
+dialogue are numbered. The model says, for each numbered line, what kind
+of line it is, who says it and to whom.
 
-Output is a closed-set assignment (every speaker comes from the
-glossary character list passed in) plus a small notepad for
-cross-window state. Pass 2 (voice extraction) consumes the speaker
-map; later, translation does too.
-
-This prompt is intentionally narrow. Voice profiling, translation,
-and new-character discovery are explicitly NOT in scope here.
+Voice profiling, translation and new-character discovery are not in
+scope here.
 """
+
+# ruff: noqa: RUF001 - typographic dashes and quotes in the examples
 
 from typing import Any
 
 PROMPT = """\
-You are running the first pass of a translator's reference pipeline \
-for a {source_language} fiction manuscript. Your single job in this \
-pass: identify which characters from the glossary list below have at \
-least one **quoted speaking line** in the window of source text \
-shown.
+You are attributing dialogue in a {source_language} fiction manuscript. \
+The text below is one part of a chapter. Paragraphs that may hold \
+dialogue are numbered L1, L2, … For every numbered line, say what kind \
+of line it is, who says it, and who it is said to.
 
-You are NOT building voice profiles, NOT translating, NOT discovering \
-new characters. Voice profiling runs in a later pass and uses your \
-output as input. Translation runs later still.
+You are not building voice profiles and not translating. A later step \
+uses your answers to collect each character's lines.
 
-Keep every string field short and direct. Rambling JSON gets \
-truncated by the API and breaks the run.
+## Rules
 
-## Two non-negotiables
+1. **Return one entry for every numbered line, in order.** Do not skip \
+lines and do not invent line numbers.
+2. **Speakers and addressees come only from the character list.** Give \
+the code (C3) and the canonical name, both copied from the list. The \
+system checks that they match and drops the speaker if they don't. If \
+the speaker is not in the list, or you cannot tell who it is, leave \
+speaker_code and speaker_name null.
+3. **kind**
+   - speech: said aloud.
+   - thought: inner speech, or a line the character remembers or imagines.
+   - not_dialogue: a title, sign, letter or document being read, a quoted \
+word inside narration, or narration that only looks like dialogue. No \
+speaker.
+4. **confidence**
+   - clear: a speech tag ("powiedział Stein", "szepnęła") or the narration \
+in or next to the line names the speaker.
+   - inferred: no tag; you worked it out from turn order, the addressee or \
+the scene.
+5. **mixed**: true only when two different characters speak inside one \
+numbered line.
 
-The system checks both. Entries that violate them are dropped.
+## How dialogue is written here
 
-**(1) Every speaker must include ``glossary_entry_id`` and the \
-matching ``canonical_name``, both copied verbatim from the list \
-below.** The system cross-checks them; if you put one character's \
-ID with another character's name, the entry is dropped.
+In dash dialogue, a line starts with a dash and narration inside it is \
+set off by dashes: `– Idziemy – rzucił Stein. – Już.` The narration \
+part ("rzucił Stein") usually names the speaker. In a two-person \
+exchange without tags, speakers alternate; check that against the \
+content before relying on it. A pronoun tag ("odpowiedziała") narrows \
+the speaker by gender. Names in the line itself are usually the \
+addressee, not the speaker ("– Miro, chodź!" is said to Mira).
 
-**(2) Every speaker must include ``quoted_evidence``: 5-15 words \
-copied verbatim from this window's source text — a phrase from \
-inside the character's quoted line.** The system checks that the \
-phrase appears in the window text; entries whose evidence isn't \
-found are dropped.
+The addressee is the character the line is said to. Leave it null for \
+a group, for no one in particular, or when unclear.
 
-If neither condition can be satisfied for a character you suspect \
-might be speaking, do not include them in ``speakers``. Use the \
-notepad.
+## Output
 
-## One entry per character per window
-
-List each glossary character **at most once** in ``speakers`` for this \
-window. If they have several quoted lines, pick the single best \
-``quoted_evidence`` phrase (the clearest attribution). Do not emit \
-duplicate rows for the same ``glossary_entry_id``.
-
-## What counts as speaking
-
-Include a character only when this window contains a line you can \
-attribute to them through quoted direct speech ("…" or equivalent \
-quotation marks). Quoted lines come with attribution cues:
-
-- A speaking-verb tag near the line ("powiedział X", "rzekł Y", \
-"szepnęła Z", "krzyknął Z").
-- An addressee or scene context that identifies the speaker by \
-elimination.
-- First-person internal monologue, if the narrative POV is theirs.
-
-Do NOT include:
-
-- Characters merely mentioned in narration without quoted speech.
-- Characters described as speaking without quoted content ("they \
-spoke of the war").
-- Characters whose quoted lines you cannot confidently attribute.
-- Characters whose quoted lines you cannot quote a verbatim phrase \
-of (the evidence rule above forces this).
-
-## Eligible speakers
-
-Only glossary characters from the list below. Never invent IDs or \
-names. If a quoted speaker appears who isn't in the glossary, write \
-a notepad note (``unresolved_speaker``) — they may be added to the \
-glossary later, but Pass 1 does not create entries.
-
-## Reasoning before structure
-
-Each speaker entry begins with a one-sentence ``reasoning`` field — \
-which line in this window is theirs, what attribution cue identifies \
-them. Write that *first* (it's the first field on the schema for a \
-reason: the model commits to evidence before committing to an ID). \
-Then fill ``glossary_entry_id``, ``canonical_name``, and \
-``quoted_evidence`` from the line you just identified.
-
-If your reasoning ends with "I'm not sure which character", do not \
-emit the speaker entry. Notepad it.
-
-## The notepad
-
-Private working memory across passes. At most one note per pass. \
-Categories:
-
-- ``unresolved_speaker`` — someone speaks here but isn't in the \
-glossary list.
-- ``ambiguous_attribution`` — a quoted line couldn't be confidently \
-attributed to any glossary character.
-- ``pattern_to_watch`` — a recurring attribution pattern worth \
-tracking across windows.
-
-Carry forward what's still useful from the previous pass; drop what's \
-resolved. Empty if nothing's worth carrying.
-
-Do NOT use the notepad for:
-
-- Restating things already in the speakers list.
-- Tracking overall progress.
-- Commentary on manuscript quality.
+Write `scene` first: one or two sentences on who is present and who \
+talks to whom. Then the `lines` list. Keep everything short; no \
+explanations per line.
 
 ---
 
-## Pass {window_number} of {total_windows}
+## Characters ({n_characters})
 
-### Glossary characters ({n_characters} entries)
+{characters_table}
 
-{glossary_characters_table}
+## Before this part (context only, already attributed)
 
-### Notepad from previous pass
+{context}
 
-{notepad}
+## Text ({chapter_label}, part {chunk_number} of {total_chunks})
 
-### Source text
-
-{window_text}
+{chunk_text}
 """
 
 
-def render_glossary_characters_table(characters: list[Any]) -> str:
-    """Render the glossary character list — closed set of eligible speakers."""
+def render_characters_table(characters: list[Any]) -> str:
     if not characters:
-        return "(empty — no characters in the glossary; Pass 1 cannot proceed)"
-
-    lines = ["glossary_entry_id | canonical_name | variants"]
+        return "(empty)"
+    rows = ["code | canonical_name | variants"]
     for c in characters:
         variants = ", ".join(c.variants) if c.variants else "—"
-        lines.append(f"{c.glossary_entry_id} | {c.canonical_name} | {variants}")
-    return "\n".join(lines)
-
-
-def render_notepad(notes: list[Any]) -> str:
-    if not notes:
-        return "(empty)"
-    return "\n".join(f"- [{n.category}] {n.content}" for n in notes)
+        rows.append(f"{c.code} | {c.canonical_name} | {variants}")
+    return "\n".join(rows)

@@ -1,17 +1,18 @@
-"""API contracts for Pass 1 speaker map (read-only review)."""
+"""API contracts for Pass 1 speaker attribution (read-only review)."""
 
 from __future__ import annotations
 
-from uuid import UUID
+from uuid import UUID  # noqa: TC003 - pydantic needs it at runtime
 
 from pydantic import BaseModel, Field
 
 
-class SpeakerWindowOut(BaseModel):
-    """One window where a character was identified as speaking."""
+class AddresseeCountOut(BaseModel):
+    """How many of a character's speech lines go to one addressee."""
 
-    window_number: int
-    quoted_evidence: str
+    glossary_entry_id: UUID
+    canonical_name: str
+    line_count: int
 
 
 class CharacterSpeakerMapOut(BaseModel):
@@ -19,24 +20,44 @@ class CharacterSpeakerMapOut(BaseModel):
 
     glossary_entry_id: UUID
     canonical_name: str
-    windows: list[int] = Field(
-        description="Sorted window numbers where this character speaks.",
-    )
-    appearances: list[SpeakerWindowOut] = Field(
+    line_count: int = Field(description="Speech lines.")
+    thought_count: int = 0
+    speech_words: int = 0
+    chapters: list[int] = Field(
         default_factory=list,
-        description="One row per window (same order as ``windows``).",
+        description="Chapter numbers (1-based, book order) with speech lines.",
     )
+    windows: list[int] = Field(
+        default_factory=list,
+        description="Voice-extraction windows with speech lines (used by Pass 2).",
+    )
+    addressees: list[AddresseeCountOut] = Field(default_factory=list)
 
 
 class WorkingSpeakersResponse(BaseModel):
-    """Speaker map for a book — updates as Pass 1 windows complete."""
+    """Speaker attribution for a book — updates as Pass 1 chunks complete."""
 
     entries: list[CharacterSpeakerMapOut] = Field(default_factory=list)
-    windows_mapped: int = Field(
-        default=0,
-        description="Count of distinct windows with at least one speaker.",
+    lines_total: int = 0
+    lines_attributed: int = Field(default=0, description="Speech and thought lines with a speaker.")
+    lines_unknown: int = Field(
+        default=0, description="Dialogue lines with no speaker from the glossary."
     )
-    edges_total: int = Field(
-        default=0,
-        description="Total (character, window) edges stored.",
-    )
+    lines_not_dialogue: int = 0
+
+
+class DialogueLineOut(BaseModel):
+    paragraph_id: UUID
+    line_index: int
+    chapter_number: int = Field(description="1-based, book order.")
+    chapter_title: str | None = None
+    text: str
+    kind: str
+    speaker_name: str | None = None
+    addressee_name: str | None = None
+    confidence: str | None = None
+
+
+class DialogueLinesResponse(BaseModel):
+    lines: list[DialogueLineOut] = Field(default_factory=list)
+    truncated: bool = False

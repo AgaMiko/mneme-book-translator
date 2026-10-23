@@ -253,26 +253,52 @@ export const WorkingVoicesResponseSchema = z.object({
 });
 export type WorkingVoicesResponse = z.infer<typeof WorkingVoicesResponseSchema>;
 
-export const SpeakerWindowSchema = z.object({
-  window_number: z.number().int(),
-  quoted_evidence: z.string(),
+export const AddresseeCountSchema = z.object({
+  glossary_entry_id: z.string().uuid(),
+  canonical_name: z.string(),
+  line_count: z.number().int(),
 });
-export type SpeakerWindow = z.infer<typeof SpeakerWindowSchema>;
+export type AddresseeCount = z.infer<typeof AddresseeCountSchema>;
 
 export const CharacterSpeakerMapSchema = z.object({
   glossary_entry_id: z.string().uuid(),
   canonical_name: z.string(),
+  line_count: z.number().int(),
+  thought_count: z.number().int(),
+  speech_words: z.number().int(),
+  chapters: z.array(z.number().int()),
   windows: z.array(z.number().int()),
-  appearances: z.array(SpeakerWindowSchema),
+  addressees: z.array(AddresseeCountSchema),
 });
 export type CharacterSpeakerMap = z.infer<typeof CharacterSpeakerMapSchema>;
 
 export const WorkingSpeakersResponseSchema = z.object({
   entries: z.array(CharacterSpeakerMapSchema),
-  windows_mapped: z.number().int(),
-  edges_total: z.number().int(),
+  lines_total: z.number().int(),
+  lines_attributed: z.number().int(),
+  lines_unknown: z.number().int(),
+  lines_not_dialogue: z.number().int(),
 });
 export type WorkingSpeakersResponse = z.infer<typeof WorkingSpeakersResponseSchema>;
+
+export const DialogueLineSchema = z.object({
+  paragraph_id: z.string().uuid(),
+  line_index: z.number().int(),
+  chapter_number: z.number().int(),
+  chapter_title: z.string().nullable(),
+  text: z.string(),
+  kind: z.string(),
+  speaker_name: z.string().nullable(),
+  addressee_name: z.string().nullable(),
+  confidence: z.string().nullable(),
+});
+export type DialogueLine = z.infer<typeof DialogueLineSchema>;
+
+export const DialogueLinesResponseSchema = z.object({
+  lines: z.array(DialogueLineSchema),
+  truncated: z.boolean(),
+});
+export type DialogueLinesResponse = z.infer<typeof DialogueLinesResponseSchema>;
 
 export const VoicePassEstimateSchema = z.object({
   model: z.string(),
@@ -605,6 +631,15 @@ export const api = {
     handleResponse(
       await fetch(`${API_URL}/books/${id}/speakers-working`),
       WorkingSpeakersResponseSchema,
+    ),
+
+  /** Lines said by one character, or (speakerId null) lines with no speaker. */
+  getDialogueLines: async (id: string, speakerId: string | null): Promise<DialogueLinesResponse> =>
+    handleResponse(
+      await fetch(
+        `${API_URL}/books/${id}/dialogue-lines${speakerId ? `?speaker=${encodeURIComponent(speakerId)}` : ""}`,
+      ),
+      DialogueLinesResponseSchema,
     ),
 
   patchVoiceWorkingProfile: async (

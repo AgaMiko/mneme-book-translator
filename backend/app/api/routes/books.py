@@ -60,7 +60,7 @@ from app.schemas.glossary import (
     GlossaryWorkingEntryPatchIn,
     WorkingGlossaryResponse,
 )
-from app.schemas.speakers import WorkingSpeakersResponse
+from app.schemas.speakers import DialogueLinesResponse, WorkingSpeakersResponse
 from app.schemas.voice import (
     VoiceWorkingProfileOut,
     VoiceWorkingProfilePatchIn,
@@ -347,10 +347,13 @@ async def get_voice_extraction_estimate(
         )
         or 0,
     )
+    plan = await speakers_service.plan_book(session, book_id=book_id)
     result = estimate_voice_extraction(
         word_count=book.word_count,
         character_count=character_count,
         settings=settings,
+        speaker_chunks=sum(1 for c in plan.chunks if c.lines),
+        dialogue_lines=len(plan.lines),
     )
     return VoiceExtractionEstimateResponse(
         model=result.model,
@@ -822,7 +825,7 @@ def _voice_extraction_has_partial_progress(book: Book) -> bool:
 @router.get(
     "/{book_id}/speakers-working",
     response_model=WorkingSpeakersResponse,
-    summary="Pass 1 speaker map (characters x window numbers)",
+    summary="Pass 1 speaker attribution: line counts per character",
 )
 async def get_working_speakers(
     book_id: UUID,
@@ -835,6 +838,27 @@ async def get_working_speakers(
             detail="Book not found",
         )
     return await speakers_service.build_working_speakers_response(session, book_id=book_id)
+
+
+@router.get(
+    "/{book_id}/dialogue-lines",
+    response_model=DialogueLinesResponse,
+    summary="Dialogue lines of one speaker, or lines with no speaker",
+)
+async def get_dialogue_lines(
+    book_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    speaker: UUID | None = Query(
+        default=None, description="Glossary entry id; omit for lines with no speaker."
+    ),
+) -> DialogueLinesResponse:
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Book not found",
+        )
+    return await speakers_service.list_dialogue_lines(session, book_id=book_id, speaker=speaker)
 
 
 @router.get(

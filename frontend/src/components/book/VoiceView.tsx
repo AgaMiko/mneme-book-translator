@@ -36,6 +36,7 @@ import {
   bookKeys,
   useContinueSpeakersExtraction,
   useContinueVoiceExtraction,
+  useDialogueLines,
   usePatchVoiceWorkingProfile,
   useRegenerateFlaggedVoices,
   useResetSpeakersExtraction,
@@ -122,6 +123,86 @@ function ReviewProgressLine({
   );
 }
 
+function chapterSpan(chapters: number[]): string {
+  if (chapters.length === 0) return "—";
+  const first = chapters[0];
+  const last = chapters[chapters.length - 1];
+  return first === last ? `ch. ${first}` : `ch. ${first}–${last}`;
+}
+
+/** One character's lines (or, with speakerId null, lines with no speaker). */
+function SpeakerLines({ bookId, speakerId }: { bookId: string; speakerId: string | null }) {
+  const lines = useDialogueLines(bookId, speakerId, true);
+  if (lines.isLoading) {
+    return (
+      <p className="px-2 py-1 text-xs text-ink-500" aria-busy="true">
+        Loading lines…
+      </p>
+    );
+  }
+  if (lines.isError || !lines.data) {
+    return <p className="px-2 py-1 text-xs text-danger">Could not load lines.</p>;
+  }
+  return (
+    <ol className="mt-1 space-y-1.5 border-l border-ink-700 pl-3">
+      {lines.data.lines.map((line) => (
+        <li key={line.paragraph_id} className="text-xs leading-relaxed text-ink-300">
+          <span className="mr-1.5 font-mono text-[10px] text-ink-500">
+            ch. {line.chapter_number}
+            {line.addressee_name ? ` → ${line.addressee_name}` : ""}
+            {line.kind === "thought" ? " · thought" : ""}
+            {line.kind === "unknown" ? " · not attributed" : ""}
+            {line.confidence === "inferred" ? " · inferred" : ""}
+          </span>
+          {line.text}
+        </li>
+      ))}
+      {lines.data.truncated && (
+        <li className="text-xs text-ink-500">Only the first {lines.data.lines.length} shown.</li>
+      )}
+    </ol>
+  );
+}
+
+function SpeakerRow({
+  label,
+  detail,
+  open,
+  onToggle,
+  children,
+}: {
+  label: string;
+  detail: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <li className="rounded px-2 py-1">
+      {/* Name over details: the pass card is narrow, so no side-by-side columns. */}
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={onToggle}
+        className="flex w-full items-start gap-2 text-left"
+      >
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm font-medium text-ink-100">{label}</span>
+          <span className="block font-mono text-[11px] leading-relaxed text-ink-400">{detail}</span>
+        </span>
+        <ChevronDown
+          className={cn(
+            "mt-1 h-3.5 w-3.5 shrink-0 text-ink-500 transition-transform duration-200 ease-out",
+            open && "rotate-180",
+          )}
+          aria-hidden
+        />
+      </button>
+      {open && children}
+    </li>
+  );
+}
+
 function SpeakerMapPanel({
   book,
   speakers,
@@ -129,59 +210,81 @@ function SpeakerMapPanel({
   book: BookDetail;
   speakers: UseQueryResult<WorkingSpeakersResponse, Error>;
 }) {
+  // A glossary id, "none" for lines with no speaker, or null when all are closed.
+  const [openId, setOpenId] = useState<string | null>(null);
   const done = book.speakers_extraction_windows_completed;
   const total = book.speakers_extraction_windows_total;
   const progress =
     book.speakers_extraction_status === "running" && total != null && total > 0
-      ? ` · scanning window ${done ?? 0}/${total}`
+      ? ` · reading part ${done ?? 0}/${total}`
       : "";
 
   if (speakers.isLoading && !speakers.data) {
     return (
       <p className="text-sm text-ink-400" aria-busy="true">
-        Loading speaker map…
+        Loading speakers…
       </p>
     );
   }
   if (speakers.isError) {
-    return <p className="text-sm text-danger">Could not load speaker map.</p>;
+    return <p className="text-sm text-danger">Could not load speakers.</p>;
   }
-  if (!speakers.data || speakers.data.entries.length === 0) {
+  if (!speakers.data || speakers.data.lines_total === 0) {
     return (
       <p className="text-sm text-ink-500">
         {book.speakers_extraction_status === "running"
-          ? `Waiting for first window…${progress}`
-          : "No speakers mapped yet."}
+          ? `Waiting for the first part…${progress}`
+          : "No lines attributed yet."}
       </p>
     );
   }
 
-  const { entries, windows_mapped, edges_total } = speakers.data;
+  const { entries, lines_attributed, lines_unknown, lines_not_dialogue } = speakers.data;
+  const toggle = (id: string) => setOpenId((cur) => (cur === id ? null : id));
 
   return (
     <div>
       <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
-        {entries.length} character{entries.length === 1 ? "" : "s"} · {windows_mapped} window
-        {windows_mapped === 1 ? "" : "s"} · {edges_total} appearance
-        {edges_total === 1 ? "" : "s"}
+        {entries.length} character{entries.length === 1 ? "" : "s"} · {lines_attributed} line
+        {lines_attributed === 1 ? "" : "s"} attributed · {lines_unknown} with no speaker ·{" "}
+        {lines_not_dialogue} not dialogue
         {progress}
       </p>
       <ul
-        className="mt-2 max-h-64 space-y-1.5 overflow-y-auto rounded-lg border border-ink-800 bg-ink-900 p-2"
+        className="mt-2 max-h-96 space-y-0.5 overflow-y-auto rounded-lg border border-ink-800 bg-ink-900 p-2"
         aria-live="polite"
-        aria-label="Characters and window numbers where they speak"
+        aria-label="Characters and their dialogue lines"
       >
-        {entries.map((entry) => (
-          <li
-            key={entry.glossary_entry_id}
-            className="grid gap-1 rounded px-2 py-1 text-sm sm:grid-cols-[minmax(8rem,11rem)_1fr]"
+        {entries.map((entry) => {
+          const top = entry.addressees[0];
+          const detail = [
+            `${entry.line_count} line${entry.line_count === 1 ? "" : "s"}`,
+            ...(entry.thought_count > 0 ? [`${entry.thought_count} thought`] : []),
+            chapterSpan(entry.chapters),
+            ...(top ? [`mostly to ${top.canonical_name}`] : []),
+          ].join(" · ");
+          return (
+            <SpeakerRow
+              key={entry.glossary_entry_id}
+              label={entry.canonical_name}
+              detail={detail}
+              open={openId === entry.glossary_entry_id}
+              onToggle={() => toggle(entry.glossary_entry_id)}
+            >
+              <SpeakerLines bookId={book.id} speakerId={entry.glossary_entry_id} />
+            </SpeakerRow>
+          );
+        })}
+        {lines_unknown > 0 && (
+          <SpeakerRow
+            label="No speaker"
+            detail={`${lines_unknown} line${lines_unknown === 1 ? "" : "s"} · not in the glossary or not worked out`}
+            open={openId === "none"}
+            onToggle={() => toggle("none")}
           >
-            <span className="font-medium text-ink-100">{entry.canonical_name}</span>
-            <span className="font-mono text-xs leading-relaxed text-ink-400">
-              {formatWindowList(entry.windows)}
-            </span>
-          </li>
-        ))}
+            <SpeakerLines bookId={book.id} speakerId={null} />
+          </SpeakerRow>
+        )}
       </ul>
     </div>
   );
@@ -204,13 +307,14 @@ function passStatusLine(
   status: GlossaryExtractionStatus,
   completed: number | null | undefined,
   total: number | null | undefined,
+  unit: string,
 ): string {
   const progress = total != null && total > 0 ? `${completed ?? 0}/${total}` : null;
   switch (status) {
     case "running":
-      return progress ? `Running — window ${progress}.` : "Running.";
+      return progress ? `Running — ${unit} ${progress}.` : "Running.";
     case "completed":
-      return progress ? `Complete — ${progress} windows.` : "Complete.";
+      return progress ? `Complete — ${progress} ${unit}s.` : "Complete.";
     case "cancelled":
       return progress ? `Stopped after ${progress}. Partial results kept.` : "Stopped mid-run.";
     case "failed":
@@ -230,6 +334,7 @@ function PassCard({
   eyebrow,
   description,
   status,
+  unit,
   windowsCompleted,
   windowsTotal,
   lastError,
@@ -252,6 +357,8 @@ function PassCard({
   eyebrow: string;
   description: string;
   status: GlossaryExtractionStatus;
+  /** What one step of the run is: "window" or "part". */
+  unit: string;
   windowsCompleted: number | null | undefined;
   windowsTotal: number | null | undefined;
   lastError: string | null | undefined;
@@ -292,7 +399,7 @@ function PassCard({
           <div className="min-w-0 flex-1">
             <p className="font-mono text-[10px] uppercase tracking-wider text-ink-400">{eyebrow}</p>
             <p className="mt-1 text-[13px] leading-snug text-ink-100">
-              {passStatusLine(status, windowsCompleted, windowsTotal)}
+              {passStatusLine(status, windowsCompleted, windowsTotal, unit)}
             </p>
             <p className="mt-1 text-xs leading-relaxed text-ink-500">{description}</p>
             <p className="mt-2 font-mono text-[11px] tabular-nums text-ink-400">
@@ -300,8 +407,7 @@ function PassCard({
                 "estimating…"
               ) : pass ? (
                 <>
-                  {formatNumber(pass.window_count)} windows
-                  <span className="text-ink-600"> · </span>
+                  {formatNumber(pass.window_count)} {unit}s<span className="text-ink-600"> · </span>
                   {formatNumber(pass.estimated_total_tokens)} tok
                   <span className="text-ink-600"> · </span>
                   <span className="text-accent">{formatUsd(pass.estimated_cost_usd)}</span>
@@ -355,7 +461,10 @@ function PassCard({
           <ModelPicker choice={modelChoice} disabled={running} />
           {pass && (
             <dl className="grid grid-cols-2 gap-2.5">
-              <EstimateCell label="Windows" value={formatNumber(pass.window_count)} />
+              <EstimateCell
+                label={unit === "part" ? "Parts" : "Windows"}
+                value={formatNumber(pass.window_count)}
+              />
               <EstimateCell
                 label="Tokens"
                 value={formatNumber(pass.estimated_total_tokens)}
@@ -384,7 +493,7 @@ function PassCard({
               disabled={disabled || !resumable || continueMut.isPending}
               title={
                 resumable
-                  ? "Resume from the last completed window"
+                  ? `Resume from the last completed ${unit}`
                   : "Only available after a stopped or failed run"
               }
               onClick={() => continueMut.mutate({ model: modelChoice.model })}
@@ -395,7 +504,7 @@ function PassCard({
               variant="danger"
               size="sm"
               disabled={disabled || !running || stop.isPending}
-              title={running ? "Stop after the current window" : "Only available while running"}
+              title={running ? `Stop after the current ${unit}` : "Only available while running"}
               onClick={() => stop.mutate()}
             >
               {stop.isPending ? "Stopping…" : "Stop"}
@@ -914,9 +1023,9 @@ export function VoiceView({ book }: Props) {
         <div>
           <h2 className="font-serif text-xl font-medium text-ink-50">Character voices</h2>
           <p className="mt-1 max-w-2xl text-sm leading-relaxed text-ink-500">
-            Two passes over the same windows (~{formatNumber(VOICE_EXTRACTION_WINDOW_WORDS)} words,
-            ~{formatNumber(VOICE_EXTRACTION_OVERLAP_WORDS)} overlap). Pass 1 maps speakers per
-            window; Pass 2 builds voice profiles and reference passages. Each pass has its own model
+            Pass 1 attributes every dialogue line to a character. Pass 2 builds voice profiles and
+            reference passages over windows of ~{formatNumber(VOICE_EXTRACTION_WINDOW_WORDS)} words
+            (~{formatNumber(VOICE_EXTRACTION_OVERLAP_WORDS)} overlap). Each pass has its own model
             under Controls.
           </p>
           {glossaryReady &&
@@ -941,8 +1050,9 @@ export function VoiceView({ book }: Props) {
         <div className="mt-6 grid gap-3 lg:grid-cols-2">
           <PassCard
             eyebrow="Pass 1 · Speaker identification"
-            description="For each window, list glossary characters with quoted speech. This map scopes Pass 2."
+            description="Finds every dialogue line and asks who says it and to whom, one part of a chapter at a time. Parts with no dialogue are skipped."
             status={book.speakers_extraction_status}
+            unit="part"
             windowsCompleted={book.speakers_extraction_windows_completed}
             windowsTotal={book.speakers_extraction_windows_total}
             lastError={book.speakers_extraction_last_error}
@@ -958,7 +1068,7 @@ export function VoiceView({ book }: Props) {
             continueMut={continueSpeakers}
             stop={stopSpeakers}
             reset={resetSpeakers}
-            resetConfirm="This will delete the per-window speaker map and Pass 1 notepad for this book. Continue?"
+            resetConfirm="This will delete every attributed dialogue line and the speaker map for this book. Continue?"
             nothingToReset={nothingToResetSpeakers}
             disabled={actionsDisabled}
             estimateLoading={estimate.isLoading}
@@ -967,7 +1077,7 @@ export function VoiceView({ book }: Props) {
                 collapsed with the controls that produce it. */}
             <div className="border-t border-ink-800 pt-3">
               <p className="mb-2 font-mono text-[10px] uppercase tracking-wider text-ink-500">
-                Speaker map
+                Speakers
               </p>
               <SpeakerMapPanel book={book} speakers={speakers} />
             </div>
@@ -981,6 +1091,7 @@ export function VoiceView({ book }: Props) {
                 : "Builds voice profiles and selects reference passages for the characters that speak."
             }
             status={book.voice_extraction_status}
+            unit="window"
             windowsCompleted={book.voice_extraction_windows_completed}
             windowsTotal={book.voice_extraction_windows_total}
             lastError={book.voice_extraction_last_error}

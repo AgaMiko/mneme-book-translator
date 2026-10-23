@@ -1,9 +1,10 @@
 """Predict token usage and USD cost for the voice pipeline (Pass 1 + Pass 2).
 
-Windowing matches ``app.constants.voice_extraction``. Token counts use a
-chars ÷ 4 heuristic plus fixed per-call output budgets derived from the
-three-chain workflow (extraction windows, then per-character selection and
-per-passage translation). Pass 1 runs on ``SPEAKERS_MODEL`` and Pass 2 on
+Pass 1 runs once per chapter chunk (``speaker_chunks``); Pass 2 windowing
+matches ``app.constants.voice_extraction``. Token counts use a chars ÷ 4
+heuristic plus fixed per-call output budgets derived from the three-chain
+workflow (extraction windows, then per-character selection and per-passage
+translation). Pass 1 runs on ``SPEAKERS_MODEL`` and Pass 2 on
 ``VOICES_MODEL``; output budgets are visible tokens, and thinking at
 ``STEP_THINKING`` is added on top. These budgets have not been checked
 against a real run yet.
@@ -24,20 +25,33 @@ from app.services.glossary_extraction_estimate import (
     _chars_to_tokens_heuristic,
     glossary_window_count,
 )
+from app.services.speaker_chunks import SPEAKERS_CHUNK_WORDS
 from app.services.translation_estimate import thinking_ratio
 
 if TYPE_CHECKING:
     from app.core.config import Settings
 
+# Pass 1 (speaker attribution): one call per chunk of a chapter, sized by
+# its text plus fixed instructions, schema and context, and the character
+# list; output is about 40 tokens per dialogue line plus a short scene note
+# per chunk. Measured on a Zaplataczka chunk (1,396 words, 37 characters,
+# gpt-6.1-sol): 4,916 input tokens, against 4,893 from these numbers. Polish
+# text costs about 2.55 tokens per word, well above the chars ÷ 4 rule.
+_PASS1_FIXED_TOKENS = 1_000
+_PASS1_TOKENS_PER_CHARACTER_ROW = 9
+_PASS1_TOKENS_PER_WORD = 2.55
+_PASS1_SCENE_OUTPUT_TOKENS = 60
+_PASS1_OUTPUT_TOKENS_PER_LINE = 40
+# Measured on Zaplataczka: one dialogue line per 57 words.
+_LINES_PER_WORD = 1 / 57
+
 # Rough output token budgets per LLM call type.
-_PASS1_OUTPUT_TOKENS_PER_WINDOW = 900
 _PASS2_EXTRACTION_OUTPUT_TOKENS_PER_WINDOW = 2400
 _PASS2_SELECTION_OUTPUT_TOKENS_PER_CHARACTER = 750
 _PASS2_TRANSLATION_OUTPUT_TOKENS_PER_PASSAGE = 550
 _AVG_PASSAGES_PER_CHARACTER = 2.5
 
 # Input prompt size heuristics (chars) — smaller than glossary windows.
-_PASS1_PROMPT_CHARS_PER_WINDOW = 14_000
 _PASS2_EXTRACTION_PROMPT_CHARS_PER_WINDOW = 18_000
 _PASS2_SELECTION_PROMPT_CHARS = 6_500
 _PASS2_TRANSLATION_PROMPT_CHARS = 5_200
@@ -107,15 +121,31 @@ def estimate_voice_extraction(
     settings: Settings,
     speakers_model: str | None = None,
     voices_model: str | None = None,
+    speaker_chunks: int | None = None,
+    dialogue_lines: int | None = None,
 ) -> VoiceExtractionEstimateResult:
-    """Aggregate token and cost prediction for Pass 1 and Pass 2."""
+    """Aggregate token and cost prediction for Pass 1 and Pass 2.
+
+    ``speaker_chunks`` and ``dialogue_lines`` come from the book when the
+    caller has them (``speakers_service.plan_book``); otherwise they are
+    guessed from the word count.
+    """
     model1 = speakers_model or settings.SPEAKERS_MODEL
     model2 = voices_model or settings.VOICES_MODEL
     windows = _window_count(word_count)
     chars = max(0, character_count) if windows else 0
 
-    pass1_in = windows * _chars_to_tokens_heuristic(_PASS1_PROMPT_CHARS_PER_WINDOW)
-    pass1_out = windows * _PASS1_OUTPUT_TOKENS_PER_WINDOW
+    chunks = (
+        speaker_chunks
+        if speaker_chunks is not None
+        else math.ceil(max(0, word_count) / SPEAKERS_CHUNK_WORDS)
+    )
+    lines = dialogue_lines if dialogue_lines is not None else round(word_count * _LINES_PER_WORD)
+    per_chunk = _PASS1_FIXED_TOKENS + chars * _PASS1_TOKENS_PER_CHARACTER_ROW
+    pass1_in = chunks * per_chunk + (
+        math.ceil(word_count * _PASS1_TOKENS_PER_WORD) if chunks else 0
+    )
+    pass1_out = chunks * _PASS1_SCENE_OUTPUT_TOKENS + lines * _PASS1_OUTPUT_TOKENS_PER_LINE
 
     translation_calls = max(0, math.ceil(chars * _AVG_PASSAGES_PER_CHARACTER))
     pass2_in = (
@@ -131,7 +161,7 @@ def estimate_voice_extraction(
     pass1 = _pass(
         model=model1,
         settings=settings,
-        windows=windows,
+        windows=chunks,
         chars=chars,
         input_tokens=pass1_in,
         visible_out=pass1_out,

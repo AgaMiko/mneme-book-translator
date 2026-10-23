@@ -1,159 +1,102 @@
-"""Cross-check helpers for Pass 1 (speaker identification).
+"""Cross-checks for Pass 1 (speaker attribution).
 
-Background
-----------
-Each ``SpeakerInWindow`` carries TWO references to its target character
-(a UUID-style ``glossary_entry_id`` and a human-readable
-``canonical_name``) plus a verbatim ``quoted_evidence`` phrase. The
-model has to copy the first two from the prompt's glossary list and
-copy the third from the source text. Two failure modes:
+Each ``LineAttribution`` names its speaker and addressee twice: a short
+code (``C3``) and the canonical name, both copied from the prompt's
+character list. A speaker whose code and name disagree is dropped (the
+line keeps its kind, with no speaker), as are line numbers outside the
+chunk and repeated entries for the same line.
 
-1. ID and name disagree — the model pasted one character's UUID with
-   another's name.
-2. ``quoted_evidence`` doesn't actually appear in the window — the
-   model hallucinated a phrase to satisfy the schema.
-
-These helpers are pure functions over already-loaded glossary
-characters and the window text. They return only the entries that
-pass both checks; mismatches are filtered out and logged. Drop them
-into ``apply_speakers_delta`` before the persistence step.
-
-Same shape as ``voice_validation``; the duplication is on purpose
-(separate stages, separate models, independent evolution).
+Pure functions over the model output and the chunk's character list.
 """
 
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from uuid import UUID
+
     from app.generation.prompt_manager.models.identify_speakers_model import (
-        SpeakerInWindow,
+        LineAttribution,
     )
 
 logger = logging.getLogger(__name__)
 
 
-def _normalize_whitespace(s: str) -> str:
-    """Collapse all whitespace runs to single spaces.
-
-    Tolerates source text that uses non-breaking spaces, multiple
-    spaces, or stray newlines around quoted dialogue. The model is
-    told to copy verbatim, but small whitespace drift is common and
-    not a hallucination — only meaningful textual divergence counts
-    as a miss.
-    """
-    return " ".join(s.split())
+@dataclass(frozen=True, slots=True)
+class ResolvedLine:
+    kind: str
+    speaker_id: UUID | None
+    addressee_id: UUID | None
+    confidence: str
+    mixed: bool
 
 
-def filter_id_mismatches(
-    speakers: list[SpeakerInWindow],
+def _same_name(a: str, b: str) -> bool:
+    return a.strip().casefold() == b.strip().casefold()
+
+
+def resolve_character(
+    code: str | None,
+    name: str | None,
     *,
-    glossary_name_by_id: dict[str, str],
-) -> list[SpeakerInWindow]:
-    """Keep only entries where canonical_name matches the name on the
-    glossary entry their ``glossary_entry_id`` resolves to.
+    characters: dict[str, tuple[UUID, str]],
+) -> UUID | None:
+    """The glossary id for ``code`` when ``name`` matches it, else None.
 
-    ``glossary_name_by_id`` is built once per ``apply_speakers_delta``
-    from the loaded character list:
-
-        {c.glossary_entry_id: c.canonical_name for c in characters}
+    ``characters`` maps code to ``(glossary_entry_id, canonical_name)``.
     """
-    kept: list[SpeakerInWindow] = []
-    for s in speakers:
-        expected = glossary_name_by_id.get(s.glossary_entry_id)
-        if expected is None:
-            logger.warning(
-                "Speaker references unknown glossary_entry_id %s "
-                "(claimed name=%r); dropping entry.",
-                s.glossary_entry_id,
-                s.canonical_name,
-            )
-            continue
-        if s.canonical_name.strip() != expected.strip():
-            logger.warning(
-                "Speaker name/ID mismatch: glossary_entry_id=%s resolves "
-                "to %r but model wrote canonical_name=%r; dropping entry.",
-                s.glossary_entry_id,
-                expected,
-                s.canonical_name,
-            )
-            continue
-        kept.append(s)
-    return kept
+    if not code:
+        return None
+    found = characters.get(code.strip())
+    if found is None:
+        logger.warning("Speaker code %r not in the character list; dropping speaker.", code)
+        return None
+    gid, canonical = found
+    if name is None or not _same_name(name, canonical):
+        logger.warning(
+            "Speaker code/name mismatch: %s is %r but model wrote %r; dropping speaker.",
+            code,
+            canonical,
+            name,
+        )
+        return None
+    return gid
 
 
-def filter_evidence_mismatches(
-    speakers: list[SpeakerInWindow],
+def resolve_attributions(
+    attributions: list[LineAttribution],
     *,
-    window_text: str,
-) -> list[SpeakerInWindow]:
-    """Keep only entries whose ``quoted_evidence`` appears in the window text.
+    line_count: int,
+    characters: dict[str, tuple[UUID, str]],
+) -> dict[int, ResolvedLine]:
+    """Validated attributions by line number (1-based).
 
-    Whitespace is normalised on both sides before comparison so
-    minor source-text formatting (non-breaking spaces, double
-    spaces, line wraps) doesn't cause spurious drops.
+    Lines the model left out are missing from the result; the caller
+    stores them as ``unknown``.
     """
-    normalized_window = _normalize_whitespace(window_text)
-    kept: list[SpeakerInWindow] = []
-    for s in speakers:
-        evidence = s.quoted_evidence.strip()
-        if not evidence:
-            logger.warning(
-                "Speaker has empty quoted_evidence (canonical_name=%r); dropping entry.",
-                s.canonical_name,
-            )
+    out: dict[int, ResolvedLine] = {}
+    for a in attributions:
+        if not 1 <= a.line <= line_count:
+            logger.warning("Attribution for L%d outside 1..%d; dropping.", a.line, line_count)
             continue
-        if _normalize_whitespace(evidence) not in normalized_window:
-            logger.warning(
-                "Speaker quoted_evidence not found in window text "
-                "(canonical_name=%r, evidence=%r); dropping entry.",
-                s.canonical_name,
-                evidence[:120],
-            )
+        if a.line in out:
+            logger.warning("Repeated attribution for L%d; keeping the first.", a.line)
             continue
-        kept.append(s)
-    return kept
-
-
-def dedupe_speakers_by_glossary_entry(
-    speakers: list[SpeakerInWindow],
-) -> list[SpeakerInWindow]:
-    """Keep at most one entry per ``glossary_entry_id``.
-
-    The model often cites multiple quoted lines for the same character
-    in one window; the DB allows only one ``window_speakers`` row per
-    (book, window, character). Keep the first validated entry (model
-    order — typically the strongest attribution) and drop the rest.
-    """
-    seen: set[str] = set()
-    kept: list[SpeakerInWindow] = []
-    for s in speakers:
-        gid = s.glossary_entry_id
-        if gid in seen:
-            logger.warning(
-                "Speaker duplicate in window output (canonical_name=%r, "
-                "glossary_entry_id=%s); keeping first evidence, dropping %r",
-                s.canonical_name,
-                gid,
-                s.quoted_evidence[:120],
-            )
-            continue
-        seen.add(gid)
-        kept.append(s)
-    return kept
-
-
-def filter_speakers(
-    speakers: list[SpeakerInWindow],
-    *,
-    glossary_name_by_id: dict[str, str],
-    window_text: str,
-) -> list[SpeakerInWindow]:
-    """Apply cross-checks, then dedupe by glossary entry. Returns the kept list."""
-    validated = filter_evidence_mismatches(
-        filter_id_mismatches(speakers, glossary_name_by_id=glossary_name_by_id),
-        window_text=window_text,
-    )
-    return dedupe_speakers_by_glossary_entry(validated)
+        speaker = None
+        addressee = None
+        if a.kind != "not_dialogue":
+            speaker = resolve_character(a.speaker_code, a.speaker_name, characters=characters)
+            addressee = resolve_character(a.addressee_code, a.addressee_name, characters=characters)
+            if addressee is not None and addressee == speaker:
+                addressee = None
+        out[a.line] = ResolvedLine(
+            kind=a.kind,
+            speaker_id=speaker,
+            addressee_id=addressee,
+            confidence=a.confidence,
+            mixed=a.mixed,
+        )
+    return out

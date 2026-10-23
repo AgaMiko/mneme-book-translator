@@ -155,7 +155,7 @@ async def _call_model(
             service_tier=tier,
             timeout_s=_TIMEOUT_S,
         )
-        record_call(model, result.usage, tier)
+        record_call(model, result.usage, result.service_tier)
         return result
     response = await gemini_generate(
         prompt=prompt if cached_content else f"{fixed_context}\n\n{prompt}",

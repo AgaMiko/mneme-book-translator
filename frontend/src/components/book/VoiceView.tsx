@@ -13,6 +13,7 @@ import {
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/Button";
+import { type StepModel, useStepModel } from "@/hooks/useStepModel";
 import { OverflowMenu } from "@/components/ui/OverflowMenu";
 import {
   VOICE_EXTRACTION_OVERLAP_WORDS,
@@ -20,7 +21,9 @@ import {
 } from "@/constants/voiceExtraction";
 import type {
   BookDetail,
+  CostGuardState,
   GlossaryExtractionStatus,
+  RunOptions,
   VoiceExtractionEstimate,
   VoicePassEstimate,
   VoiceProfilePatchBody,
@@ -48,12 +51,18 @@ import {
 import { cn, formatNumber } from "@/lib/utils";
 
 import { BOOK_PANEL_CONTAINER, BOOK_PANEL_SURFACE } from "./layout";
+import { CostGuardNotice } from "./CostGuardNotice";
+import { ModelPicker } from "./ModelPicker";
+import { StageFinishedToggle } from "./StageFinishedToggle";
+import { glossaryUsable, showStageFinishedToggle } from "./tabs";
 
 interface Props {
   book: BookDetail;
 }
 
 type VoidMutation = UseMutationResult<unknown, Error, void>;
+/** Start or continue a pass on the model picked for it. */
+type RunMutation = UseMutationResult<unknown, Error, RunOptions | void>;
 
 function formatUsd(n: number): string {
   if (n > 0 && n < 0.01) return "under $0.01";
@@ -227,6 +236,8 @@ function PassCard({
   pass,
   characterCount,
   model,
+  modelChoice,
+  costState,
   startLabel,
   start,
   continueMut,
@@ -247,9 +258,11 @@ function PassCard({
   pass: VoicePassEstimate | null;
   characterCount: number | null;
   model: string | null;
+  modelChoice: StepModel;
+  costState: CostGuardState | undefined;
   startLabel: string;
-  start: VoidMutation;
-  continueMut: VoidMutation;
+  start: RunMutation;
+  continueMut: RunMutation;
   stop: VoidMutation;
   reset: VoidMutation;
   resetConfirm: string;
@@ -300,6 +313,17 @@ function PassCard({
           </div>
         </div>
 
+        <CostGuardNotice
+          state={costState}
+          paused={status === "cancelled"}
+          busy={continueMut.isPending}
+          onContinue={() => continueMut.mutate({ model: modelChoice.model })}
+          onContinueWithoutLimit={() =>
+            continueMut.mutate({ model: modelChoice.model, costLimit: false })
+          }
+          className="mt-3"
+        />
+
         {lastError && !running && (
           <p className="mt-3 rounded-lg border border-danger-border bg-danger-surface px-3 py-2 text-xs text-danger">
             {lastError}
@@ -328,6 +352,7 @@ function PassCard({
 
       {open && (
         <div className="space-y-4 border-t border-ink-700 px-4 py-4">
+          <ModelPicker choice={modelChoice} disabled={running} />
           {pass && (
             <dl className="grid grid-cols-2 gap-2.5">
               <EstimateCell label="Windows" value={formatNumber(pass.window_count)} />
@@ -349,7 +374,7 @@ function PassCard({
               variant="accent"
               size="sm"
               disabled={disabled || running || start.isPending}
-              onClick={() => start.mutate()}
+              onClick={() => start.mutate({ model: modelChoice.model })}
             >
               {running ? "Running…" : start.isPending ? "Starting…" : startLabel}
             </Button>
@@ -362,7 +387,7 @@ function PassCard({
                   ? "Resume from the last completed window"
                   : "Only available after a stopped or failed run"
               }
-              onClick={() => continueMut.mutate()}
+              onClick={() => continueMut.mutate({ model: modelChoice.model })}
             >
               {continueMut.isPending ? "Continuing…" : "Continue"}
             </Button>
@@ -788,7 +813,8 @@ function VoiceProfileCard({
  */
 export function VoiceView({ book }: Props) {
   const queryClient = useQueryClient();
-  const glossaryReady = book.glossary_extraction_status === "completed";
+  const glossaryReady = glossaryUsable(book);
+  const voiceCompleted = book.voice_extraction_status === "completed";
   const speakersPoll =
     book.speakers_extraction_status === "running" || book.voice_extraction_status === "running";
   const speakers = useWorkingSpeakers(book.id, {
@@ -802,7 +828,12 @@ export function VoiceView({ book }: Props) {
     enabled: glossaryReady,
     refetchIntervalMs: book.voice_extraction_status === "running" ? 1500 : false,
   });
-  const estimate = useVoiceExtractionEstimate(book.id, glossaryReady);
+  const speakersModel = useStepModel("speakers");
+  const voicesModel = useStepModel("voices");
+  const estimate = useVoiceExtractionEstimate(book.id, glossaryReady, {
+    speakers: speakersModel.model,
+    voices: voicesModel.model,
+  });
   const [pendingOnly, setPendingOnly] = useState(false);
 
   const speakerWindowsByGlossaryId = useMemo(() => {
@@ -885,9 +916,20 @@ export function VoiceView({ book }: Props) {
           <p className="mt-1 max-w-2xl text-sm leading-relaxed text-ink-500">
             Two passes over the same windows (~{formatNumber(VOICE_EXTRACTION_WINDOW_WORDS)} words,
             ~{formatNumber(VOICE_EXTRACTION_OVERLAP_WORDS)} overlap). Pass 1 maps speakers per
-            window; Pass 2 builds voice profiles and reference passages.
-            {est ? ` Model ${est.model}.` : ""}
+            window; Pass 2 builds voice profiles and reference passages. Each pass has its own model
+            under Controls.
           </p>
+          {glossaryReady &&
+            showStageFinishedToggle(book, "voices", speakersPoll, voiceCompleted) && (
+              <div className="mt-3">
+                <StageFinishedToggle
+                  book={book}
+                  stage="voices"
+                  running={speakersPoll}
+                  completed={voiceCompleted}
+                />
+              </div>
+            )}
         </div>
 
         {!glossaryReady && (
@@ -906,7 +948,9 @@ export function VoiceView({ book }: Props) {
             lastError={book.speakers_extraction_last_error}
             pass={est?.pass1 ?? null}
             characterCount={null}
-            model={est?.model ?? null}
+            model={est?.pass1.model ?? null}
+            modelChoice={speakersModel}
+            costState={book.cost_guard.speakers}
             startLabel={
               book.speakers_extraction_status === "completed" ? "Re-run Pass 1" : "Start Pass 1"
             }
@@ -942,7 +986,9 @@ export function VoiceView({ book }: Props) {
             lastError={book.voice_extraction_last_error}
             pass={est?.pass2 ?? null}
             characterCount={est?.character_count ?? null}
-            model={est?.model ?? null}
+            model={est?.pass2.model ?? null}
+            modelChoice={voicesModel}
+            costState={book.cost_guard.voices}
             startLabel={
               book.voice_extraction_status === "completed" ? "Re-run Pass 2" : "Start Pass 2"
             }
@@ -1019,7 +1065,7 @@ export function VoiceView({ book }: Props) {
                     ? "Complete speaker identification first."
                     : "Re-run extraction only for flagged characters in their speaker windows."
                 }
-                onClick={() => regenerateFlagged.mutate()}
+                onClick={() => regenerateFlagged.mutate({ model: voicesModel.model })}
               >
                 {regenerateFlagged.isPending || book.voice_extraction_status === "running"
                   ? "Regenerating…"
@@ -1036,7 +1082,7 @@ export function VoiceView({ book }: Props) {
           {voices.isError && <p className="text-sm text-danger">Could not load voice profiles.</p>}
           {voices.data && voices.data.entries.length === 0 && (
             <p className="text-sm text-ink-400">
-              No profiles yet. Run extraction after glossary completes.
+              No profiles yet. Run Pass 1, then Pass 2, to build them.
             </p>
           )}
           {voices.data && voices.data.entries.length > 0 && profilesInScope.length === 0 && (

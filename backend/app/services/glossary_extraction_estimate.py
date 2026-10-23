@@ -2,8 +2,17 @@
 
 Windowing defaults match ``app.constants.glossary_extraction`` and
 ``glossary_service.make_windows``. Token counts use a **chars ÷ 4**
-heuristic (Gemini-style rough tokenization) plus a small buffer for the
-growing glossary table on later passes.
+heuristic (Gemini-style rough tokenization).
+
+Every window's prompt carries the whole glossary found so far, which grows
+to ~1.5 terms per 1,000 words by the end of a run. Most names turn up
+early, so on average a window carries ~68% of the final table. On
+Zaplataczka (107k words, 135 windows) that table was ~70% of all input; an
+earlier version of this estimate left it out and came in 3.6 times low on
+input and 4 times high on output. Measured (2026-10-23) on three single
+runs over Zaplataczka: 1.3 to 1.5 terms per 1,000 words, ~236 characters
+per glossary row, 6.6 characters per word, 410 to 540 visible output
+tokens per window.
 """
 
 from __future__ import annotations
@@ -22,9 +31,12 @@ from app.generation.prompt_manager.prompts.extract_glossary_prompt import (
     render_glossary_table,
     render_notepad,
 )
-from app.services.gemini_model_pricing import resolve_gemini_usd_per_million_tokens
+from app.services.gemini_model_pricing import model_usd_per_million_tokens
+from app.services.translation_estimate import thinking_ratio
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from app.core.config import Settings
 
 
@@ -99,24 +111,26 @@ def estimate_glossary_extraction(
     *,
     word_count: int,
     settings: Settings,
+    model: str | None = None,
     window_words: int = GLOSSARY_EXTRACTION_WINDOW_WORDS,
     overlap_words: int = GLOSSARY_EXTRACTION_OVERLAP_WORDS,
-    chars_per_word: float = 5.8,
-    glossary_growth_buffer_ratio: float = 1.12,
-    estimated_output_tokens_per_window: int = 2200,
+    chars_per_word: float = 6.6,
+    terms_per_1000_words: float = 1.5,
+    average_table_share: float = 0.68,
+    glossary_row_chars: int = 236,
+    visible_output_tokens_per_window: int = 550,
 ) -> GlossaryExtractionEstimateResult:
-    """Aggregate token and cost prediction for one book."""
+    """Aggregate token and cost prediction for one book with ``model``
+    (``GLOSSARY_MODEL`` by default). Output includes thinking tokens at
+    ``STEP_THINKING``; OpenAI models are priced on the background tier."""
     n = glossary_window_count(word_count, window_words=window_words, overlap_words=overlap_words)
-    model = settings.GEMINI_MODEL
+    model = model or settings.GLOSSARY_MODEL
 
+    pin, pout = model_usd_per_million_tokens(model, settings.OPENAI_BACKGROUND_SERVICE_TIER)
     if settings.GEMINI_INPUT_PRICE_USD_PER_MTOK is not None:
         pin = settings.GEMINI_INPUT_PRICE_USD_PER_MTOK
-    else:
-        pin, _ = resolve_gemini_usd_per_million_tokens(model)
     if settings.GEMINI_OUTPUT_PRICE_USD_PER_MTOK is not None:
         pout = settings.GEMINI_OUTPUT_PRICE_USD_PER_MTOK
-    else:
-        _, pout = resolve_gemini_usd_per_million_tokens(model)
 
     if n == 0:
         return GlossaryExtractionEstimateResult(
@@ -148,11 +162,15 @@ def estimate_glossary_extraction(
         include_first_pass_note=False,
     )
 
-    raw_input = _chars_to_tokens_heuristic(first_chars) + _chars_to_tokens_heuristic(
-        later_chars
-    ) * (n - 1)
-    est_in = math.ceil(raw_input * glossary_growth_buffer_ratio)
-    est_out = n * estimated_output_tokens_per_window
+    final_terms = word_count / 1000 * terms_per_1000_words
+    table_chars_per_window = final_terms * average_table_share * glossary_row_chars
+    est_in = _chars_to_tokens_heuristic(first_chars) + (n - 1) * _chars_to_tokens_heuristic(
+        later_chars + int(table_chars_per_window)
+    )
+    visible_out = n * visible_output_tokens_per_window
+    est_out = math.ceil(
+        visible_out * (1 + thinking_ratio(model, settings.STEP_THINKING, "line_edit"))
+    )
     total = est_in + est_out
     cost = (est_in / 1_000_000.0) * pin + (est_out / 1_000_000.0) * pout
 
@@ -168,3 +186,31 @@ def estimate_glossary_extraction(
         pricing_input_usd_per_mtok=pin,
         pricing_output_usd_per_mtok=pout,
     )
+
+
+def glossary_expected_cost(
+    *, word_count: int, settings: Settings, model: str | None = None
+) -> Callable[[int], float]:
+    """Estimated cost of windows 1..k, for comparing a running extraction with its estimate.
+
+    Windows get dearer as the glossary table in each prompt grows: the table
+    at window i is about ``(i / n) ** p`` of its final size, with ``p`` set so
+    that the average share is 0.68 as measured. The rest of each window
+    (instructions, text, output) costs the same throughout.
+    """
+    full = estimate_glossary_extraction(word_count=word_count, settings=settings, model=model)
+    n = full.window_count
+    if n == 0:
+        return lambda _k: 0.0
+    no_table = estimate_glossary_extraction(
+        word_count=word_count, settings=settings, model=model, terms_per_1000_words=0
+    )
+    fixed = no_table.estimated_cost_usd
+    table = full.estimated_cost_usd - fixed
+    exponent = 1 / 0.68  # p + 1, with 1 / (p + 1) = 0.68
+
+    def expected(k: int) -> float:
+        share = min(max(k, 0), n) / n
+        return fixed * share + table * share**exponent
+
+    return expected

@@ -54,6 +54,7 @@ from app.generation.prompt_manager.prompts.translate_fragment_prompt import (
     render_fixed_context,
     render_fragment_context,
 )
+from app.generation.usage import counting
 from app.models.book import Book, Chapter, Paragraph
 from app.models.speakers import WindowSpeaker
 from app.models.translation import (
@@ -64,10 +65,13 @@ from app.models.translation import (
     TranslationRunFragment,
 )
 from app.models.voice import CharacterVoice
+from app.services.cost_guard import linear, save_state, start_guard
 from app.services.fragmenter import ChapterInput, ParagraphInput, plan_fragments
 from app.services.glossary_service import load_working_glossary_for_latest_run
+from app.services.stages import glossary_ready, voices_ready
 from app.services.term_matching import TermIndex, find_terms, is_form_of
 from app.services.translation_cache import RunCaches, delete_leftover_caches
+from app.services.translation_estimate import estimate_translation
 from app.services.translation_qa import (
     DASHES_MAX_PER_1K,
     ELLIPSES_MAX_PER_1K,
@@ -107,12 +111,13 @@ def missing_prerequisites(book: Book) -> list[str]:
     """Steps that must finish before a book can be translated.
 
     The translation prompts lean on the accepted glossary terms and the
-    voice profiles, so both extractions have to be complete.
+    voice profiles. Each counts once finished or marked finished by the
+    author (see ``app.services.stages``).
     """
     missing = []
-    if book.glossary_extraction_status != "completed":
+    if not glossary_ready(book):
         missing.append("glossary")
-    if book.voice_extraction_status != "completed":
+    if not voices_ready(book):
         missing.append("voices")
     return missing
 
@@ -844,8 +849,13 @@ async def _translate_fragment(
         return True
 
 
-async def run_translation(*, run_id: UUID, settings: Settings) -> None:
-    """Translate every pending fragment of a run. Fire-and-forget entry point."""
+async def run_translation(*, run_id: UUID, settings: Settings, cost_limit: bool = True) -> None:
+    """Translate every pending fragment of a run. Fire-and-forget entry point.
+
+    Pauses like Stop when the real cost goes more than ``COST_PAUSE_THRESHOLD``
+    over the estimate for the fragments done so far, unless ``cost_limit`` is
+    off (see ``app.services.cost_guard``). Fragments already running finish.
+    """
     session_maker = get_sessionmaker()
     async with session_maker() as session:
         run = await session.get(TranslationRun, run_id)
@@ -878,6 +888,34 @@ async def run_translation(*, run_id: UUID, settings: Settings) -> None:
             ).all()
         )
         run.fragments_completed = done_count
+        run_fragment_ids = set(
+            (
+                await session.execute(
+                    select(TranslationRunFragment.fragment_id).where(
+                        TranslationRunFragment.run_id == run_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        words = sum(f.word_count for f in fragments if f.id in run_fragment_ids)
+        estimate = estimate_translation(
+            word_count=words,
+            fragment_count=run.fragments_total,
+            glossary_terms=len(glossary),
+            settings=settings,
+        )
+        guard = start_guard(
+            book,
+            "translation",
+            settings=settings,
+            expected=linear(estimate.cost_usd, run.fragments_total),
+            units_total=run.fragments_total,
+            start_units=done_count,
+            limit=cost_limit,
+            unit_label="fragment",
+        )
         await session.commit()
 
     ctx = _BookContext(
@@ -912,6 +950,24 @@ async def run_translation(*, run_id: UUID, settings: Settings) -> None:
                 ctx=ctx,
                 settings=settings,
             )
+        guard.units_done += 1
+        newly_paused = guard.paused_reason is None and (
+            guard.units_done < guard.units_total and guard.overrun() is not None
+        )
+        async with get_sessionmaker()() as session:
+            book_row = await session.get(Book, book.id)
+            if book_row is not None:
+                save_state(book_row, guard)
+            if newly_paused:
+                log.warning(
+                    "translation_cost_pause", run_id=str(run_id), reason=guard.paused_reason
+                )
+                await session.execute(
+                    update(TranslationRun)
+                    .where(TranslationRun.id == run_id)
+                    .values(cancel_requested=True)
+                )
+            await session.commit()
 
     ctx.caches = await RunCaches.open(
         settings=settings,
@@ -920,7 +976,8 @@ async def run_translation(*, run_id: UUID, settings: Settings) -> None:
         models={stage_model(settings, s) for s in calls_per_fragment(settings)},
     )
     try:
-        await _run_jobs(run_id=run_id, book=book, jobs=jobs, worker=worker)
+        with counting(guard.spend):
+            await _run_jobs(run_id=run_id, book=book, jobs=jobs, worker=worker)
     finally:
         # Delete the caches however the run ends, so they stop costing money.
         await ctx.caches.close()

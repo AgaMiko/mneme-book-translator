@@ -71,3 +71,14 @@ def resolve_gemini_usd_per_million_tokens(model: str) -> tuple[float, float]:
         if prefix in key:
             return prices
     return _DEFAULT_FLASH_LITE
+
+
+def model_usd_per_million_tokens(
+    model: str, service_tier: str | None = None
+) -> tuple[float, float]:
+    """Prices for ``model`` on ``service_tier`` ("flex" halves OpenAI prices)."""
+    if service_tier == "flex":
+        flex = resolve_flex_usd_per_million_tokens(model)
+        if flex is not None:
+            return flex
+    return resolve_gemini_usd_per_million_tokens(model)

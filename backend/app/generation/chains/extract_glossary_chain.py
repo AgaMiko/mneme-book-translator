@@ -8,7 +8,7 @@ Layering
 --------
 - Schema   ``prompt_manager/models/extract_glossary_model.py`` — the contract
 - Prompt   ``prompt_manager/prompts/extract_glossary_prompt.py`` — task framing
-- Provider ``providers/gemini.py`` — vendor SDK + retry/backoff
+- Provider ``providers/router.py`` — Gemini or OpenAI, by model (``GLOSSARY_MODEL``)
 
 Observability
 -------------
@@ -36,7 +36,7 @@ from app.generation.prompt_manager.prompts.extract_glossary_prompt import (
     render_glossary_table,
     render_notepad,
 )
-from app.generation.providers.gemini import generate as gemini_generate
+from app.generation.providers.router import generate_structured, parse_result
 
 if TYPE_CHECKING:
     from app.core.config import Settings
@@ -77,19 +77,17 @@ async def extract_glossary_window(
         target_language=target_language,
     )
 
-    response = await gemini_generate(
+    result = await generate_structured(
         prompt=rendered,
         schema=GlossaryUpdate,
-        model=settings.GEMINI_MODEL,
+        model=settings.GLOSSARY_MODEL,
         settings=settings,
         # Slightly higher than metadata extraction — glossary work benefits
         # from a touch of variation when reasoning about edge cases.
-        # Still well below creative-writing temperatures.
+        # Still well below creative-writing temperatures. (Reasoning models
+        # ignore temperature when a thinking level is set.)
         temperature=0.9,
+        thinking=settings.STEP_THINKING,
+        service_tier=settings.OPENAI_BACKGROUND_SERVICE_TIER,
     )
-
-    if isinstance(response.parsed, GlossaryUpdate):
-        return response.parsed
-    if response.text:
-        return GlossaryUpdate.model_validate_json(response.text)
-    raise RuntimeError(f"Gemini returned an empty glossary response for window {window_number}.")
+    return parse_result(result, GlossaryUpdate, f"glossary window {window_number}")

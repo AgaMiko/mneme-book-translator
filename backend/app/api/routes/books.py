@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 from fastapi import (
@@ -26,12 +26,15 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Query,
     UploadFile,
     status,
 )
+from pydantic import BaseModel
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import NoResultFound
 
+from app.constants import models
 from app.core.config import Settings, get_settings
 from app.core.db import get_session, rowcount
 from app.core.logging import get_logger
@@ -68,6 +71,7 @@ from app.services import (
     glossary_llm_review,
     glossary_service,
     speakers_service,
+    stages,
     voice_service,
 )
 from app.services.glossary_extraction_estimate import estimate_glossary_extraction
@@ -205,6 +209,53 @@ async def upload_book(
     )
 
 
+def _step_settings(settings: Settings, step: models.Step, model: str | None) -> Settings:
+    """Settings with the model picked for this run or estimate (422 if unknown)."""
+    try:
+        return models.settings_for_step(settings, step, model)
+    except models.UnknownModelError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+
+
+class StepModelsOut(BaseModel):
+    default: str
+    recommended: str
+    note: str
+
+
+class ModelOptionOut(BaseModel):
+    id: str
+    label: str
+    provider: str
+
+
+class ModelsOut(BaseModel):
+    options: list[ModelOptionOut]
+    steps: dict[str, StepModelsOut]
+
+
+@router.get(
+    "/models", response_model=ModelsOut, summary="Models per step, with the recommended one"
+)
+async def list_models(settings: Settings = Depends(get_settings)) -> ModelsOut:
+    return ModelsOut(
+        options=[
+            ModelOptionOut(id=m.id, label=m.label, provider=m.provider)
+            for m in models.MODEL_OPTIONS
+        ],
+        steps={
+            step: StepModelsOut(
+                default=models.default_model(settings, step),
+                recommended=models.RECOMMENDED[step][0],
+                note=models.RECOMMENDED[step][1],
+            )
+            for step in models.STEPS
+        },
+    )
+
+
 @router.get("", response_model=list[BookSummary])
 async def list_books(
     session: AsyncSession = Depends(get_session),
@@ -234,7 +285,9 @@ async def get_glossary_extraction_estimate(
     book_id: UUID,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
+    model: str | None = Query(default=None),
 ) -> GlossaryExtractionEstimateResponse:
+    settings = _step_settings(settings, "glossary", model)
     book = await session.get(Book, book_id)
     if book is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
@@ -255,6 +308,7 @@ async def get_glossary_extraction_estimate(
 
 def _pass_estimate_response(pe: VoicePassEstimate) -> VoicePassEstimateResponse:
     return VoicePassEstimateResponse(
+        model=pe.model,
         window_count=pe.window_count,
         character_count=pe.character_count,
         estimated_input_tokens=pe.estimated_input_tokens,
@@ -273,7 +327,11 @@ async def get_voice_extraction_estimate(
     book_id: UUID,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
+    speakers_model: str | None = Query(default=None),
+    voices_model: str | None = Query(default=None),
 ) -> VoiceExtractionEstimateResponse:
+    settings = _step_settings(settings, "speakers", speakers_model)
+    settings = _step_settings(settings, "voices", voices_model)
     book = await session.get(Book, book_id)
     if book is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
@@ -323,6 +381,47 @@ async def get_working_glossary(
     return await glossary_service.build_working_glossary_response(session, book_id=book_id)
 
 
+class StageFinishedIn(BaseModel):
+    finished: bool
+
+
+@router.put(
+    "/{book_id}/stages/{stage}/finished",
+    response_model=BookDetail,
+    summary="Mark a stage (glossary or voices) as finished by hand, or unmark it",
+)
+async def set_stage_finished(
+    book_id: UUID,
+    stage: stages.Stage,
+    body: StageFinishedIn,
+    session: AsyncSession = Depends(get_session),
+) -> BookDetail:
+    try:
+        book = await book_service.get_book_detail(session, book_id)
+    except NoResultFound as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found") from exc
+    try:
+        stages.set_marked_finished(book, stage, body.finished)
+    except stages.StageConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    await session.commit()
+    return BookDetail.model_validate(book)
+
+
+@router.get(
+    "/{book_id}/glossary-working/review-estimate",
+    summary="Tokens and cost of reviewing the pending glossary terms with the LLM",
+)
+async def estimate_glossary_review(
+    book_id: UUID,
+    model: str | None = Query(default=None),
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, Any]:
+    settings = _step_settings(settings, "glossary_review", model)
+    return await glossary_llm_review.estimate_review(session, book_id=book_id, settings=settings)
+
+
 @router.post(
     "/{book_id}/glossary-working/review",
     summary="Decide the pending glossary terms with the LLM, for the author to check",
@@ -331,7 +430,9 @@ async def review_pending_glossary_terms(
     book_id: UUID,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
-) -> dict[str, int]:
+    model: str | None = Query(default=None),
+) -> dict[str, float]:
+    settings = _step_settings(settings, "glossary_review", model)
     try:
         return await glossary_llm_review.review_pending_terms(
             session, book_id=book_id, settings=settings
@@ -420,7 +521,9 @@ async def run_glossary_extraction(
     background: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
+    model: str | None = Query(default=None),
 ) -> GlossaryExtractionStartResponse:
+    settings = _step_settings(settings, "glossary", model)
     if not settings.GEMINI_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -473,7 +576,11 @@ async def continue_glossary_extraction(
     background: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
+    # False: "Continue without limit" after a cost pause.
+    cost_limit: bool = Query(default=True),
+    model: str | None = Query(default=None),
 ) -> GlossaryExtractionStartResponse:
+    settings = _step_settings(settings, "glossary", model)
     if not settings.GEMINI_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -523,6 +630,7 @@ async def continue_glossary_extraction(
         book_id=book_id,
         settings=settings,
         continue_extraction=True,
+        cost_limit=cost_limit,
     )
     log.info("glossary_extraction_continue_scheduled", book_id=str(book_id))
     return GlossaryExtractionStartResponse(book_id=book_id)
@@ -539,10 +647,12 @@ async def expand_glossary(
     background: BackgroundTasks,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
+    model: str | None = Query(default=None),
 ) -> GlossaryExtractionStartResponse:
     """Runs every window on the latest glossary run in place. Reviewed terms
     are kept as they are; only new terms (as proposals) and variants are added.
     """
+    settings = _step_settings(settings, "glossary", model)
     if not settings.GEMINI_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -671,6 +781,7 @@ def _schedule_extract_book_voices(
     settings: Settings,
     *,
     continue_extraction: bool = False,
+    cost_limit: bool = True,
 ) -> None:
     """Run voice extraction in the current event loop (not after HTTP response only).
 
@@ -684,6 +795,7 @@ def _schedule_extract_book_voices(
             book_id=book_id,
             settings=settings,
             continue_extraction=continue_extraction,
+            cost_limit=cost_limit,
         )
     )
 
@@ -791,7 +903,9 @@ async def run_voice_extraction(
     book_id: UUID,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
+    model: str | None = Query(default=None),
 ) -> GlossaryExtractionStartResponse:
+    settings = _step_settings(settings, "voices", model)
     if not settings.GEMINI_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -863,7 +977,11 @@ async def continue_voice_extraction(
     book_id: UUID,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
+    # False: "Continue without limit" after a cost pause.
+    cost_limit: bool = Query(default=True),
+    model: str | None = Query(default=None),
 ) -> GlossaryExtractionStartResponse:
+    settings = _step_settings(settings, "voices", model)
     if not settings.GEMINI_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -905,7 +1023,9 @@ async def continue_voice_extraction(
             detail="Voice extraction is already running for this book.",
         )
 
-    _schedule_extract_book_voices(book_id, settings, continue_extraction=True)
+    _schedule_extract_book_voices(
+        book_id, settings, continue_extraction=True, cost_limit=cost_limit
+    )
     log.info("voice_extraction_continue_scheduled", book_id=str(book_id))
     return GlossaryExtractionStartResponse(book_id=book_id)
 
@@ -945,7 +1065,9 @@ async def regenerate_flagged_voice_profiles(
     book_id: UUID,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
+    model: str | None = Query(default=None),
 ) -> GlossaryExtractionStartResponse:
+    settings = _step_settings(settings, "voices", model)
     if not settings.GEMINI_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1063,6 +1185,7 @@ def _schedule_extract_book_speakers(
     settings: Settings,
     *,
     continue_extraction: bool = False,
+    cost_limit: bool = True,
 ) -> None:
     """Fire-and-forget Pass 1. Same scheduling shape as voices."""
     task = asyncio.create_task(
@@ -1070,6 +1193,7 @@ def _schedule_extract_book_speakers(
             book_id=book_id,
             settings=settings,
             continue_extraction=continue_extraction,
+            cost_limit=cost_limit,
         )
     )
 
@@ -1103,7 +1227,9 @@ async def run_speakers_extraction(
     book_id: UUID,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
+    model: str | None = Query(default=None),
 ) -> GlossaryExtractionStartResponse:
+    settings = _step_settings(settings, "speakers", model)
     if not settings.GEMINI_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1175,7 +1301,11 @@ async def continue_speakers_extraction(
     book_id: UUID,
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
+    # False: "Continue without limit" after a cost pause.
+    cost_limit: bool = Query(default=True),
+    model: str | None = Query(default=None),
 ) -> GlossaryExtractionStartResponse:
+    settings = _step_settings(settings, "speakers", model)
     if not settings.GEMINI_API_KEY:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1217,7 +1347,9 @@ async def continue_speakers_extraction(
             detail="Speaker identification is already running for this book.",
         )
 
-    _schedule_extract_book_speakers(book_id, settings, continue_extraction=True)
+    _schedule_extract_book_speakers(
+        book_id, settings, continue_extraction=True, cost_limit=cost_limit
+    )
     log.info("speakers_extraction_continue_scheduled", book_id=str(book_id))
     return GlossaryExtractionStartResponse(book_id=book_id)
 

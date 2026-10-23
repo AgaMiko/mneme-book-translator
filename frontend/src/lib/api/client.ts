@@ -10,6 +10,32 @@ const API_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replac
 export const MetadataStatusSchema = z.enum(["pending", "ready", "failed"]);
 export type MetadataStatus = z.infer<typeof MetadataStatusSchema>;
 
+/** How to start or continue a run. */
+export type RunOptions = {
+  /** The model picked for the run; nothing means the configured default. */
+  model?: string;
+  /** False continues a run paused for cost without checking cost again. */
+  costLimit?: boolean;
+};
+
+function runQuery(opts?: RunOptions): string {
+  const params = new URLSearchParams();
+  if (opts?.model) params.set("model", opts.model);
+  if (opts?.costLimit === false) params.set("cost_limit", "false");
+  return params.size ? `?${params.toString()}` : "";
+}
+
+/** One step's real cost against its estimate (see backend cost_guard). */
+export const CostGuardStateSchema = z.object({
+  estimate_usd: z.number(),
+  spent_usd: z.number(),
+  units_done: z.number().int(),
+  units_total: z.number().int(),
+  limit: z.boolean(),
+  paused_reason: z.string().nullable(),
+});
+export type CostGuardState = z.infer<typeof CostGuardStateSchema>;
+
 export const GlossaryExtractionStatusSchema = z.enum([
   "idle",
   "running",
@@ -62,6 +88,10 @@ export const BookSummarySchema = z.object({
   speakers_extraction_windows_total: z.number().int().nullable().optional(),
   speakers_extraction_windows_completed: z.number().int().nullable().optional(),
   speakers_extraction_last_error: z.string().nullable().optional(),
+  /** Stages the author marked as finished by hand. */
+  stages_marked_finished: z.array(z.enum(["glossary", "voices"])),
+  /** Real cost against the estimate, per step ("glossary", "speakers", "voices", "translation"). */
+  cost_guard: z.record(z.string(), CostGuardStateSchema),
   original_filename: z.string(),
   word_count: z.number().int(),
   created_at: z.string(),
@@ -72,6 +102,9 @@ export const BookDetailSchema = BookSummarySchema.extend({
   chapters: z.array(ChapterDetailSchema),
 });
 export type BookDetail = z.infer<typeof BookDetailSchema>;
+
+/** Stages the author can mark as finished by hand. */
+export type MarkableStage = "glossary" | "voices";
 
 export const UploadBookResponseSchema = z.object({
   book: BookSummarySchema,
@@ -242,6 +275,7 @@ export const WorkingSpeakersResponseSchema = z.object({
 export type WorkingSpeakersResponse = z.infer<typeof WorkingSpeakersResponseSchema>;
 
 export const VoicePassEstimateSchema = z.object({
+  model: z.string(),
   window_count: z.number().int(),
   character_count: z.number().int(),
   estimated_input_tokens: z.number().int(),
@@ -282,8 +316,36 @@ export const GlossaryReviewResultSchema = z.object({
   rejected: z.number().int(),
   merged: z.number().int(),
   skipped: z.number().int(),
+  /** What the review's model calls cost. */
+  cost_usd: z.number(),
 });
 export type GlossaryReviewResult = z.infer<typeof GlossaryReviewResultSchema>;
+
+export const GlossaryReviewEstimateSchema = z.object({
+  model: z.string(),
+  pending: z.number().int(),
+  input_tokens: z.number().int(),
+  output_tokens: z.number().int(),
+  cost_usd: z.number(),
+});
+export type GlossaryReviewEstimate = z.infer<typeof GlossaryReviewEstimateSchema>;
+
+/** Pipeline steps that let you pick a model. */
+export type ModelStep = "glossary" | "glossary_review" | "speakers" | "voices" | "translation";
+
+export const ModelCatalogSchema = z.object({
+  options: z.array(z.object({ id: z.string(), label: z.string(), provider: z.string() })),
+  steps: z.record(
+    z.string(),
+    z.object({ default: z.string(), recommended: z.string(), note: z.string() }),
+  ),
+});
+export type ModelCatalog = z.infer<typeof ModelCatalogSchema>;
+
+/** `?model=…` for calls that take the model picked for a run. */
+function modelQuery(model?: string): string {
+  return model ? `?model=${encodeURIComponent(model)}` : "";
+}
 
 export type GlossaryEntryPatchBody = {
   proposed_target?: string;
@@ -451,6 +513,8 @@ export type TranslationTerms = z.infer<typeof TranslationTermsSchema>;
 export type StartTranslationBody = {
   chapter_ids?: string[] | null;
   retranslate?: boolean;
+  /** Model for every stage of the run; omit for the configured one. */
+  model?: string;
 };
 
 export type ExportFormat = "pdf" | "epub" | "docx";
@@ -500,15 +564,28 @@ export const api = {
   getBook: async (id: string): Promise<BookDetail> =>
     handleResponse(await fetch(`${API_URL}/books/${id}`), BookDetailSchema),
 
-  getGlossaryExtractionEstimate: async (id: string): Promise<GlossaryExtractionEstimate> =>
+  getGlossaryExtractionEstimate: async (
+    id: string,
+    model?: string,
+  ): Promise<GlossaryExtractionEstimate> =>
     handleResponse(
-      await fetch(`${API_URL}/books/${id}/glossary-extraction-estimate`),
+      await fetch(`${API_URL}/books/${id}/glossary-extraction-estimate${modelQuery(model)}`),
       GlossaryExtractionEstimateSchema,
     ),
 
-  getVoiceExtractionEstimate: async (id: string): Promise<VoiceExtractionEstimate> =>
+  getVoiceExtractionEstimate: async (
+    id: string,
+    speakersModel?: string,
+    voicesModel?: string,
+  ): Promise<VoiceExtractionEstimate> =>
     handleResponse(
-      await fetch(`${API_URL}/books/${id}/voice-extraction-estimate`),
+      await fetch(
+        `${API_URL}/books/${id}/voice-extraction-estimate?` +
+          new URLSearchParams({
+            ...(speakersModel ? { speakers_model: speakersModel } : {}),
+            ...(voicesModel ? { voices_model: voicesModel } : {}),
+          }).toString(),
+      ),
       VoiceExtractionEstimateSchema,
     ),
 
@@ -544,21 +621,36 @@ export const api = {
       VoiceWorkingProfileSchema,
     ),
 
-  startVoiceExtraction: async (id: string): Promise<GlossaryExtractionStartResponse> =>
+  startVoiceExtraction: async (
+    id: string,
+    opts?: RunOptions,
+  ): Promise<GlossaryExtractionStartResponse> =>
     handleResponse(
-      await fetch(`${API_URL}/books/${id}/voice-extraction/run`, { method: "POST" }),
+      await fetch(`${API_URL}/books/${id}/voice-extraction/run${runQuery(opts)}`, {
+        method: "POST",
+      }),
       GlossaryExtractionStartResponseSchema,
     ),
 
-  continueVoiceExtraction: async (id: string): Promise<GlossaryExtractionStartResponse> =>
+  continueVoiceExtraction: async (
+    id: string,
+    opts?: RunOptions,
+  ): Promise<GlossaryExtractionStartResponse> =>
     handleResponse(
-      await fetch(`${API_URL}/books/${id}/voice-extraction/continue`, { method: "POST" }),
+      await fetch(`${API_URL}/books/${id}/voice-extraction/continue${runQuery(opts)}`, {
+        method: "POST",
+      }),
       GlossaryExtractionStartResponseSchema,
     ),
 
-  regenerateFlaggedVoices: async (id: string): Promise<GlossaryExtractionStartResponse> =>
+  regenerateFlaggedVoices: async (
+    id: string,
+    opts?: RunOptions,
+  ): Promise<GlossaryExtractionStartResponse> =>
     handleResponse(
-      await fetch(`${API_URL}/books/${id}/voice-extraction/regenerate`, { method: "POST" }),
+      await fetch(`${API_URL}/books/${id}/voice-extraction/regenerate${runQuery(opts)}`, {
+        method: "POST",
+      }),
       GlossaryExtractionStartResponseSchema,
     ),
 
@@ -582,15 +674,25 @@ export const api = {
     }
   },
 
-  startSpeakersExtraction: async (id: string): Promise<GlossaryExtractionStartResponse> =>
+  startSpeakersExtraction: async (
+    id: string,
+    opts?: RunOptions,
+  ): Promise<GlossaryExtractionStartResponse> =>
     handleResponse(
-      await fetch(`${API_URL}/books/${id}/speaker-extraction/run`, { method: "POST" }),
+      await fetch(`${API_URL}/books/${id}/speaker-extraction/run${runQuery(opts)}`, {
+        method: "POST",
+      }),
       GlossaryExtractionStartResponseSchema,
     ),
 
-  continueSpeakersExtraction: async (id: string): Promise<GlossaryExtractionStartResponse> =>
+  continueSpeakersExtraction: async (
+    id: string,
+    opts?: RunOptions,
+  ): Promise<GlossaryExtractionStartResponse> =>
     handleResponse(
-      await fetch(`${API_URL}/books/${id}/speaker-extraction/continue`, { method: "POST" }),
+      await fetch(`${API_URL}/books/${id}/speaker-extraction/continue${runQuery(opts)}`, {
+        method: "POST",
+      }),
       GlossaryExtractionStartResponseSchema,
     ),
 
@@ -630,11 +732,44 @@ export const api = {
       GlossaryWorkingEntrySchema,
     ),
 
-  reviewPendingGlossaryTerms: async (bookId: string): Promise<GlossaryReviewResult> =>
+  setStageFinished: async (
+    bookId: string,
+    stage: MarkableStage,
+    finished: boolean,
+  ): Promise<BookDetail> =>
     handleResponse(
-      await fetch(`${API_URL}/books/${bookId}/glossary-working/review`, { method: "POST" }),
+      await fetch(`${API_URL}/books/${bookId}/stages/${stage}/finished`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ finished }),
+      }),
+      BookDetailSchema,
+    ),
+
+  reviewPendingGlossaryTerms: async (
+    bookId: string,
+    model?: string,
+  ): Promise<GlossaryReviewResult> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${bookId}/glossary-working/review${modelQuery(model)}`, {
+        method: "POST",
+      }),
       GlossaryReviewResultSchema,
     ),
+
+  getGlossaryReviewEstimate: async (
+    bookId: string,
+    model?: string,
+  ): Promise<GlossaryReviewEstimate> =>
+    handleResponse(
+      await fetch(
+        `${API_URL}/books/${bookId}/glossary-working/review-estimate${modelQuery(model)}`,
+      ),
+      GlossaryReviewEstimateSchema,
+    ),
+
+  listModels: async (): Promise<ModelCatalog> =>
+    handleResponse(await fetch(`${API_URL}/books/models`), ModelCatalogSchema),
 
   confirmAutoGlossaryReviews: async (bookId: string): Promise<{ confirmed: number }> =>
     handleResponse(
@@ -642,21 +777,33 @@ export const api = {
       z.object({ confirmed: z.number().int() }),
     ),
 
-  startGlossaryExtraction: async (id: string): Promise<GlossaryExtractionStartResponse> =>
+  startGlossaryExtraction: async (
+    id: string,
+    opts?: RunOptions,
+  ): Promise<GlossaryExtractionStartResponse> =>
     handleResponse(
-      await fetch(`${API_URL}/books/${id}/glossary-extraction/run`, { method: "POST" }),
+      await fetch(`${API_URL}/books/${id}/glossary-extraction/run${runQuery(opts)}`, {
+        method: "POST",
+      }),
       GlossaryExtractionStartResponseSchema,
     ),
 
-  continueGlossaryExtraction: async (id: string): Promise<GlossaryExtractionStartResponse> =>
+  continueGlossaryExtraction: async (
+    id: string,
+    opts?: RunOptions,
+  ): Promise<GlossaryExtractionStartResponse> =>
     handleResponse(
-      await fetch(`${API_URL}/books/${id}/glossary-extraction/continue`, { method: "POST" }),
+      await fetch(`${API_URL}/books/${id}/glossary-extraction/continue${runQuery(opts)}`, {
+        method: "POST",
+      }),
       GlossaryExtractionStartResponseSchema,
     ),
 
-  expandGlossary: async (id: string): Promise<GlossaryExtractionStartResponse> =>
+  expandGlossary: async (id: string, opts?: RunOptions): Promise<GlossaryExtractionStartResponse> =>
     handleResponse(
-      await fetch(`${API_URL}/books/${id}/glossary-extraction/expand`, { method: "POST" }),
+      await fetch(`${API_URL}/books/${id}/glossary-extraction/expand${runQuery(opts)}`, {
+        method: "POST",
+      }),
       GlossaryExtractionStartResponseSchema,
     ),
 
@@ -693,10 +840,12 @@ export const api = {
   getTranslationEstimate: async (
     id: string,
     chapterIds: string[] | null,
+    model?: string,
   ): Promise<TranslationEstimate> => {
-    const qs = chapterIds?.length
-      ? "?" + chapterIds.map((c) => `chapter_id=${encodeURIComponent(c)}`).join("&")
-      : "";
+    const params = new URLSearchParams();
+    for (const c of chapterIds ?? []) params.append("chapter_id", c);
+    if (model) params.set("model", model);
+    const qs = params.size ? `?${params.toString()}` : "";
     return handleResponse(
       await fetch(`${API_URL}/books/${id}/translation/estimate${qs}`),
       TranslationEstimateSchema,
@@ -713,9 +862,11 @@ export const api = {
       TranslationRunSchema,
     ),
 
-  continueTranslation: async (id: string): Promise<TranslationRun> =>
+  continueTranslation: async (id: string, opts?: RunOptions): Promise<TranslationRun> =>
     handleResponse(
-      await fetch(`${API_URL}/books/${id}/translation/continue`, { method: "POST" }),
+      await fetch(`${API_URL}/books/${id}/translation/continue${runQuery(opts)}`, {
+        method: "POST",
+      }),
       TranslationRunSchema,
     ),
 

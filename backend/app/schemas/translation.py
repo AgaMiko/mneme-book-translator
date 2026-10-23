@@ -75,6 +75,10 @@ class StartTranslationIn(BaseModel):
         default=False,
         description="Also translate fragments that already have a polished translation.",
     )
+    model: str | None = Field(
+        default=None,
+        description="Model for every stage of this run. Omit for the configured models.",
+    )
 
 
 class TranslationStageEstimateOut(BaseModel):

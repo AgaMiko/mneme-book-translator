@@ -7,7 +7,7 @@ Layering
 --------
 - Schema   ``prompt_manager/models/review_glossary_model.py`` — the contract
 - Prompt   ``prompt_manager/prompts/review_glossary_prompt.py`` — task framing
-- Provider ``providers/gemini.py`` — vendor SDK + retry/backoff
+- Provider ``providers/router.py`` — Gemini or OpenAI, by model
 """
 
 from __future__ import annotations
@@ -24,14 +24,14 @@ from app.generation.prompt_manager.prompts.review_glossary_prompt import (
     render_pending,
     render_removed,
 )
-from app.generation.providers.gemini import generate as gemini_generate
+from app.generation.providers.router import generate_structured, parse_result
 
 if TYPE_CHECKING:
     from app.core.config import Settings
 
 
 def review_model(settings: Settings) -> str:
-    return settings.GLOSSARY_REVIEW_MODEL or settings.GEMINI_MODEL
+    return settings.GLOSSARY_REVIEW_MODEL
 
 
 @observe(name="review_glossary_batch", as_type="generation")
@@ -54,18 +54,14 @@ async def review_glossary_batch(
         n_removed=len(removed),
         removed_block=render_removed(removed),
     )
-    response = await gemini_generate(
+    result = await generate_structured(
         prompt=rendered,
         schema=GlossaryReview,
         model=review_model(settings),
         settings=settings,
         # A judgement task: keep it steady between runs.
         temperature=0.2,
-        thinking_level=settings.GLOSSARY_REVIEW_THINKING,
+        thinking=settings.GLOSSARY_REVIEW_THINKING,
         max_output_tokens=None,
     )
-    if isinstance(response.parsed, GlossaryReview):
-        return response.parsed
-    if response.text:
-        return GlossaryReview.model_validate_json(response.text)
-    raise RuntimeError("Gemini returned an empty glossary review.")
+    return parse_result(result, GlossaryReview, "glossary review")

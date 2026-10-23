@@ -30,6 +30,7 @@ from app.generation.prompt_manager.models.extract_glossary_model import (
     NewTerm,
     TranslationRecommendation,
 )
+from app.generation.usage import counting
 from app.models.book import Book, Chapter
 from app.models.glossary import (
     INACTIVE_STATUSES,
@@ -45,12 +46,14 @@ from app.schemas.glossary import (
     GlossaryWorkingEntryPatchIn,
     WorkingGlossaryResponse,
 )
+from app.services.cost_guard import save_state, start_guard
 from app.services.glossary_auto_review import (
     PendingTerm,
     ReviewedTerm,
     plan_auto_decisions,
     term_forms,
 )
+from app.services.glossary_extraction_estimate import glossary_expected_cost
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -1054,8 +1057,13 @@ async def extract_book_glossary(
     settings: Settings,
     continue_extraction: bool = False,
     expand: bool = False,
+    cost_limit: bool = True,
 ) -> None:
     """Background task: run glossary windows for a book, optionally resuming a run.
+
+    The run pauses (like Stop) when its real cost goes more than
+    ``COST_PAUSE_THRESHOLD`` over the estimate for the windows done so far,
+    unless ``cost_limit`` is off (see ``app.services.cost_guard``).
 
     With ``expand=True``, reads every window again on the book's latest run
     (for example an imported glossary), so only missing terms and variants are
@@ -1110,7 +1118,7 @@ async def extract_book_glossary(
                 run_id = latest.id
                 start_window = 1
                 latest.status = "running"
-                latest.model = settings.GEMINI_MODEL
+                latest.model = settings.GLOSSARY_MODEL
                 latest.error_message = None
                 await session.commit()
                 log.info("glossary_expand_started", book_id=str(book_id), run_id=str(run_id))
@@ -1118,7 +1126,7 @@ async def extract_book_glossary(
                 run = GlossaryExtractionRun(
                     book_id=book_id,
                     status="running",
-                    model=settings.GEMINI_MODEL,
+                    model=settings.GLOSSARY_MODEL,
                 )
                 session.add(run)
                 await session.commit()
@@ -1157,7 +1165,8 @@ async def extract_book_glossary(
                 start_window = max(max_stored, book.glossary_extraction_windows_completed or 0) + 1
                 stored_up_to = max_stored
                 res.status = "running"
-                res.model = res.model or settings.GEMINI_MODEL
+                # The model the run continues with (it may differ from the start).
+                res.model = settings.GLOSSARY_MODEL
                 res.error_message = None
                 await session.commit()
                 log.info(
@@ -1208,16 +1217,26 @@ async def extract_book_glossary(
 
         async with session_local() as session:
             b0 = await session.get(Book, book_id)
-            if b0:
-                b0.glossary_extraction_cancel_requested = False
-                b0.glossary_extraction_windows_total = total
-                b0.glossary_extraction_windows_completed = start_window - 1
+            if b0 is None:
+                raise RuntimeError("book disappeared during glossary extraction")
+            b0.glossary_extraction_cancel_requested = False
+            b0.glossary_extraction_windows_total = total
+            b0.glossary_extraction_windows_completed = start_window - 1
+            guard = start_guard(
+                b0,
+                "glossary",
+                settings=settings,
+                expected=glossary_expected_cost(word_count=b0.word_count, settings=settings),
+                units_total=total,
+                start_units=start_window - 1,
+                limit=cost_limit,
+            )
             await session.commit()
 
         cancelled = False
-        with propagate_attributes(
-            session_id=str(book_id),
-            trace_name="glossary_extraction",
+        with (
+            propagate_attributes(session_id=str(book_id), trace_name="glossary_extraction"),
+            counting(guard.spend),
         ):
             for n in range(start_window, total + 1):
                 window = windows[n - 1]
@@ -1268,6 +1287,15 @@ async def extract_book_glossary(
                         window_number=n,
                     )
                     book.glossary_extraction_windows_completed = n
+                    guard.units_done = n
+                    reason = guard.overrun() if n < total else None
+                    save_state(book, guard)
+                    if reason:
+                        # Stops before the next window, the same way Stop does.
+                        book.glossary_extraction_cancel_requested = True
+                        log.warning(
+                            "glossary_extraction_cost_pause", book_id=str(book_id), reason=reason
+                        )
                     await session.commit()
 
                 if n % 10 == 0 or n == total:

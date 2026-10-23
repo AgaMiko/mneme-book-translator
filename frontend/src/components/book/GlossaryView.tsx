@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 
 import { GlossaryExtractionWorkspace } from "@/components/GlossaryExtractionWorkspace";
 import { GlossaryReviewPanel } from "@/components/GlossaryReviewPanel";
+import { useStepModel } from "@/hooks/useStepModel";
 import {
   bookKeys,
   useContinueGlossaryExtraction,
@@ -31,7 +32,8 @@ interface Props {
  */
 export function GlossaryView({ book, focusEntryId = null, onFocusHandled }: Props) {
   const queryClient = useQueryClient();
-  const estimate = useGlossaryExtractionEstimate(book.id, true);
+  const glossaryModel = useStepModel("glossary");
+  const estimate = useGlossaryExtractionEstimate(book.id, true, glossaryModel.model);
   const startGlossary = useStartGlossaryExtraction(book.id);
   const continueGlossary = useContinueGlossaryExtraction(book.id);
   const stopGlossary = useStopGlossaryExtraction(book.id);
@@ -67,6 +69,7 @@ export function GlossaryView({ book, focusEntryId = null, onFocusHandled }: Prop
           continueGlossary={continueGlossary}
           stopGlossary={stopGlossary}
           expandGlossary={expandGlossary}
+          model={glossaryModel}
           run={working.data?.run ?? null}
         />
 

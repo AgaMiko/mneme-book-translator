@@ -20,7 +20,9 @@ import {
   XCircle,
 } from "lucide-react";
 
+import { ModelPicker } from "@/components/book/ModelPicker";
 import { Button } from "@/components/ui/Button";
+import { useStepModel } from "@/hooks/useStepModel";
 import { OverflowMenu } from "@/components/ui/OverflowMenu";
 import type {
   GlossaryEntryPatchBody,
@@ -30,6 +32,7 @@ import type {
 } from "@/lib/api/client";
 import {
   useConfirmAutoGlossaryReviews,
+  useGlossaryReviewEstimate,
   usePatchGlossaryWorkingEntry,
   useReviewPendingGlossaryTerms,
   useWorkingGlossary,
@@ -170,6 +173,7 @@ export function GlossaryReviewPanel({
   const patchGlossaryEntry = usePatchGlossaryWorkingEntry(bookId);
   const confirmAll = useConfirmAutoGlossaryReviews(bookId);
   const review = useReviewPendingGlossaryTerms(bookId);
+  const reviewModel = useStepModel("glossary_review");
   const { data, isLoading, isError, error } = useWorkingGlossary(bookId, {
     enabled: true,
     refetchIntervalMs: pollWhileRunning ? 2000 : false,
@@ -420,11 +424,14 @@ export function GlossaryReviewPanel({
               against your earlier decisions. Every decision goes to Auto-decided for you to confirm
               or undo.
             </p>
+            <ReviewCost bookId={bookId} model={reviewModel.model} />
             <Button
               variant="accent"
               size="sm"
               disabled={review.isPending}
-              onClick={() => review.mutate(undefined, { onSuccess: () => setStatusFilter("auto") })}
+              onClick={() =>
+                review.mutate(reviewModel.model, { onSuccess: () => setStatusFilter("auto") })
+              }
             >
               {review.isPending ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
@@ -433,6 +440,7 @@ export function GlossaryReviewPanel({
               )}
               {review.isPending ? "Reviewing…" : "Auto-review"}
             </Button>
+            <ModelPicker choice={reviewModel} disabled={review.isPending} className="w-full" />
             {review.isError && (
               <p className="w-full text-xs text-danger" role="alert">
                 {review.error.message}
@@ -461,6 +469,11 @@ export function GlossaryReviewPanel({
             )}
             Confirm all {formatNumber(statusCounts.auto)}
           </Button>
+          {review.data && (
+            <p className="w-full font-mono text-[11px] tabular-nums text-ink-500">
+              The last review cost ${review.data.cost_usd.toFixed(2)}.
+            </p>
+          )}
           {confirmAll.isError && (
             <p className="w-full text-xs text-danger" role="alert">
               {confirmAll.error.message}
@@ -1160,5 +1173,21 @@ function GlossaryEntryRow({
         )}
       </div>
     </li>
+  );
+}
+
+/** "≈ $0.12 for 35 terms", for the model picked for the review. */
+function ReviewCost({ bookId, model }: { bookId: string; model: string | undefined }) {
+  const estimate = useGlossaryReviewEstimate(bookId, model, model !== undefined);
+  if (!estimate.data || estimate.data.pending === 0) return null;
+  const { cost_usd: cost, pending } = estimate.data;
+  return (
+    <span
+      className="font-mono text-[11px] tabular-nums text-ink-400"
+      title={`${formatNumber(estimate.data.input_tokens)} input · ${formatNumber(estimate.data.output_tokens)} output tokens`}
+    >
+      ≈ <span className="text-accent">{cost < 0.01 ? "under $0.01" : `$${cost.toFixed(2)}`}</span>{" "}
+      for {formatNumber(pending)} term{pending === 1 ? "" : "s"}
+    </span>
   );
 }

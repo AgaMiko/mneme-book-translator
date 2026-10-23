@@ -47,7 +47,7 @@ from app.generation.prompt_manager.prompts.extract_voices_prompt import (
     render_notepad,
     render_voice_profiles_table,
 )
-from app.generation.providers.gemini import generate as gemini_generate
+from app.generation.providers.router import generate_structured, parse_result
 
 if TYPE_CHECKING:
     from app.core.config import Settings
@@ -108,17 +108,14 @@ async def extract_voices_window(
     # explicitly tells the model not to translate during this phase, so
     # the fail-into-creative-translation pressure is gone — this chain
     # is now pure structured extraction.
-    response = await gemini_generate(
+    result = await generate_structured(
         prompt=rendered,
         schema=VoiceUpdate,
-        model=settings.GEMINI_MODEL,
+        model=settings.VOICES_MODEL,
         settings=settings,
         temperature=0.3,
+        thinking=settings.STEP_THINKING,
         max_output_tokens=_VOICE_EXTRACT_MAX_OUTPUT_TOKENS,
+        service_tier=settings.OPENAI_BACKGROUND_SERVICE_TIER,
     )
-
-    if isinstance(response.parsed, VoiceUpdate):
-        return response.parsed
-    if response.text:
-        return VoiceUpdate.model_validate_json(response.text)
-    raise RuntimeError(f"Gemini returned an empty voice response for window {window_number}.")
+    return parse_result(result, VoiceUpdate, f"voice window {window_number}")

@@ -48,7 +48,7 @@ _VOICES_PER_FRAGMENT = 3
 _NEIGHBOUR_WORDS = 400
 _NOTES_OUTPUT_CHARS = 1_200
 # Thinking tokens as a share of visible output, measured on chapter 5 of
-# Zaplataczka with Gemini 3.8 Flash (2026-10-21). Flash-Lite does not think.
+# Zaplataczka with Gemini 3.8 Flash (2026-10-21).
 # At "high", the final edit thinks the most (it checks every target).
 _THINKING_RATIO_BY_LEVEL: dict[str, dict[str, float]] = {
     "minimal": {"faithful": 0.0, "line_edit": 0.0, "polish": 0.0},
@@ -57,6 +57,10 @@ _THINKING_RATIO_BY_LEVEL: dict[str, dict[str, float]] = {
     "high": {"faithful": 7.5, "line_edit": 7.5, "polish": 12.5},
 }
 _THINKING_RATIO_MODEL_DEFAULT = 3.2
+# Flash-Lite thinks only when a level is asked for. "medium": 2.0, measured on
+# a glossary window with Gemini 3.1 Flash-Lite (2026-10-23); "low" and "high"
+# are guesses either side of it.
+_LITE_THINKING_RATIO: dict[str, float] = {"minimal": 0.0, "low": 1.0, "medium": 2.0, "high": 3.0}
 # OpenAI reasoning tokens as a share of visible output, measured the same way
 # (Luna and Sol on chapters 3 and 5). Sol's single revision in two-step mode
 # reasons like a line edit.
@@ -77,7 +81,7 @@ def thinking_ratio(model: str, level: str | None, stage: str) -> float:
     """``stage`` may be "one_step"; where that was not measured, the line edit's
     ratio is used (the one-step call uses the line-edit settings)."""
     if "lite" in model.lower():
-        return 0.0
+        return _LITE_THINKING_RATIO.get(level or "minimal", 0.0)
     for prefix, by_level in _OPENAI_THINKING_RATIO.items():
         if model.lower().startswith(prefix) and level in by_level:
             ratios = by_level[level]

@@ -15,18 +15,29 @@ better English target is only suggested, never applied.
 from __future__ import annotations
 
 import asyncio
+import math
 from typing import TYPE_CHECKING, Any
 
+from langfuse import propagate_attributes
 from sqlalchemy import select
 
 from app.constants.glossary_taxonomy import normalize_stored_term_type
 from app.core.logging import get_logger
 from app.generation.chains.review_glossary_chain import review_glossary_batch, review_model
-from app.generation.prompt_manager.prompts.review_glossary_prompt import PromptTerm
+from app.generation.prompt_manager.prompts.review_glossary_prompt import (
+    PROMPT,
+    PromptTerm,
+    render_accepted,
+    render_pending,
+    render_removed,
+)
+from app.generation.usage import Spend, counting
 from app.models.book import Book
 from app.services import glossary_service as gs
+from app.services.gemini_model_pricing import model_usd_per_million_tokens
 from app.services.glossary_auto_review import term_forms
 from app.services.term_matching import TermIndex, find_terms, fold
+from app.services.translation_estimate import thinking_ratio
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -114,10 +125,71 @@ async def _past_decisions(
     return accepted[:room], removed
 
 
+# Visible output per decided term (one-sentence reason plus the JSON fields).
+_OUTPUT_TOKENS_PER_TERM = 80
+
+
+async def estimate_review(
+    session: AsyncSession, *, book_id: UUID, settings: Settings
+) -> dict[str, Any]:
+    """Tokens and cost of reviewing the pending terms now, on the review model.
+
+    Read-only: it builds the real prompt tables, with passages counted at
+    their full length, and charges the standard tier (someone waits).
+    """
+    _run, entries = await gs.load_working_glossary_for_latest_run(session, book_id=book_id)
+    pending = [e for e in entries if e.status == "proposed" and e.auto_review is None]
+    model = review_model(settings)
+    if not pending:
+        return {
+            "model": model,
+            "pending": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cost_usd": 0.0,
+        }
+    accepted_here = [e for e in entries if e.status in ("accepted", "adjusted")]
+    removed_here = [e for e in entries if e.status == "rejected" and gs._is_author_reviewed(e)]
+    accepted_more, removed_other = await _past_decisions(
+        session, book_id=book_id, accepted_here=accepted_here
+    )
+    filler = ("x" * PASSAGE_CHARS,) * PASSAGES_PER_TERM
+    fixed = len(
+        PROMPT.format(
+            source_language="Polish",
+            target_language="English",
+            n_pending=0,
+            pending_block="",
+            n_accepted=0,
+            accepted_block=render_accepted(
+                [_prompt_term(e) for e in accepted_here + accepted_more]
+            ),
+            n_removed=0,
+            removed_block=render_removed([_prompt_term(e) for e in removed_here + removed_other]),
+        )
+    )
+    batches = -(-len(pending) // BATCH_SIZE)
+    pending_chars = len(render_pending([_prompt_term(e, filler) for e in pending]))
+    input_tokens = (batches * fixed + pending_chars) // 4
+    ratio = thinking_ratio(model, settings.GLOSSARY_REVIEW_THINKING, "line_edit")
+    output_tokens = math.ceil(len(pending) * _OUTPUT_TOKENS_PER_TERM * (1 + ratio))
+    pin, pout = model_usd_per_million_tokens(model)
+    return {
+        "model": model,
+        "pending": len(pending),
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "cost_usd": round((input_tokens * pin + output_tokens * pout) / 1_000_000, 4),
+    }
+
+
 async def review_pending_terms(
     session: AsyncSession, *, book_id: UUID, settings: Settings
-) -> dict[str, int]:
-    """Decide every pending term of the book's latest glossary. Returns counts."""
+) -> dict[str, float]:
+    """Decide every pending term of the book's latest glossary.
+
+    Returns counts per outcome and ``cost_usd``, what the model calls cost.
+    """
     book = await session.get(Book, book_id)
     if book is None:
         raise LookupError("Book not found")
@@ -132,7 +204,14 @@ async def review_pending_terms(
     _run, entries = await gs.load_working_glossary_for_latest_run(session, book_id=book_id)
     # Terms whose automatic decision the author undid stay theirs to decide.
     pending = [e for e in entries if e.status == "proposed" and e.auto_review is None]
-    counts = {"by_form": by_form, "accepted": 0, "rejected": 0, "merged": 0, "skipped": 0}
+    counts: dict[str, float] = {
+        "by_form": by_form,
+        "accepted": 0,
+        "rejected": 0,
+        "merged": 0,
+        "skipped": 0,
+        "cost_usd": 0.0,
+    }
     if not pending:
         return counts
 
@@ -166,15 +245,21 @@ async def review_pending_terms(
     applied: dict[str, str] = {}
     # A second pass for terms the model left out or merged into a term that
     # does not exist; whatever is still undecided after it stays pending.
-    for _attempt in range(2):
-        todo = [e for e in pending if str(e.id) not in applied]
-        if not todo:
-            break
-        batches = [todo[i : i + BATCH_SIZE] for i in range(0, len(todo), BATCH_SIZE)]
-        results = await asyncio.gather(*(run_batch(b) for b in batches))
-        reviews = [r for batch in results for r in batch]
-        applied |= await apply_reviews(session, entries=entries, reviews=reviews, model=model)
+    spend = Spend()
+    with (
+        propagate_attributes(session_id=str(book_id), trace_name="glossary_review"),
+        counting(spend),
+    ):
+        for _attempt in range(2):
+            todo = [e for e in pending if str(e.id) not in applied]
+            if not todo:
+                break
+            batches = [todo[i : i + BATCH_SIZE] for i in range(0, len(todo), BATCH_SIZE)]
+            results = await asyncio.gather(*(run_batch(b) for b in batches))
+            reviews = [r for batch in results for r in batch]
+            applied |= await apply_reviews(session, entries=entries, reviews=reviews, model=model)
     await session.commit()
+    counts["cost_usd"] = round(spend.usd, 4)
     for action in applied.values():
         counts[action] += 1
     counts["skipped"] = len(pending) - len(applied)

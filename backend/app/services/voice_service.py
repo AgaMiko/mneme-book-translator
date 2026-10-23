@@ -72,7 +72,7 @@ from app.generation.prompt_manager.models.translate_passage_model import (
     TranslationStrategy,
 )
 from app.generation.usage import counting
-from app.models.book import Book
+from app.models.book import Book, Chapter, Paragraph
 from app.models.glossary import INACTIVE_STATUSES, GlossaryEntry
 from app.models.voice import (
     CharacterVoice,
@@ -81,6 +81,9 @@ from app.models.voice import (
     VoiceSelectedPassage,
 )
 from app.schemas.voice import (
+    VoiceEvidenceLineOut,
+    VoiceFeatureOut,
+    VoiceRegisterShiftOut,
     VoiceSelectedPassageOut,
     VoiceWorkingProfileOut,
     VoiceWorkingProfilePatchIn,
@@ -99,6 +102,8 @@ from app.services.stages import glossary_ready
 from app.services.voice_extraction_estimate import estimate_voice_extraction
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.core.config import Settings
@@ -169,8 +174,15 @@ def _primary_selected_passage(
     return min(passages, key=lambda p: p.selection_rank)
 
 
+def _evidence_lines(
+    ids: list[str], lines_by_id: dict[str, VoiceEvidenceLineOut]
+) -> list[VoiceEvidenceLineOut]:
+    return [lines_by_id[i] for i in ids if i in lines_by_id]
+
+
 def _character_voice_to_working_out(
     voice: CharacterVoice,
+    lines_by_id: dict[str, VoiceEvidenceLineOut] | None = None,
 ) -> VoiceWorkingProfileOut:
     g = voice.glossary_entry
     if g is None:
@@ -190,6 +202,23 @@ def _character_voice_to_working_out(
         for p in ordered
     ]
     primary = ordered[0] if ordered else None
+    ev = voice.evidence or {}
+    by_id = lines_by_id or {}
+    features = [
+        VoiceFeatureOut(
+            feature=str(f.get("feature", "")),
+            lines=_evidence_lines(list(f.get("paragraph_ids", [])), by_id),
+        )
+        for f in ev.get("features", [])
+    ]
+    shifts = [
+        VoiceRegisterShiftOut(
+            situation=str(x.get("situation", "")),
+            change=str(x.get("change", "")),
+            lines=_evidence_lines(list(x.get("paragraph_ids", [])), by_id),
+        )
+        for x in ev.get("register_shifts", [])
+    ]
     return VoiceWorkingProfileOut(
         id=voice.id,
         glossary_entry_id=voice.glossary_entry_id,
@@ -209,9 +238,40 @@ def _character_voice_to_working_out(
         dialogue_volume_observed=0,
         first_seen_window=voice.first_seen_window,
         last_observed_window=voice.last_observed_window,
+        line_count=voice.line_count,
+        low_evidence=voice.low_evidence,
+        lines_sampled=bool(ev.get("sampled", False)),
+        features=features,
+        register_shifts=shifts,
         created_at=voice.created_at,
         updated_at=voice.updated_at,
     )
+
+
+async def _evidence_lines_for(
+    session: AsyncSession, voices: Sequence[CharacterVoice]
+) -> dict[str, VoiceEvidenceLineOut]:
+    """Text and chapter of every paragraph cited in these profiles' evidence."""
+    ids: set[UUID] = set()
+    for v in voices:
+        ev = v.evidence or {}
+        for item in [*ev.get("features", []), *ev.get("register_shifts", [])]:
+            for pid in item.get("paragraph_ids", []):
+                try:
+                    ids.add(UUID(str(pid)))
+                except ValueError:
+                    continue
+    if not ids:
+        return {}
+    rows = await session.execute(
+        select(Paragraph.id, Paragraph.text, Chapter.position)
+        .join(Chapter, Chapter.id == Paragraph.chapter_id)
+        .where(Paragraph.id.in_(ids))
+    )
+    return {
+        str(pid): VoiceEvidenceLineOut(paragraph_id=pid, chapter_number=pos + 1, text=text)
+        for pid, text, pos in rows.all()
+    }
 
 
 async def build_working_voices_response(
@@ -230,7 +290,8 @@ async def build_working_voices_response(
     )
     result = await session.execute(stmt)
     voices = result.scalars().all()
-    entries = [_character_voice_to_working_out(v) for v in voices]
+    lines_by_id = await _evidence_lines_for(session, voices)
+    entries = [_character_voice_to_working_out(v, lines_by_id) for v in voices]
     scene_counts = await speakers_service.speaker_window_counts_by_glossary(
         session, book_id=book_id
     )

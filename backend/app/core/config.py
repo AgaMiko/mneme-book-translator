@@ -81,6 +81,8 @@ class Settings(BaseSettings):
     TRANSLATION_POLISH_MODEL: str | None = None
     # How many fragments are translated at the same time.
     TRANSLATION_CONCURRENCY: int = 4
+    # Voice profile calls (one per character or group) run this many at once.
+    VOICE_BUILD_CONCURRENCY: int = 4
     # Thinking per stage: "minimal" | "low" | "medium" | "high", or empty for
     # the model's default. Thinking is billed as output and is most of the
     # cost. Default is "high" everywhere, for the best translation: on

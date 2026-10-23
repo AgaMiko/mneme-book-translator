@@ -1,10 +1,8 @@
 """Predict token usage and USD cost for the voice pipeline (Pass 1 + Pass 2).
 
-Pass 1 runs once per chapter chunk (``speaker_chunks``); Pass 2 windowing
-matches ``app.constants.voice_extraction``. Token counts use a chars ÷ 4
-heuristic plus fixed per-call output budgets derived from the three-chain
-workflow (extraction windows, then per-character selection and per-passage
-translation). Pass 1 runs on ``SPEAKERS_MODEL`` and Pass 2 on
+Pass 1 runs once per chapter chunk (``speaker_chunks``); Pass 2 once per
+character or group of small characters (``voice_profiles.plan_units``),
+then once per reference passage for its translation. Pass 1 runs on ``SPEAKERS_MODEL`` and Pass 2 on
 ``VOICES_MODEL``; output budgets are visible tokens, and thinking at
 ``STEP_THINKING`` is added on top. These budgets have not been checked
 against a real run yet.
@@ -45,16 +43,19 @@ _PASS1_OUTPUT_TOKENS_PER_LINE = 40
 # Measured on Zaplataczka: one dialogue line per 57 words.
 _LINES_PER_WORD = 1 / 57
 
-# Rough output token budgets per LLM call type.
-_PASS2_EXTRACTION_OUTPUT_TOKENS_PER_WINDOW = 2400
-_PASS2_SELECTION_OUTPUT_TOKENS_PER_CHARACTER = 750
+# Pass 2 (voice profiles): one call per character, or per group of
+# characters with few lines, carrying all of their lines plus fixed
+# instructions; output is the profile with cited features and passages.
+# Then one translation call per reference passage.
+_PASS2_PROFILE_FIXED_TOKENS = 3_000
+_PASS2_PROFILE_OUTPUT_TOKENS = 2_500
 _PASS2_TRANSLATION_OUTPUT_TOKENS_PER_PASSAGE = 550
-_AVG_PASSAGES_PER_CHARACTER = 2.5
-
-# Input prompt size heuristics (chars) — smaller than glossary windows.
-_PASS2_EXTRACTION_PROMPT_CHARS_PER_WINDOW = 18_000
-_PASS2_SELECTION_PROMPT_CHARS = 6_500
 _PASS2_TRANSLATION_PROMPT_CHARS = 5_200
+_AVG_PASSAGES_PER_CHARACTER = 2.0
+# Before Pass 1 has run: share of a book's words inside dialogue
+# paragraphs (Zaplataczka: 31k of 101k), and characters per call.
+_DIALOGUE_WORD_SHARE = 0.3
+_CHARACTERS_PER_CALL = 1.6
 
 
 @dataclass(frozen=True)
@@ -123,12 +124,16 @@ def estimate_voice_extraction(
     voices_model: str | None = None,
     speaker_chunks: int | None = None,
     dialogue_lines: int | None = None,
+    profile_unit_tokens: list[int] | None = None,
+    speaking_characters: int | None = None,
 ) -> VoiceExtractionEstimateResult:
     """Aggregate token and cost prediction for Pass 1 and Pass 2.
 
     ``speaker_chunks`` and ``dialogue_lines`` come from the book when the
     caller has them (``speakers_service.plan_book``); otherwise they are
-    guessed from the word count.
+    guessed from the word count. ``profile_unit_tokens`` (line tokens per
+    profile call) and ``speaking_characters`` come from the stored
+    dialogue lines once Pass 1 has run (``voice_build_service``).
     """
     model1 = speakers_model or settings.SPEAKERS_MODEL
     model2 = voices_model or settings.VOICES_MODEL
@@ -147,15 +152,24 @@ def estimate_voice_extraction(
     )
     pass1_out = chunks * _PASS1_SCENE_OUTPUT_TOKENS + lines * _PASS1_OUTPUT_TOKENS_PER_LINE
 
-    translation_calls = max(0, math.ceil(chars * _AVG_PASSAGES_PER_CHARACTER))
+    if profile_unit_tokens is None:
+        speaking = chars
+        calls = math.ceil(chars / _CHARACTERS_PER_CALL) if chars else 0
+        line_tokens = (
+            math.ceil(word_count * _DIALOGUE_WORD_SHARE * _PASS1_TOKENS_PER_WORD) if calls else 0
+        )
+    else:
+        speaking = speaking_characters if speaking_characters is not None else chars
+        calls = len(profile_unit_tokens)
+        line_tokens = sum(profile_unit_tokens)
+    translation_calls = max(0, math.ceil(speaking * _AVG_PASSAGES_PER_CHARACTER))
     pass2_in = (
-        windows * _chars_to_tokens_heuristic(_PASS2_EXTRACTION_PROMPT_CHARS_PER_WINDOW)
-        + chars * _chars_to_tokens_heuristic(_PASS2_SELECTION_PROMPT_CHARS)
+        calls * _PASS2_PROFILE_FIXED_TOKENS
+        + line_tokens
         + translation_calls * _chars_to_tokens_heuristic(_PASS2_TRANSLATION_PROMPT_CHARS)
     )
     pass2_out = (
-        windows * _PASS2_EXTRACTION_OUTPUT_TOKENS_PER_WINDOW
-        + chars * _PASS2_SELECTION_OUTPUT_TOKENS_PER_CHARACTER
+        speaking * _PASS2_PROFILE_OUTPUT_TOKENS
         + translation_calls * _PASS2_TRANSLATION_OUTPUT_TOKENS_PER_PASSAGE
     )
     pass1 = _pass(
@@ -169,8 +183,8 @@ def estimate_voice_extraction(
     pass2 = _pass(
         model=model2,
         settings=settings,
-        windows=windows,
-        chars=chars,
+        windows=calls,
+        chars=speaking,
         input_tokens=pass2_in,
         visible_out=pass2_out,
     )
@@ -186,3 +200,17 @@ def estimate_voice_extraction(
         pricing_input_usd_per_mtok=pass2.pricing_input_usd_per_mtok,
         pricing_output_usd_per_mtok=pass2.pricing_output_usd_per_mtok,
     )
+
+
+def profile_calls_cost(unit_tokens: list[int], *, characters: int, settings: Settings) -> float:
+    """Expected USD for the profile calls alone (no passage translation)."""
+    pin, pout = model_usd_per_million_tokens(
+        settings.VOICES_MODEL, settings.OPENAI_BACKGROUND_SERVICE_TIER
+    )
+    out = math.ceil(
+        characters
+        * _PASS2_PROFILE_OUTPUT_TOKENS
+        * (1 + thinking_ratio(settings.VOICES_MODEL, settings.STEP_THINKING, "line_edit"))
+    )
+    tokens_in = sum(unit_tokens) + len(unit_tokens) * _PASS2_PROFILE_FIXED_TOKENS
+    return (tokens_in * pin + out * pout) / 1_000_000.0

@@ -92,6 +92,16 @@ class CharacterVoice(Base):
         server_default="false",
     )
 
+    # Built from all of the character's lines (voice redesign): the features
+    # and register shifts with the dialogue_lines paragraph ids that show
+    # them, how many speech lines the profile saw, and whether that was too
+    # few to say much.
+    evidence: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default_factory=dict, server_default="{}"
+    )
+    line_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    low_evidence: Mapped[bool] = mapped_column(default=False, server_default="false")
+
     # Foreign keys and relationships
     glossary_entry_id: Mapped[UUID] = mapped_column(
         SA_UUID(as_uuid=True),
@@ -197,6 +207,17 @@ class VoiceSelectedPassage(Base):
     source_candidate_id: Mapped[UUID | None] = mapped_column(
         SA_UUID(as_uuid=True),
         ForeignKey("voice_passage_candidates.id", ondelete="SET NULL"),
+        default=None,
+    )
+    # Paragraph range the passage was cut from (profiles built from lines).
+    first_paragraph_id: Mapped[UUID | None] = mapped_column(
+        SA_UUID(as_uuid=True),
+        ForeignKey("paragraphs.id", ondelete="SET NULL"),
+        default=None,
+    )
+    last_paragraph_id: Mapped[UUID | None] = mapped_column(
+        SA_UUID(as_uuid=True),
+        ForeignKey("paragraphs.id", ondelete="SET NULL"),
         default=None,
     )
 

@@ -11,7 +11,7 @@ from app.models.glossary import (
     GlossaryNotepad,
     GlossaryWindowGeneration,
 )
-from app.models.speakers import SpeakerNotepad, WindowSpeaker
+from app.models.speakers import DialogueLine, SpeakerNotepad, WindowSpeaker
 from app.models.translation import (
     FragmentRendition,
     TranslationFragment,
@@ -24,6 +24,7 @@ __all__ = [
     "Book",
     "Chapter",
     "CharacterVoice",
+    "DialogueLine",
     "FinalGlossary",
     "FinalGlossaryEntry",
     "FragmentRendition",

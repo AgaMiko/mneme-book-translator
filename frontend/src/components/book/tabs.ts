@@ -160,7 +160,7 @@ export const BOOK_TABS: readonly BookTabDef[] = [
           b.speakers_extraction_windows_completed,
           b.speakers_extraction_windows_total,
         );
-        return p ? `pass 1 · window ${p}` : "pass 1 running…";
+        return p ? `pass 1 · part ${p}` : "pass 1 running…";
       }
       if (b.voice_extraction_status === "running") {
         const p = windowProgress(

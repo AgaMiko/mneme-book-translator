@@ -1,37 +1,26 @@
 """ORM models for the speaker-identification stage (Pass 1).
 
-Pass 1 runs *before* voice extraction and persists, for each manuscript
-window, which glossary characters have at least one quoted speaking
-line in that window. The resulting map has two downstream consumers:
-
-- **Voice extraction (Pass 2)** — scope the candidate-character pool
-  per window so the model only profiles characters that actually
-  spoke; tightens grounding and reduces identity-leak failure modes.
-- **Translation (later)** — inject voice profiles only for characters
-  speaking in the fragment's window. Cuts prompt size dramatically
-  for books with large casts and few speakers per scene.
+Pass 1 runs *before* voice extraction. It attributes every dialogue
+line of the book (found by ``services.dialogue_lines``) to a glossary
+character, and records who the line is addressed to.
 
 Structure
 ---------
-- ``WindowSpeaker`` — one row per (book, window, character) edge.
-  Carries the verbatim phrase Pass 1 used as evidence so we can
-  validate the claim and surface it later in review UI.
-- ``SpeakerNotepad`` — singleton per book, mirrors ``VoiceNotepad``.
-  Carries cross-window scratch notes between Pass 1 windows
-  (unresolved speakers, ambiguous attributions).
+- ``DialogueLine`` — one row per dialogue paragraph: kind (speech,
+  thought, not dialogue), speaker, addressee. The source of truth.
+- ``WindowSpeaker`` — one row per (book, window, character) edge,
+  derived from ``DialogueLine`` when a run completes. Voice extraction
+  and translation still read speakers per voice-extraction window;
+  ``quoted_evidence`` holds the start of the character's first line in
+  that window.
+- ``SpeakerNotepad`` — notes from the earlier window-by-window Pass 1.
+  No longer written; dropped in the voice-redesign cleanup.
 
-Why no per-edge status workflow
+Why no per-line status workflow
 -------------------------------
-Unlike glossary entries or voice profiles, individual (window, character)
-speaker edges aren't reviewed by the author one-by-one. If Pass 1
-mis-attributes a line, the author resets and re-runs. Authorial review
-happens at the voice-profile level (Pass 2 output), not here.
-
-Window alignment
-----------------
-Pass 1 uses ``VOICE_EXTRACTION_WINDOW_WORDS`` (the same window size as
-voice extraction) so ``WindowSpeaker.window_number`` directly indexes
-the windows Pass 2 consumes — no alignment math.
+Lines are not reviewed one by one. If Pass 1 mis-attributes lines, the
+author resets and re-runs. Authorial review happens at the voice-profile
+level (Pass 2 output).
 """
 
 from datetime import datetime
@@ -39,10 +28,12 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from sqlalchemy import (
+    Boolean,
     DateTime,
     ForeignKey,
     Index,
     Integer,
+    String,
     Text,
     UniqueConstraint,
 )
@@ -136,4 +127,57 @@ class SpeakerNotepad(Base):
         server_default=func.now(),
         onupdate=func.now(),
         init=False,
+    )
+
+
+class DialogueLine(Base):
+    """One dialogue paragraph and who says it.
+
+    ``kind`` is ``speech``, ``thought`` or ``not_dialogue`` as Pass 1
+    decided, or ``unknown`` when the model returned nothing usable for
+    the line. ``speaker_glossary_entry_id`` is empty for unknown
+    speakers and for characters not in the glossary.
+    """
+
+    __tablename__ = "dialogue_lines"
+    __table_args__ = (
+        UniqueConstraint("book_id", "paragraph_id", name="uq_dialogue_line_paragraph"),
+        Index("ix_dialogue_lines_book_line", "book_id", "line_index"),
+        Index("ix_dialogue_lines_book_speaker", "book_id", "speaker_glossary_entry_id"),
+    )
+
+    line_index: Mapped[int] = mapped_column(Integer)
+    chunk_number: Mapped[int] = mapped_column(Integer)
+    word_offset: Mapped[int] = mapped_column(Integer)
+    marker: Mapped[str] = mapped_column(String(16))
+    speech_text: Mapped[str] = mapped_column(Text)
+    kind: Mapped[str] = mapped_column(String(16))
+
+    book_id: Mapped[UUID] = mapped_column(
+        SA_UUID(as_uuid=True),
+        ForeignKey("books.id", ondelete="CASCADE"),
+        init=False,
+    )
+    paragraph_id: Mapped[UUID] = mapped_column(
+        SA_UUID(as_uuid=True),
+        ForeignKey("paragraphs.id", ondelete="CASCADE"),
+        init=False,
+    )
+    speaker_glossary_entry_id: Mapped[UUID | None] = mapped_column(
+        SA_UUID(as_uuid=True),
+        ForeignKey("glossary_entries.id", ondelete="SET NULL"),
+        default=None,
+    )
+    addressee_glossary_entry_id: Mapped[UUID | None] = mapped_column(
+        SA_UUID(as_uuid=True),
+        ForeignKey("glossary_entries.id", ondelete="SET NULL"),
+        default=None,
+    )
+    confidence: Mapped[str | None] = mapped_column(String(16), default=None)
+    mixed: Mapped[bool] = mapped_column(Boolean, default=False)
+    id: Mapped[UUID] = mapped_column(
+        SA_UUID(as_uuid=True), primary_key=True, default=uuid4, init=False
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), init=False
     )

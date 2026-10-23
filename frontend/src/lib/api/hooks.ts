@@ -10,6 +10,7 @@ import {
   api,
   type BookDetail,
   type BookSummary,
+  type DialogueLinesResponse,
   type GlossaryEntryPatchBody,
   type GlossaryExtractionEstimate,
   type GlossaryExtractionStartResponse,
@@ -47,6 +48,8 @@ export const bookKeys = {
   glossaryImportSources: (id: string) => [...bookKeys.all, "glossary-import-sources", id] as const,
   workingVoices: (id: string) => [...bookKeys.all, "working-voices", id] as const,
   workingSpeakers: (id: string) => [...bookKeys.all, "working-speakers", id] as const,
+  dialogueLines: (id: string, speakerId: string | null) =>
+    [...bookKeys.all, "dialogue-lines", id, speakerId ?? "none"] as const,
   translation: (id: string) => [...bookKeys.all, "translation", id] as const,
   translationTerms: (id: string) => [...bookKeys.all, "translation-terms", id] as const,
   translationEstimate: (id: string, chapterIds: readonly string[] | null) =>
@@ -335,6 +338,18 @@ export function useWorkingSpeakers(
     queryFn: () => api.getWorkingSpeakers(bookId),
     enabled: opts.enabled,
     refetchInterval: opts.refetchIntervalMs === false ? false : opts.refetchIntervalMs,
+  });
+}
+
+export function useDialogueLines(
+  bookId: string,
+  speakerId: string | null,
+  enabled: boolean,
+): UseQueryResult<DialogueLinesResponse, Error> {
+  return useQuery({
+    queryKey: bookKeys.dialogueLines(bookId, speakerId),
+    queryFn: () => api.getDialogueLines(bookId, speakerId),
+    enabled,
   });
 }
 

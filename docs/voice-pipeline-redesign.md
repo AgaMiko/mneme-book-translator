@@ -1,6 +1,6 @@
 # Voice pipeline redesign: collect all lines, then one profile call per character
 
-Status: plan, not started.
+Status: steps 1 (line finder) and 2 (attribution) built; step 3 next.
 
 ## Goal
 
@@ -52,11 +52,13 @@ Per numbered line:
 
 - `line` (L-number)
 - `kind`: `speech` | `thought` | `not_dialogue` (titles, quoted phrases, signs)
-- `speaker_glossary_entry_id` + `speaker_canonical_name`, or `unknown`
-- `addressee_glossary_entry_id` + name, or empty when unclear or addressing a group
+- `speaker_code` + `speaker_name`, or null when unknown. Characters are listed as short codes (`C1…Cn`) instead of UUIDs, to keep output small; the code and name are cross-checked.
+- `addressee_code` + `addressee_name`, or null when unclear or addressing a group
 - `confidence`: `clear` | `inferred` (no speech tag, worked out from turn order)
 
-No verbatim quote is needed, because the code already has the text. The ID/name cross-check stays.
+No verbatim quote is needed, because the code already has the text. The code/name cross-check stays. A line the model leaves out, or a chunk whose output can't be parsed, is stored with kind `unknown`. The old cross-window notepad is no longer used; the context paragraphs carry their stored attributions instead (`[Mira → Stein] – …`).
+
+First trial (one dense chunk of Zaplataczka, 69 lines, gpt-6.1-sol): all 69 lines returned and matched, $0.05, 38 s. Estimate for the whole book: 48 calls, about $1.50.
 
 ### Storage
 

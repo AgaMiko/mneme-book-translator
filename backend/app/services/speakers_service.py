@@ -1,32 +1,28 @@
-"""Speaker-identification service (Pass 1).
+"""Speaker-attribution service (Pass 1).
 
-Runs before voice extraction. Persists, per manuscript window, which
-glossary characters have at least one quoted speaking line. Output is
-consumed downstream by Pass 2 (voice extraction) and translation.
+Runs before voice extraction. Finds every dialogue line of the book
+(``dialogue_lines``), cuts the chapters into chunks (``speaker_chunks``)
+and asks the model, chunk by chunk, who says each numbered line and to
+whom. Every line is stored in ``dialogue_lines``. When the run completes,
+``window_speakers`` is rebuilt from the lines, so voice extraction and
+translation, which still read speakers per voice-extraction window, keep
+working.
 
-Pipeline mirror
----------------
-Function names and lifecycle states mirror ``voice_service`` so the
-two stages feel symmetric in code and in the UI:
-``extract_book_speakers`` runs the per-window loop,
-``apply_speakers_delta`` validates and persists,
-``_clear_speakers_progress_fields``/``_finalize_speakers_cancelled``/
-``reconcile_stale_speakers_runs_on_startup`` handle the same lifecycle
-transitions voice does.
-
-Voice extraction internals are NOT touched by this module. The output
-table is consumed downstream; the voice extractor's behavior is
-unchanged.
+Lifecycle (cancel, resume, fail, stale reconciliation) mirrors
+``voice_service``. The book's ``speakers_extraction_windows_*`` columns
+count chunks.
 """
 
 from __future__ import annotations
 
+from collections import Counter, defaultdict
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from uuid import UUID
 
 from langfuse import propagate_attributes
-from pydantic import TypeAdapter
 from sqlalchemy import delete, func, select, update
+from sqlalchemy.orm import aliased, selectinload
 
 from app.constants.voice_extraction import (
     VOICE_EXTRACTION_OVERLAP_WORDS,
@@ -34,40 +30,46 @@ from app.constants.voice_extraction import (
 )
 from app.core.db import get_sessionmaker, rowcount
 from app.core.logging import get_logger
-from app.generation.chains.identify_speakers_chain import identify_speakers_window
+from app.generation.chains.identify_speakers_chain import identify_speakers_chunk
 from app.generation.client import GenerationDisabledError
 from app.generation.prompt_manager.models.identify_speakers_model import (
     GlossaryCharacterRef,
-    SpeakerNote,
-    SpeakersInWindow,
 )
 from app.generation.usage import counting
-from app.models.book import Book
+from app.models.book import Book, Chapter, Paragraph
 from app.models.glossary import INACTIVE_STATUSES, GlossaryEntry
-from app.models.speakers import SpeakerNotepad, WindowSpeaker
+from app.models.speakers import DialogueLine, SpeakerNotepad, WindowSpeaker
 from app.schemas.speakers import (
+    AddresseeCountOut,
     CharacterSpeakerMapOut,
-    SpeakerWindowOut,
+    DialogueLineOut,
+    DialogueLinesResponse,
     WorkingSpeakersResponse,
 )
 from app.services import speakers_validation
-from app.services.cost_guard import linear, save_state, start_guard
-from app.services.glossary_service import (
-    _load_book_plaintext,
-    load_working_glossary_for_latest_run,
-)
-from app.services.glossary_service import (
-    make_windows as glossary_make_windows,
-)
+from app.services.cost_guard import save_state, start_guard
+from app.services.dialogue_lines import LineCandidate, find_dialogue_lines
+from app.services.fragmenter import ChapterInput, ParagraphInput, count_words
+from app.services.glossary_extraction_estimate import glossary_window_count
+from app.services.glossary_service import load_working_glossary_for_latest_run
+from app.services.speaker_chunks import Chunk, plan_chunks, render_chunk, windows_for_span
 from app.services.stages import glossary_ready
 from app.services.voice_extraction_estimate import estimate_voice_extraction
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from sqlalchemy.ext.asyncio import AsyncSession
 
     from app.core.config import Settings
 
 log = get_logger(__name__)
+
+# Words of evidence kept on a derived ``window_speakers`` row.
+_EVIDENCE_WORDS = 15
+# Expected cost of a chunk grows with its text and its number of lines;
+# one line weighs about as much as this many words of text.
+_LINE_WEIGHT_WORDS = 25
 
 
 # ─── Status helpers ────────────────────────────────────────
@@ -136,6 +138,7 @@ async def reset_book_speakers_data(
     """Clear all Pass 1 state for a book — table rows + status fields."""
     await session.execute(delete(SpeakerNotepad).where(SpeakerNotepad.book_id == book.id))
     await session.execute(delete(WindowSpeaker).where(WindowSpeaker.book_id == book.id))
+    await session.execute(delete(DialogueLine).where(DialogueLine.book_id == book.id))
     book.speakers_extraction_status = "idle"
     book.speakers_extraction_cancel_requested = False
     book.speakers_extraction_windows_total = None
@@ -154,10 +157,8 @@ async def can_run_speakers_extraction(
 ) -> tuple[bool, str | None]:
     """Returns (True, None) if Pass 1 can run; otherwise (False, reason).
 
-    Same gates as voice: glossary completed AND at least one character
-    entry. Voice extraction is gated on speakers downstream; the
-    glossary check stays here too because Pass 1 needs the character
-    list as its closed candidate set.
+    Same gates as voice: glossary usable AND at least one character
+    entry. The character list is Pass 1's closed set of speakers.
     """
     book = await session.get(Book, book_id)
     if book is None:
@@ -186,15 +187,14 @@ async def can_continue_speakers_extraction(
     *,
     book_id: UUID,
 ) -> bool:
-    """True when a prior run can resume: same window geometry and unfinished windows."""
+    """True when a prior run can resume: same chunk plan and unfinished chunks."""
     book = await session.get(Book, book_id)
     if book is None or book.speakers_extraction_status == "running":
         return False
-    manuscript = await _load_book_plaintext(session, book_id)
-    wins = make_windows(manuscript) if manuscript else []
-    if not wins:
+    plan = await plan_book(session, book_id=book_id)
+    total = len(plan.chunks)
+    if total == 0:
         return False
-    total = len(wins)
     if (
         book.speakers_extraction_windows_total is not None
         and book.speakers_extraction_windows_total != total
@@ -206,22 +206,84 @@ async def can_continue_speakers_extraction(
     return done < total
 
 
-# ─── Windowing ──────────────────────────────────────────
+# ─── Planning ───────────────────────────────────────────
 
 
-def make_windows(
-    text: str,
-    *,
-    window_words: int = VOICE_EXTRACTION_WINDOW_WORDS,
-    overlap_words: int = VOICE_EXTRACTION_OVERLAP_WORDS,
-) -> list[str]:
-    """Split a manuscript into overlapping windows.
+@dataclass(slots=True)
+class BookPlan:
+    """A book's dialogue lines and Pass 1 chunks, in book order."""
 
-    Pass 1 uses the same window size as voice extraction so window
-    numbers in ``WindowSpeaker`` directly index Pass 2's windows —
-    no alignment math.
+    lines: list[LineCandidate]
+    chunks: list[Chunk]
+    chapter_labels: dict[UUID, str]
+    chapter_positions: dict[UUID, int]
+    word_count: int
+
+    @property
+    def line_index(self) -> dict[UUID, int]:
+        return {ln.paragraph_id: i for i, ln in enumerate(self.lines)}
+
+    @property
+    def total_windows(self) -> int:
+        """Voice-extraction window count for this text."""
+        return glossary_window_count(
+            self.word_count,
+            window_words=VOICE_EXTRACTION_WINDOW_WORDS,
+            overlap_words=VOICE_EXTRACTION_OVERLAP_WORDS,
+        )
+
+
+def _chapter_label(chapter: Chapter, index: int) -> str:
+    # Some titles carry the chapter's epigraph on further lines.
+    title = next((ln.strip() for ln in (chapter.title or "").splitlines() if ln.strip()), "")
+    return f"chapter {index + 1}" + (f": {title[:80]}" if title else "")
+
+
+async def plan_book(session: AsyncSession, *, book_id: UUID) -> BookPlan:
+    """Load the book's paragraphs and plan lines and chunks (no LLM).
+
+    Only non-empty paragraphs count, as in ``_load_book_plaintext`` and the
+    fragmenter, so word offsets line up with windows and fragments.
     """
-    return glossary_make_windows(text, window_words=window_words, overlap_words=overlap_words)
+    book = (
+        await session.execute(
+            select(Book)
+            .where(Book.id == book_id)
+            .options(selectinload(Book.chapters).selectinload(Chapter.paragraphs))
+        )
+    ).scalar_one_or_none()
+    if book is None:
+        return BookPlan([], [], {}, {}, 0)
+    chapters: list[ChapterInput] = []
+    labels: dict[UUID, str] = {}
+    positions: dict[UUID, int] = {}
+    for index, chapter in enumerate(sorted(book.chapters, key=lambda c: c.position)):
+        paras = [
+            ParagraphInput(id=p.id, text=p.text)
+            for p in sorted(chapter.paragraphs, key=lambda p: p.position)
+            if (p.text or "").strip()
+        ]
+        chapters.append(ChapterInput(id=chapter.id, paragraphs=paras))
+        labels[chapter.id] = _chapter_label(chapter, index)
+        positions[chapter.id] = index + 1
+    lines = find_dialogue_lines(chapters)
+    words = sum(count_words(p.text.strip()) for c in chapters for p in c.paragraphs)
+    return BookPlan(lines, plan_chunks(chapters, lines), labels, positions, words)
+
+
+def _expected_cost(total_usd: float, chunks: list[Chunk]) -> Callable[[int], float]:
+    """Expected spend after ``k`` chunks; chunks without lines cost nothing."""
+    weights = [(c.word_count + _LINE_WEIGHT_WORDS * len(c.lines)) if c.lines else 0 for c in chunks]
+    total = sum(weights)
+    cumulative = [0]
+    for w in weights:
+        cumulative.append(cumulative[-1] + w)
+
+    def expected(k: int) -> float:
+        k = max(0, min(k, len(chunks)))
+        return total_usd * cumulative[k] / total if total else 0.0
+
+    return expected
 
 
 # ─── Loading helpers ───────────────────────────────────
@@ -232,99 +294,150 @@ async def load_glossary_characters_for_speakers(
     *,
     book_id: UUID,
 ) -> list[GlossaryCharacterRef]:
-    """Load all character glossary entries eligible for Pass 1.
-
-    Distinct from ``voice_service.load_glossary_characters`` — Pass 1
-    doesn't carry ``has_voice_profile`` (it's irrelevant to "did this
-    character speak in this window?").
-    """
+    """Glossary characters eligible as speakers, coded ``C1…Cn`` by name."""
     _, entries = await load_working_glossary_for_latest_run(session, book_id=book_id)
-    if not entries:
-        return []
-    out: list[GlossaryCharacterRef] = []
-    for e in entries:
-        if e.term_type != "character_name" or e.status in INACTIVE_STATUSES:
-            continue
-        out.append(
-            GlossaryCharacterRef(
-                glossary_entry_id=str(e.id),
-                canonical_name=e.canonical_form,
-                variants=list(e.variants or []),
-            )
+    chars = sorted(
+        (
+            e
+            for e in entries
+            if e.term_type == "character_name" and e.status not in INACTIVE_STATUSES
+        ),
+        key=lambda e: e.canonical_form.casefold(),
+    )
+    return [
+        GlossaryCharacterRef(
+            code=f"C{i}",
+            glossary_entry_id=str(e.id),
+            canonical_name=e.canonical_form,
+            variants=list(e.variants or []),
         )
+        for i, e in enumerate(chars, start=1)
+    ]
+
+
+async def _context_labels(
+    session: AsyncSession,
+    *,
+    book_id: UUID,
+    paragraph_ids: list[UUID],
+) -> dict[UUID, str]:
+    """Stored attributions of context paragraphs, as ``"Mira → Stein"``."""
+    if not paragraph_ids:
+        return {}
+    speaker = aliased(GlossaryEntry)
+    addressee = aliased(GlossaryEntry)
+    rows = (
+        await session.execute(
+            select(
+                DialogueLine.paragraph_id,
+                DialogueLine.kind,
+                speaker.canonical_form,
+                addressee.canonical_form,
+            )
+            .outerjoin(speaker, speaker.id == DialogueLine.speaker_glossary_entry_id)
+            .outerjoin(addressee, addressee.id == DialogueLine.addressee_glossary_entry_id)
+            .where(DialogueLine.book_id == book_id, DialogueLine.paragraph_id.in_(paragraph_ids))
+        )
+    ).all()
+    out: dict[UUID, str] = {}
+    for pid, kind, who, to in rows:
+        if kind == "not_dialogue":
+            out[pid] = "not dialogue"
+            continue
+        label = who or "unknown speaker"
+        if kind == "thought":
+            label += ", thought"
+        if to:
+            label += f" → {to}"
+        out[pid] = label
     return out
 
 
-async def load_previous_speakers_notepad(
+# ─── Persist ────────────────────────────────────────────
+
+
+async def store_chunk_lines(
     session: AsyncSession,
     *,
     book_id: UUID,
-) -> list[SpeakerNote]:
-    """Load Pass 1's notepad from the end of the previous window."""
-    row = await session.get(SpeakerNotepad, book_id)
-    if row is None or not row.notes:
-        return []
-    return TypeAdapter(list[SpeakerNote]).validate_python(list(row.notes))
-
-
-# ─── Apply / persist ────────────────────────────────────
-
-
-async def apply_speakers_delta(
-    session: AsyncSession,
-    *,
-    book_id: UUID,
-    delta: SpeakersInWindow,
-    window_number: int,
-    window_text: str,
-    glossary_name_by_id: dict[str, str],
+    chunk: Chunk,
+    line_by_number: dict[int, LineCandidate],
+    resolved: dict[int, speakers_validation.ResolvedLine],
+    line_index: dict[UUID, int],
 ) -> None:
-    """Persist a window's speakers + update the notepad.
+    """Replace the chunk's ``dialogue_lines`` rows. Caller commits.
 
-    Cross-checks BOTH the ID/name pairing AND that ``quoted_evidence``
-    actually appears in ``window_text`` before persistence; mismatches
-    are dropped and logged. Duplicate ``glossary_entry_id`` rows in one
-    window are collapsed to the first (unique constraint per window).
-    Idempotent on retry: existing rows for
-    ``(book_id, window_number)`` are deleted before insert, so this
-    window's speaker set is always authoritative on the latest call.
-
-    Caller commits the surrounding transaction.
+    Lines without a validated attribution are stored as ``unknown``.
+    Idempotent on retry.
     """
-    kept = speakers_validation.filter_speakers(
-        delta.speakers,
-        glossary_name_by_id=glossary_name_by_id,
-        window_text=window_text,
-    )
-
-    await session.execute(
-        delete(WindowSpeaker).where(
-            WindowSpeaker.book_id == book_id,
-            WindowSpeaker.window_number == window_number,
-        )
-    )
-    for s in kept:
-        row = WindowSpeaker(
-            window_number=window_number,
-            quoted_evidence=s.quoted_evidence,
-        )
-        row.book_id = book_id
-        row.glossary_entry_id = UUID(s.glossary_entry_id)
-        session.add(row)
-
-    notes_payload = [n.model_dump() for n in delta.notepad]
-    notepad = await session.get(SpeakerNotepad, book_id)
-    if notepad is None:
-        session.add(
-            SpeakerNotepad(
-                book_id=book_id,
-                notes=notes_payload,
-                last_window_number=window_number,
+    para_ids = [ln.paragraph_id for ln in line_by_number.values()]
+    if para_ids:
+        await session.execute(
+            delete(DialogueLine).where(
+                DialogueLine.book_id == book_id,
+                DialogueLine.paragraph_id.in_(para_ids),
             )
         )
-    else:
-        notepad.notes = notes_payload
-        notepad.last_window_number = window_number
+    for n, line in line_by_number.items():
+        r = resolved.get(n)
+        row = DialogueLine(
+            line_index=line_index[line.paragraph_id],
+            chunk_number=chunk.number,
+            word_offset=line.word_offset,
+            marker=line.marker,
+            speech_text=line.speech_text,
+            kind=r.kind if r is not None else "unknown",
+            speaker_glossary_entry_id=r.speaker_id if r is not None else None,
+            addressee_glossary_entry_id=r.addressee_id if r is not None else None,
+            confidence=r.confidence if r is not None else None,
+            mixed=r.mixed if r is not None else False,
+        )
+        row.book_id = book_id
+        row.paragraph_id = line.paragraph_id
+        session.add(row)
+
+
+async def rebuild_window_speakers(
+    session: AsyncSession,
+    *,
+    book_id: UUID,
+    total_windows: int,
+) -> int:
+    """Derive ``window_speakers`` from stored speech lines. Caller commits.
+
+    A character speaks in every voice-extraction window that overlaps one
+    of their speech lines. Returns the number of rows written.
+    """
+    await session.execute(delete(WindowSpeaker).where(WindowSpeaker.book_id == book_id))
+    rows = (
+        await session.execute(
+            select(DialogueLine)
+            .where(
+                DialogueLine.book_id == book_id,
+                DialogueLine.kind == "speech",
+                DialogueLine.speaker_glossary_entry_id.is_not(None),
+            )
+            .order_by(DialogueLine.line_index)
+        )
+    ).scalars()
+    seen: set[tuple[int, UUID]] = set()
+    for line in rows:
+        gid = line.speaker_glossary_entry_id
+        if gid is None:
+            continue
+        span = max(1, count_words(line.speech_text))
+        for n in windows_for_span(line.word_offset, span, total_windows=total_windows):
+            if (n, gid) in seen:
+                continue
+            seen.add((n, gid))
+            ws = WindowSpeaker(
+                window_number=n,
+                quoted_evidence=" ".join(line.speech_text.split()[:_EVIDENCE_WORDS]),
+            )
+            ws.book_id = book_id
+            ws.glossary_entry_id = gid
+            session.add(ws)
+    return len(seen)
 
 
 # ─── Query helpers (downstream consumers) ───────────────
@@ -386,49 +499,179 @@ async def build_working_speakers_response(
     *,
     book_id: UUID,
 ) -> WorkingSpeakersResponse:
-    """Read-only speaker map grouped by character for the review UI."""
-    stmt = (
-        select(WindowSpeaker, GlossaryEntry)
-        .join(GlossaryEntry, GlossaryEntry.id == WindowSpeaker.glossary_entry_id)
-        .where(WindowSpeaker.book_id == book_id)
-        .order_by(GlossaryEntry.canonical_form.asc(), WindowSpeaker.window_number.asc())
+    """Per-character line counts for the review UI, from ``dialogue_lines``.
+
+    ``windows`` per character is computed from the lines with the same
+    geometry as ``rebuild_window_speakers``, so it is available while a
+    run is still going.
+    """
+    rows = (
+        (
+            await session.execute(
+                select(DialogueLine)
+                .where(DialogueLine.book_id == book_id)
+                .order_by(DialogueLine.line_index)
+            )
+        )
+        .scalars()
+        .all()
     )
-    rows = (await session.execute(stmt)).all()
     if not rows:
         return WorkingSpeakersResponse()
 
-    by_character: dict[UUID, CharacterSpeakerMapOut] = {}
-    windows_seen: set[int] = set()
-    for ws, ge in rows:
-        windows_seen.add(ws.window_number)
-        entry = by_character.get(ge.id)
-        appearance = SpeakerWindowOut(
-            window_number=ws.window_number,
-            quoted_evidence=ws.quoted_evidence,
-        )
-        if entry is None:
-            by_character[ge.id] = CharacterSpeakerMapOut(
-                glossary_entry_id=ge.id,
-                canonical_name=ge.canonical_form,
-                windows=[ws.window_number],
-                appearances=[appearance],
-            )
-        else:
-            entry.windows.append(ws.window_number)
-            entry.appearances.append(appearance)
-
-    entries = sorted(
-        by_character.values(),
-        key=lambda e: (-len(e.windows), e.canonical_name.casefold()),
+    chapter_rows = await session.execute(
+        select(DialogueLine.paragraph_id, Chapter.position)
+        .join(Paragraph, Paragraph.id == DialogueLine.paragraph_id)
+        .join(Chapter, Chapter.id == Paragraph.chapter_id)
+        .where(DialogueLine.book_id == book_id)
     )
+    chapter_of = {pid: pos for pid, pos in chapter_rows.all()}
+    ids = {
+        gid
+        for r in rows
+        for gid in (r.speaker_glossary_entry_id, r.addressee_glossary_entry_id)
+        if gid is not None
+    }
+    name_rows = await session.execute(
+        select(GlossaryEntry.id, GlossaryEntry.canonical_form).where(GlossaryEntry.id.in_(ids))
+    )
+    names = {gid: name for gid, name in name_rows.all()}
+    book = await session.get(Book, book_id)
+    word_count = book.word_count if book is not None else 0
+    total_windows = glossary_window_count(
+        word_count,
+        window_words=VOICE_EXTRACTION_WINDOW_WORDS,
+        overlap_words=VOICE_EXTRACTION_OVERLAP_WORDS,
+    )
+
+    speech: dict[UUID, int] = Counter()
+    thoughts: dict[UUID, int] = Counter()
+    words: dict[UUID, int] = Counter()
+    chapters: dict[UUID, set[int]] = defaultdict(set)
+    windows: dict[UUID, set[int]] = defaultdict(set)
+    addressees: dict[UUID, Counter[UUID]] = defaultdict(Counter)
+    unknown = not_dialogue = 0
+    for r in rows:
+        gid = r.speaker_glossary_entry_id
+        if r.kind == "not_dialogue":
+            not_dialogue += 1
+            continue
+        if gid is None:
+            unknown += 1
+            continue
+        if r.kind == "thought":
+            thoughts[gid] += 1
+            continue
+        speech[gid] += 1
+        n_words = count_words(r.speech_text)
+        words[gid] += n_words
+        chapters[gid].add(chapter_of.get(r.paragraph_id, -1) + 1)
+        windows[gid].update(
+            windows_for_span(r.word_offset, max(1, n_words), total_windows=total_windows)
+        )
+        if r.addressee_glossary_entry_id is not None:
+            addressees[gid][r.addressee_glossary_entry_id] += 1
+
+    entries = [
+        CharacterSpeakerMapOut(
+            glossary_entry_id=gid,
+            canonical_name=names.get(gid, "Unknown character"),
+            line_count=speech[gid],
+            thought_count=thoughts[gid],
+            speech_words=words[gid],
+            chapters=sorted(chapters[gid] - {0}),
+            windows=sorted(windows[gid]),
+            addressees=[
+                AddresseeCountOut(
+                    glossary_entry_id=aid,
+                    canonical_name=names.get(aid, "Unknown character"),
+                    line_count=n,
+                )
+                for aid, n in addressees[gid].most_common()
+            ],
+        )
+        for gid in set(speech) | set(thoughts)
+    ]
+    entries.sort(key=lambda e: (-e.line_count, e.canonical_name.casefold()))
     return WorkingSpeakersResponse(
         entries=entries,
-        windows_mapped=len(windows_seen),
-        edges_total=len(rows),
+        lines_total=len(rows),
+        lines_attributed=sum(speech.values()) + sum(thoughts.values()),
+        lines_unknown=unknown,
+        lines_not_dialogue=not_dialogue,
     )
 
 
-# ─── The extraction loop ────────────────────────────────
+async def list_dialogue_lines(
+    session: AsyncSession,
+    *,
+    book_id: UUID,
+    speaker: UUID | None,
+    limit: int = 500,
+) -> DialogueLinesResponse:
+    """Lines said by ``speaker`` (speech and thoughts), or with no speaker when None.
+
+    "No speaker" covers speech, thought and unknown lines without a
+    glossary speaker; ``not_dialogue`` lines are left out.
+    """
+    speaker_e = aliased(GlossaryEntry)
+    addressee_e = aliased(GlossaryEntry)
+    stmt = (
+        select(
+            DialogueLine,
+            Paragraph.text,
+            Chapter.position,
+            Chapter.title,
+            speaker_e.canonical_form,
+            addressee_e.canonical_form,
+        )
+        .join(Paragraph, Paragraph.id == DialogueLine.paragraph_id)
+        .join(Chapter, Chapter.id == Paragraph.chapter_id)
+        .outerjoin(speaker_e, speaker_e.id == DialogueLine.speaker_glossary_entry_id)
+        .outerjoin(addressee_e, addressee_e.id == DialogueLine.addressee_glossary_entry_id)
+        .where(DialogueLine.book_id == book_id)
+        .order_by(DialogueLine.line_index)
+    )
+    if speaker is None:
+        stmt = stmt.where(
+            DialogueLine.speaker_glossary_entry_id.is_(None),
+            DialogueLine.kind != "not_dialogue",
+        )
+    else:
+        stmt = stmt.where(DialogueLine.speaker_glossary_entry_id == speaker)
+    rows = (await session.execute(stmt.limit(limit + 1))).all()
+    lines = [
+        DialogueLineOut(
+            paragraph_id=dl.paragraph_id,
+            line_index=dl.line_index,
+            chapter_number=pos + 1,
+            chapter_title=title,
+            text=text,
+            kind=dl.kind,
+            speaker_name=who,
+            addressee_name=to,
+            confidence=dl.confidence,
+        )
+        for dl, text, pos, title, who, to in rows[:limit]
+    ]
+    return DialogueLinesResponse(lines=lines, truncated=len(rows) > limit)
+
+
+# ─── The attribution loop ───────────────────────────────
+
+
+async def _finish_speakers(book_id: UUID, *, total_windows: int) -> None:
+    session_local = get_sessionmaker()
+    async with session_local() as session:
+        n = await rebuild_window_speakers(session, book_id=book_id, total_windows=total_windows)
+        b = await session.get(Book, book_id)
+        if b is not None:
+            b.speakers_extraction_status = "completed"
+            b.speakers_extraction_last_error = None
+            b.speakers_extraction_cancel_requested = False
+            _clear_speakers_progress_fields(b)
+        await session.commit()
+    log.info("speakers_extraction_completed", book_id=str(book_id), window_edges=n)
 
 
 async def extract_book_speakers(
@@ -438,15 +681,12 @@ async def extract_book_speakers(
     continue_extraction: bool = False,
     cost_limit: bool = True,
 ) -> None:
-    """Background task: run Pass 1 across every window of a book.
+    """Background task: attribute every dialogue line, chunk by chunk.
 
-    Pauses like Stop when the real cost goes more than
-    ``COST_PAUSE_THRESHOLD`` over the estimate for the windows done so far,
-    unless ``cost_limit`` is off (see ``app.services.cost_guard``).
-
-    Mirrors ``voice_service.extract_book_voices`` for lifecycle
-    handling (cancel, resume, fail, stale reconciliation) so the two
-    stages feel identical to operate.
+    Chunks without dialogue lines are skipped without a call. Pauses like
+    Stop when the real cost goes more than ``COST_PAUSE_THRESHOLD`` over
+    the estimate for the chunks done so far, unless ``cost_limit`` is off
+    (see ``app.services.cost_guard``).
     """
     if not settings.GEMINI_API_KEY:
         session_local = get_sessionmaker()
@@ -464,15 +704,17 @@ async def extract_book_speakers(
     session_local = get_sessionmaker()
     try:
         async with session_local() as session:
-            plaintext = await _load_book_plaintext(session, book_id)
             book = await session.get(Book, book_id)
             if book is None:
                 log.warning("speakers_book_missing", book_id=str(book_id))
                 return
-            win_list = make_windows(plaintext)
-            total = len(win_list)
+            plan = await plan_book(session, book_id=book_id)
+            total = len(plan.chunks)
             if not continue_extraction:
-                start_window = 1
+                start_chunk = 1
+                await session.execute(delete(DialogueLine).where(DialogueLine.book_id == book_id))
+                await session.execute(delete(WindowSpeaker).where(WindowSpeaker.book_id == book_id))
+                await session.commit()
             else:
                 if (
                     book.speakers_extraction_windows_total is not None
@@ -480,64 +722,60 @@ async def extract_book_speakers(
                 ):
                     book.speakers_extraction_status = "failed"
                     book.speakers_extraction_last_error = (
-                        "Manuscript windowing changed; cannot continue. Start a new run."
+                        "Manuscript changed; cannot continue. Start a new run."
                     )
                     await session.commit()
                     return
-                done = book.speakers_extraction_windows_completed or 0
-                start_window = done + 1
+                start_chunk = (book.speakers_extraction_windows_completed or 0) + 1
 
-        if total == 0:
-            async with session_local() as s2:
-                b = await s2.get(Book, book_id)
-                if b is not None:
-                    b.speakers_extraction_status = "completed"
-                    b.speakers_extraction_last_error = None
-                    b.speakers_extraction_cancel_requested = False
-                    _clear_speakers_progress_fields(b)
-                await s2.commit()
-            log.info("speakers_extraction_empty_manuscript", book_id=str(book_id))
-            return
-
-        if start_window > total:
-            async with session_local() as s3:
-                b = await s3.get(Book, book_id)
-                if b is not None:
-                    b.speakers_extraction_status = "completed"
-                    b.speakers_extraction_last_error = None
-                    b.speakers_extraction_cancel_requested = False
-                    _clear_speakers_progress_fields(b)
-                await s3.commit()
+        if total == 0 or start_chunk > total:
+            await _finish_speakers(book_id, total_windows=plan.total_windows)
             return
 
         async with session_local() as s4:
             b0 = await s4.get(Book, book_id)
             if b0 is None:
                 raise RuntimeError("book disappeared during speakers extraction")
+            characters = await load_glossary_characters_for_speakers(s4, book_id=book_id)
+            if not characters:
+                b0.speakers_extraction_status = "failed"
+                b0.speakers_extraction_last_error = (
+                    "No character glossary entries available for this book."
+                )
+                b0.speakers_extraction_cancel_requested = False
+                await s4.commit()
+                return
             b0.speakers_extraction_cancel_requested = False
             b0.speakers_extraction_windows_total = total
-            b0.speakers_extraction_windows_completed = start_window - 1
+            b0.speakers_extraction_windows_completed = start_chunk - 1
             pass1 = estimate_voice_extraction(
-                word_count=b0.word_count, character_count=0, settings=settings
+                word_count=plan.word_count,
+                character_count=len(characters),
+                settings=settings,
+                speaker_chunks=sum(1 for c in plan.chunks if c.lines),
+                dialogue_lines=len(plan.lines),
             ).pass1
             guard = start_guard(
                 b0,
                 "speakers",
                 settings=settings,
-                expected=linear(pass1.estimated_cost_usd, total),
+                expected=_expected_cost(pass1.estimated_cost_usd, plan.chunks),
                 units_total=total,
-                start_units=start_window - 1,
+                start_units=start_chunk - 1,
                 limit=cost_limit,
+                unit_label="part",
             )
+            source_language = b0.source_language
             await s4.commit()
 
+        by_code = {c.code: (UUID(c.glossary_entry_id), c.canonical_name) for c in characters}
+        line_index = plan.line_index
         cancelled = False
         with (
             propagate_attributes(session_id=str(book_id), trace_name="speakers_identification"),
             counting(guard.spend),
         ):
-            for n in range(start_window, total + 1):
-                wtext = win_list[n - 1]
+            for chunk in plan.chunks[start_chunk - 1 :]:
                 async with session_local() as session:
                     book = await session.get(Book, book_id)
                     if book is None:
@@ -546,40 +784,44 @@ async def extract_book_speakers(
                         await _finalize_speakers_cancelled(session, book_id=book_id)
                         cancelled = True
                         break
-                    characters = await load_glossary_characters_for_speakers(
-                        session, book_id=book_id
-                    )
-                    if not characters:
-                        msg = "No character glossary entries available for this book."
-                        book.speakers_extraction_status = "failed"
-                        book.speakers_extraction_last_error = msg
-                        book.speakers_extraction_cancel_requested = False
-                        await session.commit()
-                        return
-                    previous = await load_previous_speakers_notepad(session, book_id=book_id)
-                    delta = await identify_speakers_window(
-                        window_text=wtext,
-                        glossary_characters=characters,
-                        previous_notepad=previous,
-                        window_number=n,
-                        total_windows=total,
-                        source_language=book.source_language,
-                        settings=settings,
-                    )
-                    glossary_name_by_id = {
-                        c.glossary_entry_id: c.canonical_name for c in characters
-                    }
-                    await apply_speakers_delta(
-                        session,
-                        book_id=book_id,
-                        delta=delta,
-                        window_number=n,
-                        window_text=wtext,
-                        glossary_name_by_id=glossary_name_by_id,
-                    )
-                    book.speakers_extraction_windows_completed = n
-                    guard.units_done = n
-                    reason = guard.overrun() if n < total else None
+                    if chunk.lines:
+                        labels = await _context_labels(
+                            session,
+                            book_id=book_id,
+                            paragraph_ids=[p.id for p in chunk.context],
+                        )
+                        text, context, by_number = render_chunk(chunk, context_labels=labels)
+                        result = await identify_speakers_chunk(
+                            chunk_text=text,
+                            context=context,
+                            chapter_label=plan.chapter_labels.get(chunk.chapter_id, "chapter"),
+                            glossary_characters=characters,
+                            chunk_number=chunk.number,
+                            total_chunks=total,
+                            source_language=source_language,
+                            settings=settings,
+                        )
+                        resolved = speakers_validation.resolve_attributions(
+                            result.lines, line_count=len(by_number), characters=by_code
+                        )
+                        if len(resolved) < len(by_number):
+                            log.warning(
+                                "speakers_lines_unattributed",
+                                book_id=str(book_id),
+                                chunk=chunk.number,
+                                missing=len(by_number) - len(resolved),
+                            )
+                        await store_chunk_lines(
+                            session,
+                            book_id=book_id,
+                            chunk=chunk,
+                            line_by_number=by_number,
+                            resolved=resolved,
+                            line_index=line_index,
+                        )
+                    book.speakers_extraction_windows_completed = chunk.number
+                    guard.units_done = chunk.number
+                    reason = guard.overrun() if chunk.number < total else None
                     save_state(book, guard)
                     if reason:
                         book.speakers_extraction_cancel_requested = True
@@ -587,26 +829,22 @@ async def extract_book_speakers(
                             "speakers_extraction_cost_pause", book_id=str(book_id), reason=reason
                         )
                     await session.commit()
-                if n % 5 == 0 or n == total:
+                if chunk.number % 5 == 0 or chunk.number == total:
                     log.info(
                         "speakers_extraction_progress",
                         book_id=str(book_id),
-                        window=n,
-                        total_windows=total,
+                        chunk=chunk.number,
+                        total_chunks=total,
                     )
 
         if cancelled:
             return
-
-        async with session_local() as s6:
-            b3 = await s6.get(Book, book_id)
-            if b3 is not None:
-                b3.speakers_extraction_status = "completed"
-                b3.speakers_extraction_last_error = None
-                b3.speakers_extraction_cancel_requested = False
-                _clear_speakers_progress_fields(b3)
-            await s6.commit()
-        log.info("speakers_extraction_completed", book_id=str(book_id))
+        async with session_local() as s5:
+            b5 = await s5.get(Book, book_id)
+            if b5 is not None:
+                save_state(b5, guard)
+            await s5.commit()
+        await _finish_speakers(book_id, total_windows=plan.total_windows)
 
     except GenerationDisabledError:
         async with session_local() as session:

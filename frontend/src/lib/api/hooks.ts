@@ -16,8 +16,12 @@ import {
   type GlossaryExtractionStopResponse,
   type GlossaryImportResult,
   type GlossaryImportSource,
+  type GlossaryReviewEstimate,
   type GlossaryReviewResult,
   type GlossaryWorkingEntry,
+  type MarkableStage,
+  type ModelCatalog,
+  type RunOptions,
   type StartTranslationBody,
   type TranslationEstimate,
   type TranslationRun,
@@ -97,10 +101,13 @@ export function useBook(id: string | null): UseQueryResult<BookDetail, Error> {
 export function useGlossaryExtractionEstimate(
   id: string | null,
   enabled: boolean,
+  model?: string,
 ): UseQueryResult<GlossaryExtractionEstimate, Error> {
   return useQuery({
-    queryKey: id ? bookKeys.glossaryEstimate(id) : ["books", "glossary-estimate", "none"],
-    queryFn: () => api.getGlossaryExtractionEstimate(id!),
+    queryKey: id
+      ? [...bookKeys.glossaryEstimate(id), model ?? null]
+      : ["books", "glossary-estimate", "none"],
+    queryFn: () => api.getGlossaryExtractionEstimate(id!, model),
     enabled: id !== null && enabled,
   });
 }
@@ -108,10 +115,13 @@ export function useGlossaryExtractionEstimate(
 export function useVoiceExtractionEstimate(
   id: string | null,
   enabled: boolean,
+  models?: { speakers?: string; voices?: string },
 ): UseQueryResult<VoiceExtractionEstimate, Error> {
   return useQuery({
-    queryKey: id ? bookKeys.voiceEstimate(id) : ["books", "voice-estimate", "none"],
-    queryFn: () => api.getVoiceExtractionEstimate(id!),
+    queryKey: id
+      ? [...bookKeys.voiceEstimate(id), models?.speakers ?? null, models?.voices ?? null]
+      : ["books", "voice-estimate", "none"],
+    queryFn: () => api.getVoiceExtractionEstimate(id!, models?.speakers, models?.voices),
     enabled: id !== null && enabled,
   });
 }
@@ -128,13 +138,52 @@ export function useWorkingGlossary(
   });
 }
 
+/** The model picked for one run; nothing means the configured default. */
+export type ModelChoice = string | void;
+
+/** Models per pipeline step, with the recommended one. Rarely changes. */
+export function useModelCatalog(): UseQueryResult<ModelCatalog, Error> {
+  return useQuery({
+    queryKey: ["models"],
+    queryFn: api.listModels,
+    staleTime: Infinity,
+  });
+}
+
+/** Tokens and cost of the LLM review of the pending glossary terms. */
+export function useGlossaryReviewEstimate(
+  bookId: string,
+  model: string | undefined,
+  enabled: boolean,
+): UseQueryResult<GlossaryReviewEstimate, Error> {
+  return useQuery({
+    queryKey: [...bookKeys.workingGlossary(bookId), "review-estimate", model ?? null],
+    queryFn: () => api.getGlossaryReviewEstimate(bookId, model),
+    enabled,
+  });
+}
+
+/** Mark a stage as finished by hand, or unmark it. */
+export function useSetStageFinished(
+  bookId: string,
+): UseMutationResult<BookDetail, Error, { stage: MarkableStage; finished: boolean }> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ stage, finished }) => api.setStageFinished(bookId, stage, finished),
+    onSuccess: (book) => {
+      qc.setQueryData(bookKeys.detail(bookId), book);
+      void qc.invalidateQueries({ queryKey: bookKeys.lists() });
+    },
+  });
+}
+
 /** Let the LLM decide the pending glossary terms; the author checks them afterwards. */
 export function useReviewPendingGlossaryTerms(
   bookId: string,
-): UseMutationResult<GlossaryReviewResult, Error, void> {
+): UseMutationResult<GlossaryReviewResult, Error, ModelChoice> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.reviewPendingGlossaryTerms(bookId),
+    mutationFn: (model) => api.reviewPendingGlossaryTerms(bookId, model || undefined),
     // Returned so callers' onSuccess runs once the glossary has refetched.
     onSuccess: () =>
       Promise.all([
@@ -196,10 +245,10 @@ export function useDeleteBook(): UseMutationResult<void, Error, string> {
 
 export function useStartGlossaryExtraction(
   bookId: string,
-): UseMutationResult<GlossaryExtractionStartResponse, Error, void> {
+): UseMutationResult<GlossaryExtractionStartResponse, Error, RunOptions | void> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.startGlossaryExtraction(bookId),
+    mutationFn: (opts) => api.startGlossaryExtraction(bookId, opts || undefined),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
       void qc.invalidateQueries({ queryKey: bookKeys.lists() });
@@ -210,10 +259,10 @@ export function useStartGlossaryExtraction(
 
 export function useContinueGlossaryExtraction(
   bookId: string,
-): UseMutationResult<GlossaryExtractionStartResponse, Error, void> {
+): UseMutationResult<GlossaryExtractionStartResponse, Error, RunOptions | void> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.continueGlossaryExtraction(bookId),
+    mutationFn: (opts) => api.continueGlossaryExtraction(bookId, opts || undefined),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
       void qc.invalidateQueries({ queryKey: bookKeys.lists() });
@@ -225,10 +274,10 @@ export function useContinueGlossaryExtraction(
 /** Read the manuscript again and add missing terms to the current glossary. */
 export function useExpandGlossary(
   bookId: string,
-): UseMutationResult<GlossaryExtractionStartResponse, Error, void> {
+): UseMutationResult<GlossaryExtractionStartResponse, Error, RunOptions | void> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.expandGlossary(bookId),
+    mutationFn: (opts) => api.expandGlossary(bookId, opts || undefined),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
       void qc.invalidateQueries({ queryKey: bookKeys.lists() });
@@ -315,10 +364,10 @@ export function usePatchVoiceWorkingProfile(
 
 export function useStartVoiceExtraction(
   bookId: string,
-): UseMutationResult<GlossaryExtractionStartResponse, Error, void> {
+): UseMutationResult<GlossaryExtractionStartResponse, Error, RunOptions | void> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.startVoiceExtraction(bookId),
+    mutationFn: (opts) => api.startVoiceExtraction(bookId, opts || undefined),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
       void qc.invalidateQueries({ queryKey: bookKeys.lists() });
@@ -329,10 +378,10 @@ export function useStartVoiceExtraction(
 
 export function useContinueVoiceExtraction(
   bookId: string,
-): UseMutationResult<GlossaryExtractionStartResponse, Error, void> {
+): UseMutationResult<GlossaryExtractionStartResponse, Error, RunOptions | void> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.continueVoiceExtraction(bookId),
+    mutationFn: (opts) => api.continueVoiceExtraction(bookId, opts || undefined),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
       void qc.invalidateQueries({ queryKey: bookKeys.lists() });
@@ -343,10 +392,10 @@ export function useContinueVoiceExtraction(
 
 export function useRegenerateFlaggedVoices(
   bookId: string,
-): UseMutationResult<GlossaryExtractionStartResponse, Error, void> {
+): UseMutationResult<GlossaryExtractionStartResponse, Error, RunOptions | void> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.regenerateFlaggedVoices(bookId),
+    mutationFn: (opts) => api.regenerateFlaggedVoices(bookId, opts || undefined),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
       void qc.invalidateQueries({ queryKey: bookKeys.lists() });
@@ -383,10 +432,10 @@ export function useResetVoiceExtraction(bookId: string): UseMutationResult<void,
 
 export function useStartSpeakersExtraction(
   bookId: string,
-): UseMutationResult<GlossaryExtractionStartResponse, Error, void> {
+): UseMutationResult<GlossaryExtractionStartResponse, Error, RunOptions | void> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.startSpeakersExtraction(bookId),
+    mutationFn: (opts) => api.startSpeakersExtraction(bookId, opts || undefined),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
       void qc.invalidateQueries({ queryKey: bookKeys.lists() });
@@ -397,10 +446,10 @@ export function useStartSpeakersExtraction(
 
 export function useContinueSpeakersExtraction(
   bookId: string,
-): UseMutationResult<GlossaryExtractionStartResponse, Error, void> {
+): UseMutationResult<GlossaryExtractionStartResponse, Error, RunOptions | void> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.continueSpeakersExtraction(bookId),
+    mutationFn: (opts) => api.continueSpeakersExtraction(bookId, opts || undefined),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
       void qc.invalidateQueries({ queryKey: bookKeys.lists() });
@@ -451,10 +500,11 @@ export function useTranslation(bookId: string): UseQueryResult<TranslationView, 
 export function useTranslationEstimate(
   bookId: string,
   chapterIds: string[] | null,
+  model?: string,
 ): UseQueryResult<TranslationEstimate, Error> {
   return useQuery({
-    queryKey: bookKeys.translationEstimate(bookId, chapterIds),
-    queryFn: () => api.getTranslationEstimate(bookId, chapterIds),
+    queryKey: [...bookKeys.translationEstimate(bookId, chapterIds), model ?? null],
+    queryFn: () => api.getTranslationEstimate(bookId, chapterIds, model),
   });
 }
 
@@ -472,10 +522,10 @@ export function useStartTranslation(
 
 export function useContinueTranslation(
   bookId: string,
-): UseMutationResult<TranslationRun, Error, void> {
+): UseMutationResult<TranslationRun, Error, RunOptions | void> {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: () => api.continueTranslation(bookId),
+    mutationFn: (opts) => api.continueTranslation(bookId, opts || undefined),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: bookKeys.translation(bookId) });
     },

@@ -39,7 +39,7 @@ from app.generation.prompt_manager.prompts.select_passages_prompt import (
     PROMPT,
     render_candidate_pool,
 )
-from app.generation.providers.gemini import generate as gemini_generate
+from app.generation.providers.router import generate_structured, parse_result
 
 if TYPE_CHECKING:
     from app.core.config import Settings
@@ -84,23 +84,17 @@ async def select_passages_for_character(
         candidate_pool_block=render_candidate_pool(candidates),
     )
 
-    response = await gemini_generate(
+    result = await generate_structured(
         prompt=rendered,
         schema=PassageSelection,
-        model=settings.GEMINI_MODEL,
+        model=settings.VOICES_MODEL,
         settings=settings,
         # Selection is structured reasoning over fixed inputs. Lower
         # temperature is better — same passages should be picked
         # consistently across reruns of the same pool.
         temperature=0.2,
+        thinking=settings.STEP_THINKING,
         max_output_tokens=_SELECT_MAX_OUTPUT_TOKENS,
+        service_tier=settings.OPENAI_BACKGROUND_SERVICE_TIER,
     )
-
-    if isinstance(response.parsed, PassageSelection):
-        return response.parsed
-    if response.text:
-        return PassageSelection.model_validate_json(response.text)
-    raise RuntimeError(
-        f"Gemini returned an empty selection response for "
-        f"profile_id={profile_id} canonical_name={canonical_name!r}."
-    )
+    return parse_result(result, PassageSelection, f"passage selection for {canonical_name!r}")

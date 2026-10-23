@@ -149,21 +149,21 @@ def test_even_runs_found_and_short_sentences_break_them() -> None:
 
 def test_estimate_counts_thinking_for_non_lite_models() -> None:
     gemini_only = {"TRANSLATION_MODEL": None, "TRANSLATION_FAITHFUL_MODEL": None}
-    lite = Settings(GEMINI_MODEL="gemini-3.1-flash-lite-preview", **gemini_only)
-    flash = Settings(
-        GEMINI_MODEL="gemini-3.8-flash",
-        **gemini_only,
-        TRANSLATION_THINKING_FAITHFUL="",
-        TRANSLATION_THINKING_LINE_EDIT="",
-        TRANSLATION_THINKING_POLISH="",
-    )
+    model_default = {
+        "TRANSLATION_THINKING_FAITHFUL": "",
+        "TRANSLATION_THINKING_LINE_EDIT": "",
+        "TRANSLATION_THINKING_POLISH": "",
+    }
+    lite = Settings(GEMINI_MODEL="gemini-3.1-flash-lite-preview", **gemini_only, **model_default)
+    flash = Settings(GEMINI_MODEL="gemini-3.8-flash", **gemini_only, **model_default)
     a = estimate_translation(
         word_count=10_000, fragment_count=None, glossary_terms=50, settings=lite
     )
     b = estimate_translation(
         word_count=10_000, fragment_count=None, glossary_terms=50, settings=flash
     )
-    # Default thinking adds about 3.2x the visible output; Flash-Lite adds none.
+    # Default thinking adds about 3.2x the visible output; Flash-Lite at its
+    # default (no level asked for) adds none.
     assert 4.1 < b.stages[0].output_tokens / a.stages[0].output_tokens < 4.3
     high = Settings(GEMINI_MODEL="gemini-3.8-flash", **gemini_only)  # high thinking everywhere
     c = estimate_translation(
@@ -526,7 +526,10 @@ def test_translation_needs_glossary_and_voices() -> None:
         voice_extraction_status="idle",
     )
     assert missing_prerequisites(book) == ["glossary", "voices"]
-    book.glossary_extraction_status = "completed"
+    book.glossary_extraction_status = "running"
+    assert missing_prerequisites(book) == ["glossary", "voices"]
+    # A stopped glossary keeps its terms, so translation may use it.
+    book.glossary_extraction_status = "cancelled"
     assert missing_prerequisites(book) == ["voices"]
     book.voice_extraction_status = "running"
     assert missing_prerequisites(book) == ["voices"]

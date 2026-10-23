@@ -24,6 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 from starlette.concurrency import run_in_threadpool
 
+from app.constants import models
 from app.core.config import Settings, get_settings
 from app.core.db import get_session
 from app.core.logging import get_logger
@@ -54,9 +55,19 @@ log = get_logger(__name__)
 _RUNNING_TASKS: set[asyncio.Task[None]] = set()
 
 
-def _schedule_run(run_id: UUID, settings: Settings) -> None:
+def _model_settings(settings: Settings, model: str | None) -> Settings:
+    """Settings with ``model`` for every translation stage (422 if unknown)."""
+    try:
+        return models.settings_for_step(settings, "translation", model)
+    except models.UnknownModelError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+
+
+def _schedule_run(run_id: UUID, settings: Settings, *, cost_limit: bool = True) -> None:
     task = asyncio.create_task(
-        translation_service.run_translation(run_id=run_id, settings=settings)
+        translation_service.run_translation(run_id=run_id, settings=settings, cost_limit=cost_limit)
     )
     _RUNNING_TASKS.add(task)
 
@@ -110,9 +121,11 @@ async def get_translation(
 async def get_translation_estimate(
     book_id: UUID,
     chapter_id: list[UUID] | None = Query(default=None),
+    model: str | None = Query(default=None),
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> TranslationEstimateOut:
+    settings = _model_settings(settings, model)
     book = (
         await session.execute(
             select(Book)
@@ -169,6 +182,7 @@ async def start_translation(
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> TranslationRunOut:
+    settings = _model_settings(settings, body.model)
     _require_key(settings)
     try:
         run = await translation_service.start_translation_run(
@@ -195,6 +209,8 @@ async def start_translation(
 )
 async def continue_translation(
     book_id: UUID,
+    # False: "Continue without limit" after a cost pause.
+    cost_limit: bool = Query(default=True),
     session: AsyncSession = Depends(get_session),
     settings: Settings = Depends(get_settings),
 ) -> TranslationRunOut:
@@ -203,7 +219,11 @@ async def continue_translation(
         run = await translation_service.resume_translation_run(session, book_id=book_id)
     except TranslationConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    _schedule_run(run.id, settings)
+    # Continue on the model the run started with, when it used one model.
+    used = set((run.models or {}).values())
+    if len(used) == 1 and next(iter(used)) in models.MODEL_IDS:
+        settings = _model_settings(settings, next(iter(used)))
+    _schedule_run(run.id, settings, cost_limit=cost_limit)
     log.info("translation_run_resumed", book_id=str(book_id), run_id=str(run.id))
     return TranslationRunOut.model_validate(translation_service.run_json(run))
 

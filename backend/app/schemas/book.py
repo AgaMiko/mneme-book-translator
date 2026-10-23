@@ -6,7 +6,7 @@ either layer without breaking the other.
 """
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -74,6 +74,10 @@ class BookSummary(BaseModel):
     speakers_extraction_windows_total: int | None = None
     speakers_extraction_windows_completed: int | None = None
     speakers_extraction_last_error: str | None = None
+    # Stages ("glossary", "voices") the author marked as finished by hand.
+    stages_marked_finished: list[str] = Field(default_factory=list)
+    # Real cost against the estimate per step (see app/services/cost_guard.py).
+    cost_guard: dict[str, Any] = Field(default_factory=dict)
     original_filename: str
     word_count: int
     created_at: datetime
@@ -115,6 +119,7 @@ class GlossaryExtractionEstimateResponse(BaseModel):
 class VoicePassEstimateResponse(BaseModel):
     """Predicted LLM usage for one voice pipeline pass."""
 
+    model: str
     window_count: int
     character_count: int
     estimated_input_tokens: int

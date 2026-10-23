@@ -11,14 +11,9 @@ This is the THIRD of three chains in the voice pipeline:
 Model choice
 ------------
 Translation is the chain that benefits most from a more capable model.
-This chain reads the model name from settings — by default Flash Lite
-to start, but bumping to Gemini Pro (or Claude, if you wire that up
-later) is a one-line settings change. The cost increase is real but
-bounded: ~50-80 calls per book, each producing a few hundred tokens.
-
-The settings field is intentionally distinct from the extraction
-settings.GEMINI_MODEL — extraction wants cheap and fast, translation
-wants careful. Two separate model knobs let each be tuned independently.
+It runs on the voices step's model (``VOICES_MODEL``, chosen per run in
+the app), like the rest of Pass 2: ~50-80 calls per book, each producing
+a few hundred tokens.
 """
 
 from __future__ import annotations
@@ -35,7 +30,7 @@ from app.generation.prompt_manager.prompts.translate_passage_prompt import (
     PROMPT,
     render_glossary_block,
 )
-from app.generation.providers.gemini import generate as gemini_generate
+from app.generation.providers.router import generate_structured, parse_result
 
 if TYPE_CHECKING:
     from app.core.config import Settings
@@ -83,17 +78,12 @@ async def translate_passage(
         passage_source_text=passage_source_text,
     )
 
-    # Translation model is configured separately from extraction.
-    # Default behavior: fall back to GEMINI_MODEL if no dedicated
-    # translation model is set. Once you have a Pro / Claude credential
-    # wired in, set settings.TRANSLATION_MODEL and this chain picks it
-    # up automatically.
-    model = getattr(settings, "TRANSLATION_MODEL", None) or settings.GEMINI_MODEL
-
-    response = await gemini_generate(
+    # Part of the voices step, so it runs on the voices model. (It used to
+    # send TRANSLATION_MODEL to Gemini, which fails for gpt-… models.)
+    result = await generate_structured(
         prompt=rendered,
         schema=PassageTranslation,
-        model=model,
+        model=settings.VOICES_MODEL,
         settings=settings,
         # Translation wants faithfulness and consistency. 0.3 is the
         # same value used elsewhere in the pipeline; kept here for
@@ -101,11 +91,8 @@ async def translate_passage(
         # better model and want slightly more literary flexibility,
         # 0.4-0.5 is reasonable — but not higher.
         temperature=0.3,
+        thinking=settings.STEP_THINKING,
         max_output_tokens=_TRANSLATE_MAX_OUTPUT_TOKENS,
+        service_tier=settings.OPENAI_BACKGROUND_SERVICE_TIER,
     )
-
-    if isinstance(response.parsed, PassageTranslation):
-        return response.parsed
-    if response.text:
-        return PassageTranslation.model_validate_json(response.text)
-    raise RuntimeError(f"Translation returned empty for selected_passage_id={selected_passage_id}.")
+    return parse_result(result, PassageTranslation, f"passage translation {selected_passage_id}")

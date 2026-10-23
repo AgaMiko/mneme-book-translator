@@ -41,6 +41,7 @@ from app.generation.prompt_manager.models.identify_speakers_model import (
     SpeakerNote,
     SpeakersInWindow,
 )
+from app.generation.usage import counting
 from app.models.book import Book
 from app.models.glossary import INACTIVE_STATUSES, GlossaryEntry
 from app.models.speakers import SpeakerNotepad, WindowSpeaker
@@ -50,6 +51,7 @@ from app.schemas.speakers import (
     WorkingSpeakersResponse,
 )
 from app.services import speakers_validation
+from app.services.cost_guard import linear, save_state, start_guard
 from app.services.glossary_service import (
     _load_book_plaintext,
     load_working_glossary_for_latest_run,
@@ -57,6 +59,8 @@ from app.services.glossary_service import (
 from app.services.glossary_service import (
     make_windows as glossary_make_windows,
 )
+from app.services.stages import glossary_ready
+from app.services.voice_extraction_estimate import estimate_voice_extraction
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -158,7 +162,9 @@ async def can_run_speakers_extraction(
     book = await session.get(Book, book_id)
     if book is None:
         return (False, "Book not found.")
-    if book.glossary_extraction_status != "completed":
+    if book.glossary_extraction_status == "running":
+        return (False, "Wait for glossary extraction to finish.")
+    if not glossary_ready(book):
         return (False, "Run glossary extraction first.")
 
     n = await session.scalar(
@@ -430,8 +436,13 @@ async def extract_book_speakers(
     book_id: UUID,
     settings: Settings,
     continue_extraction: bool = False,
+    cost_limit: bool = True,
 ) -> None:
     """Background task: run Pass 1 across every window of a book.
+
+    Pauses like Stop when the real cost goes more than
+    ``COST_PAUSE_THRESHOLD`` over the estimate for the windows done so far,
+    unless ``cost_limit`` is off (see ``app.services.cost_guard``).
 
     Mirrors ``voice_service.extract_book_voices`` for lifecycle
     handling (cancel, resume, fail, stale reconciliation) so the two
@@ -501,16 +512,29 @@ async def extract_book_speakers(
 
         async with session_local() as s4:
             b0 = await s4.get(Book, book_id)
-            if b0 is not None:
-                b0.speakers_extraction_cancel_requested = False
-                b0.speakers_extraction_windows_total = total
-                b0.speakers_extraction_windows_completed = start_window - 1
+            if b0 is None:
+                raise RuntimeError("book disappeared during speakers extraction")
+            b0.speakers_extraction_cancel_requested = False
+            b0.speakers_extraction_windows_total = total
+            b0.speakers_extraction_windows_completed = start_window - 1
+            pass1 = estimate_voice_extraction(
+                word_count=b0.word_count, character_count=0, settings=settings
+            ).pass1
+            guard = start_guard(
+                b0,
+                "speakers",
+                settings=settings,
+                expected=linear(pass1.estimated_cost_usd, total),
+                units_total=total,
+                start_units=start_window - 1,
+                limit=cost_limit,
+            )
             await s4.commit()
 
         cancelled = False
-        with propagate_attributes(
-            session_id=str(book_id),
-            trace_name="speakers_identification",
+        with (
+            propagate_attributes(session_id=str(book_id), trace_name="speakers_identification"),
+            counting(guard.spend),
         ):
             for n in range(start_window, total + 1):
                 wtext = win_list[n - 1]
@@ -554,6 +578,14 @@ async def extract_book_speakers(
                         glossary_name_by_id=glossary_name_by_id,
                     )
                     book.speakers_extraction_windows_completed = n
+                    guard.units_done = n
+                    reason = guard.overrun() if n < total else None
+                    save_state(book, guard)
+                    if reason:
+                        book.speakers_extraction_cancel_requested = True
+                        log.warning(
+                            "speakers_extraction_cost_pause", book_id=str(book_id), reason=reason
+                        )
                     await session.commit()
                 if n % 5 == 0 or n == total:
                     log.info(

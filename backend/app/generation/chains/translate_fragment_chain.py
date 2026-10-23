@@ -38,6 +38,7 @@ from app.generation.prompt_manager.prompts.translate_fragment_prompt import (
 from app.generation.providers.gemini import generate as gemini_generate
 from app.generation.providers.openai import ModelResult, cache_key_for, is_openai_model
 from app.generation.providers.openai import generate as openai_generate
+from app.generation.usage import record_call
 
 if TYPE_CHECKING:
     from app.core.config import Settings
@@ -141,7 +142,8 @@ async def _call_model(
     """
     thinking = stage_thinking(settings, stage)
     if is_openai_model(model):
-        return await openai_generate(
+        tier = settings.TRANSLATION_OPENAI_SERVICE_TIER or None
+        result = await openai_generate(
             prefix=fixed_context,
             prompt=prompt,
             schema=schema,
@@ -150,9 +152,11 @@ async def _call_model(
             temperature=temperature,
             reasoning_effort=thinking,
             prompt_cache_key=cache_key_for(fixed_context),
-            service_tier=settings.TRANSLATION_OPENAI_SERVICE_TIER or None,
+            service_tier=tier,
             timeout_s=_TIMEOUT_S,
         )
+        record_call(model, result.usage, tier)
+        return result
     response = await gemini_generate(
         prompt=prompt if cached_content else f"{fixed_context}\n\n{prompt}",
         schema=schema,
@@ -164,7 +168,9 @@ async def _call_model(
         thinking_level=thinking,
         cached_content=cached_content,
     )
-    return ModelResult(parsed=response.parsed, text=response.text, usage=_usage(response))
+    usage = _usage(response)
+    record_call(model, usage, None)
+    return ModelResult(parsed=response.parsed, text=response.text, usage=usage)
 
 
 async def _generate_aligned[T: BaseModel](

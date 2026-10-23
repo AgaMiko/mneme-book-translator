@@ -41,8 +41,7 @@ from app.generation.prompt_manager.prompts.identify_speakers_prompt import (
     render_glossary_characters_table,
     render_notepad,
 )
-from app.generation.providers.gemini import generate as gemini_generate
-from app.generation.structured_output import EmptyGeminiResponseError, parse_gemini_model
+from app.generation.providers.router import generate_structured, parse_result
 
 if TYPE_CHECKING:
     from app.core.config import Settings
@@ -113,18 +112,21 @@ async def identify_speakers_window(
 
     last_detail = ""
     for attempt in range(_PARSE_ATTEMPTS):
-        response = await gemini_generate(
+        result = await generate_structured(
             prompt=rendered,
             schema=SpeakersInWindow,
-            model=settings.GEMINI_MODEL,
+            model=settings.SPEAKERS_MODEL,
             settings=settings,
             temperature=0.1,
+            thinking=settings.STEP_THINKING,
             max_output_tokens=_IDENTIFY_SPEAKERS_MAX_OUTPUT_TOKENS,
+            service_tier=settings.OPENAI_BACKGROUND_SERVICE_TIER,
         )
         try:
-            return parse_gemini_model(response, SpeakersInWindow)
-        except EmptyGeminiResponseError as exc:
-            last_detail = exc.detail
+            return parse_result(result, SpeakersInWindow, f"speakers window {window_number}")
+        except (ValueError, RuntimeError) as exc:
+            # Empty or invalid JSON (pydantic's ValidationError is a ValueError).
+            last_detail = str(exc)[:600]
             log.warning(
                 "speakers_parse_attempt_failed",
                 window_number=window_number,

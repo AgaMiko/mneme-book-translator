@@ -16,10 +16,20 @@ its `chapters` list and never have to touch FKs by hand.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    ARRAY,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as SA_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
@@ -98,6 +108,19 @@ class Book(Base):
     voice_extraction_windows_total: Mapped[int | None] = mapped_column(Integer, default=None)
     voice_extraction_windows_completed: Mapped[int | None] = mapped_column(Integer, default=None)
     voice_extraction_last_error: Mapped[str | None] = mapped_column(Text, default=None)
+
+    # Stages the author marked as finished by hand ("glossary", "voices"),
+    # for example a glossary run stopped partway that is good enough. The
+    # extraction statuses stay as they are; see ``app.services.stages``.
+    stages_marked_finished: Mapped[list[str]] = mapped_column(
+        ARRAY(String(16)), default_factory=list, server_default="{}"
+    )
+    # Real cost against the estimate per step ("glossary", "speakers",
+    # "voices", "translation"): spent, estimate, pause reason. See
+    # ``app.services.cost_guard``.
+    cost_guard: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default_factory=dict, server_default="{}"
+    )
 
     # Which published glossary downstream translation should use (immutable
     # ``FinalGlossary`` + ``FinalGlossaryEntry`` rows). Working drafts live in

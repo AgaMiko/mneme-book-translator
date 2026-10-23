@@ -1,6 +1,6 @@
 import type { BookDetail } from "@/lib/api/client";
 
-import type { BookTab } from "./tabs";
+import { glossaryUsable, voicesFinished, type BookTab } from "./tabs";
 
 /**
  * The one thing to do next.
@@ -8,7 +8,9 @@ import type { BookTab } from "./tabs";
  * This is the state machine the old `WorkflowHint` bar used, distilled
  * from a sentence into a button. Same reading of the pipeline —
  * glossary, then speakers, then voices — but instead of narrating the
- * state it names the step and takes you there.
+ * state it names the step and takes you there. A glossary run that was
+ * stopped or failed keeps its terms, so the next step is speakers; the
+ * Glossary tab still offers to resume or retry the run.
  *
  * Returns `null` when the next step is the tab you are already on:
  * the destination is on screen, so the button would be a no-op. The
@@ -27,22 +29,19 @@ interface Step {
 function nextStep(book: BookDetail): Step {
   const glossary = book.glossary_extraction_status;
 
-  if (glossary === "idle") return { label: "Build glossary", tab: "glossary" };
   if (glossary === "running") return { label: "Watch glossary run", tab: "glossary" };
-  if (glossary === "cancelled") return { label: "Resume glossary", tab: "glossary" };
-  if (glossary === "failed") return { label: "Retry glossary", tab: "glossary" };
+  if (!glossaryUsable(book)) return { label: "Build glossary", tab: "glossary" };
 
-  // Glossary is complete — voices attach to its character entries.
+  // The glossary has its terms — voices attach to its character entries.
+  if (voicesFinished(book)) return { label: "Translate", tab: "translation" };
   const speakers = book.speakers_extraction_status;
   if (speakers === "running") return { label: "Watch speaker run", tab: "voices" };
   if (speakers !== "completed") return { label: "Identify speakers", tab: "voices" };
 
-  const voices = book.voice_extraction_status;
-  if (voices === "running") return { label: "Watch voice run", tab: "voices" };
-  if (voices !== "completed") return { label: "Extract voices", tab: "voices" };
-
-  // Glossary and voices are done: translation is next.
-  return { label: "Translate", tab: "translation" };
+  if (book.voice_extraction_status === "running") {
+    return { label: "Watch voice run", tab: "voices" };
+  }
+  return { label: "Extract voices", tab: "voices" };
 }
 
 export function computeNextAction(

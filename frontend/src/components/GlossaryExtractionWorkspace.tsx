@@ -2,9 +2,19 @@ import { useState } from "react";
 import { AlertCircle, CheckCircle2, ChevronDown, Circle, Loader2, PauseCircle } from "lucide-react";
 import type { UseMutationResult, UseQueryResult } from "@tanstack/react-query";
 
+import { CostGuardNotice } from "@/components/book/CostGuardNotice";
+import { ModelPicker } from "@/components/book/ModelPicker";
+import { StageFinishedToggle } from "@/components/book/StageFinishedToggle";
+import { showStageFinishedToggle } from "@/components/book/tabs";
 import { Button } from "@/components/ui/Button";
+import type { StepModel } from "@/hooks/useStepModel";
 import { useGlossaryImportSources, useImportGlossary } from "@/lib/api/hooks";
-import type { BookDetail, GlossaryExtractionEstimate, GlossaryRunMeta } from "@/lib/api/client";
+import type {
+  BookDetail,
+  GlossaryExtractionEstimate,
+  GlossaryRunMeta,
+  RunOptions,
+} from "@/lib/api/client";
 import { ApiError } from "@/lib/api/client";
 import {
   GLOSSARY_EXTRACTION_OVERLAP_WORDS,
@@ -21,7 +31,11 @@ function formatUsd(n: number): string {
   }).format(n);
 }
 
-type StartMut = UseMutationResult<{ status: "accepted"; book_id: string }, Error, void>;
+type StartMut = UseMutationResult<
+  { status: "accepted"; book_id: string },
+  Error,
+  RunOptions | void
+>;
 type StopMut = UseMutationResult<{ status: "accepted"; book_id: string }, Error, void>;
 
 interface Props {
@@ -31,6 +45,8 @@ interface Props {
   continueGlossary: StartMut;
   stopGlossary: StopMut;
   expandGlossary: StartMut;
+  /** The model the next run (start, continue or expand) uses; the estimate follows it. */
+  model: StepModel;
   /** Metadata for the latest run, when one exists. */
   run: GlossaryRunMeta | null;
 }
@@ -52,6 +68,7 @@ export function GlossaryExtractionWorkspace({
   continueGlossary,
   stopGlossary,
   expandGlossary,
+  model,
   run,
 }: Props) {
   const [controlsOpen, setControlsOpen] = useState(book.glossary_extraction_status === "idle");
@@ -111,8 +128,32 @@ export function GlossaryExtractionWorkspace({
         </Button>
       </div>
 
+      <CostGuardNotice
+        state={book.cost_guard.glossary}
+        paused={status === "cancelled"}
+        busy={continueGlossary.isPending}
+        onContinue={() => continueGlossary.mutate({ model: model.model })}
+        onContinueWithoutLimit={() =>
+          continueGlossary.mutate({ model: model.model, costLimit: false })
+        }
+        className="border-t border-ink-700 px-4 py-2.5"
+      />
+
+      {/* Only with a run: marking an empty glossary finished would unlock voices with no characters. */}
+      {run && showStageFinishedToggle(book, "glossary", running, status === "completed") && (
+        <div className="border-t border-ink-700 px-4 py-2.5">
+          <StageFinishedToggle
+            book={book}
+            stage="glossary"
+            running={running}
+            completed={status === "completed"}
+          />
+        </div>
+      )}
+
       {controlsOpen && (
         <div className="border-t border-ink-700 px-4 py-4">
+          <ModelPicker choice={model} disabled={running} className="mb-4" />
           {estimate.isLoading && (
             <p className="text-sm text-ink-400" aria-busy="true">
               Calculating estimate…
@@ -147,19 +188,11 @@ export function GlossaryExtractionWorkspace({
               </dl>
 
               <p className="mt-3 text-xs leading-relaxed text-ink-500">
-                Estimates follow prompt size and word count; real usage varies. At the configured
-                rates (${estimate.data.pricing_input_usd_per_mtok.toFixed(3)} / $
-                {estimate.data.pricing_output_usd_per_mtok.toFixed(3)} per M in/out). See{" "}
-                <a
-                  href="https://ai.google.dev/gemini-api/docs/pricing"
-                  className="text-ink-400 underline decoration-ink-600 underline-offset-2 hover:text-accent"
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Google pricing
-                </a>
-                . Override with <span className="font-mono">GEMINI_INPUT_PRICE_USD_PER_MTOK</span> /{" "}
-                <span className="font-mono">GEMINI_OUTPUT_PRICE_USD_PER_MTOK</span>.
+                Based on the manuscript&apos;s length and the size of earlier runs, including the
+                model&apos;s thinking; real usage varies. Priced at $
+                {estimate.data.pricing_input_usd_per_mtok.toFixed(2)} / $
+                {estimate.data.pricing_output_usd_per_mtok.toFixed(2)} per million input / output
+                tokens (OpenAI models on the half-price Flex tier).
               </p>
             </>
           )}
@@ -172,7 +205,7 @@ export function GlossaryExtractionWorkspace({
               variant="accent"
               size="sm"
               disabled={!runnable || running || startGlossary.isPending}
-              onClick={() => startGlossary.mutate()}
+              onClick={() => startGlossary.mutate({ model: model.model })}
             >
               {running ? "Running…" : startGlossary.isPending ? "Starting…" : "Start new run"}
             </Button>
@@ -189,7 +222,7 @@ export function GlossaryExtractionWorkspace({
                   ? "Resume from the last completed window"
                   : "Only available after a stopped or failed run"
               }
-              onClick={() => continueGlossary.mutate()}
+              onClick={() => continueGlossary.mutate({ model: model.model })}
             >
               {continueGlossary.isPending
                 ? "Continuing…"
@@ -216,7 +249,7 @@ export function GlossaryExtractionWorkspace({
                   ? "Read the whole manuscript again and add terms that are missing"
                   : "Run an extraction or import a glossary first"
               }
-              onClick={() => expandGlossary.mutate()}
+              onClick={() => expandGlossary.mutate({ model: model.model })}
             >
               {expandGlossary.isPending ? "Starting…" : "Expand glossary"}
             </Button>

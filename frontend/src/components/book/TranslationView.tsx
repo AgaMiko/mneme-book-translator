@@ -10,6 +10,7 @@ import {
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
+import { useStepModel } from "@/hooks/useStepModel";
 import {
   ApiError,
   type BookDetail,
@@ -36,7 +37,9 @@ import {
 } from "@/lib/api/hooks";
 import { cn, formatNumber } from "@/lib/utils";
 
+import { CostGuardNotice } from "./CostGuardNotice";
 import { BOOK_PANEL_CONTAINER, BOOK_PANEL_SURFACE } from "./layout";
+import { ModelPicker } from "./ModelPicker";
 import { type BookTab, translationBlockers } from "./tabs";
 import { HighlightedText, MissingTerms, TermProvider } from "./TermHighlight";
 import { englishTerms, useTerms } from "./terms";
@@ -251,7 +254,8 @@ function RunCard({
     : retranslate || doneCount === 0
       ? null
       : book.chapters.filter((c) => !isDone(c.id)).map((c) => c.id);
-  const estimate = useTranslationEstimate(book.id, estimateIds);
+  const translationModel = useStepModel("translation");
+  const estimate = useTranslationEstimate(book.id, estimateIds, translationModel.model);
   const start = useStartTranslation(book.id);
   const resume = useContinueTranslation(book.id);
   const stop = useStopTranslation(book.id);
@@ -304,6 +308,15 @@ function RunCard({
           </p>
         </div>
       )}
+
+      <CostGuardNotice
+        state={book.cost_guard.translation}
+        paused={run?.status === "cancelled"}
+        busy={resume.isPending}
+        onContinue={() => resume.mutate()}
+        onContinueWithoutLimit={() => resume.mutate({ costLimit: false })}
+        className="px-4 pb-3"
+      />
 
       <div className="border-t border-ink-700 px-4 py-4">
         {missing.length > 0 && (
@@ -381,6 +394,8 @@ function RunCard({
           })}
         </div>
 
+        <ModelPicker choice={translationModel} disabled={running} className="mt-4" />
+
         {estimate.data && <Pipeline estimate={estimate.data} />}
 
         {estimate.data && (
@@ -420,7 +435,11 @@ function RunCard({
               (allDone && !retranslate && !selected.length)
             }
             onClick={() =>
-              start.mutate({ chapter_ids: selected.length ? selected : null, retranslate })
+              start.mutate({
+                chapter_ids: selected.length ? selected : null,
+                retranslate,
+                model: translationModel.model,
+              })
             }
           >
             {start.isPending

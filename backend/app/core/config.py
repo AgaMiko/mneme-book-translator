@@ -47,10 +47,28 @@ class Settings(BaseSettings):
     # Needed only when a translation stage uses an OpenAI model (gpt-…).
     OPENAI_API_KEY: str | None = None
     GEMINI_MODEL: str = "gemini-3.1-flash-lite-preview"
-    # Glossary review (decides pending terms like the author would). Falls
-    # back to GEMINI_MODEL. Thinking: "minimal" | "low" | "medium" | "high".
-    GLOSSARY_REVIEW_MODEL: str | None = None
+    # Model per pipeline step: any Gemini model or OpenAI gpt-… model (see
+    # app/constants/models.py). The app can pick another one per run.
+    # Default gpt-6.1-sol everywhere: it won the translation blind tests;
+    # for the other steps it is a guess, not yet compared with other models.
+    # GEMINI_MODEL above is now only used for manuscript metadata at upload.
+    GLOSSARY_MODEL: str = "gpt-6.1-sol"
+    GLOSSARY_REVIEW_MODEL: str = "gpt-6.1-sol"
+    SPEAKERS_MODEL: str = "gpt-6.1-sol"
+    VOICES_MODEL: str = "gpt-6.1-sol"
+    # Thinking level / reasoning effort for those steps: "minimal" | "low" |
+    # "medium" | "high", or empty for the model's default.
+    STEP_THINKING: str | None = "medium"
     GLOSSARY_REVIEW_THINKING: str | None = "medium"
+    # OpenAI tier for the long background steps (glossary, speakers, voices):
+    # "flex" is half price and slower. The review button uses the standard
+    # tier, since someone waits for it.
+    OPENAI_BACKGROUND_SERVICE_TIER: str | None = "flex"
+    # Pause a run when its real cost is this share over the estimate for the
+    # work done so far (0.10 = 10%; 0 turns the check off), checked once
+    # this many windows or fragments are done. See app/services/cost_guard.py.
+    COST_PAUSE_THRESHOLD: float = 0.10
+    COST_PAUSE_MIN_UNITS: int = 5
     # Fragment translation (Step 5). Each stage falls back to TRANSLATION_MODEL,
     # then to GEMINI_MODEL. Default (chosen in blind tests on Zaplataczka
     # chapters 3 and 5, 2026-10-21): one step, gpt-6.1-sol translating straight

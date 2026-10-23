@@ -71,6 +71,7 @@ from app.generation.prompt_manager.models.translate_passage_model import (
     PassageTranslation,
     TranslationStrategy,
 )
+from app.generation.usage import counting
 from app.models.book import Book
 from app.models.glossary import INACTIVE_STATUSES, GlossaryEntry
 from app.models.voice import (
@@ -86,6 +87,7 @@ from app.schemas.voice import (
     WorkingVoicesResponse,
 )
 from app.services import speakers_service, voice_validation
+from app.services.cost_guard import linear, save_state, start_guard
 from app.services.glossary_service import (
     _load_book_plaintext,
     load_working_glossary_for_latest_run,
@@ -93,6 +95,8 @@ from app.services.glossary_service import (
 from app.services.glossary_service import (
     make_windows as glossary_make_windows,
 )
+from app.services.stages import glossary_ready
+from app.services.voice_extraction_estimate import estimate_voice_extraction
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession
@@ -337,13 +341,16 @@ async def can_run_voice_extraction(
 ) -> tuple[bool, str | None]:
     """Check whether voice extraction can proceed for this book.
 
-    Returns ``(True, None)`` if the glossary is completed and contains
-    at least one character entry. Otherwise ``(False, reason)``.
+    Returns ``(True, None)`` if the glossary is usable (finished, or stopped
+    with its terms kept) and contains at least one character entry.
+    Otherwise ``(False, reason)``.
     """
     book = await session.get(Book, book_id)
     if book is None:
         return (False, "Book not found.")
-    if book.glossary_extraction_status != "completed":
+    if book.glossary_extraction_status == "running":
+        return (False, "Wait for glossary extraction to finish.")
+    if not glossary_ready(book):
         return (False, "Run glossary extraction first.")
 
     n = await session.scalar(
@@ -1630,8 +1637,15 @@ async def extract_book_voices(
     book_id: UUID,
     settings: Settings,
     continue_extraction: bool = False,
+    cost_limit: bool = True,
 ) -> None:
-    """Background task: run voice windows, then selection and translation for a book."""
+    """Background task: run voice windows, then selection and translation for a book.
+
+    During the windows the run pauses like Stop when its real cost goes more
+    than ``COST_PAUSE_THRESHOLD`` over the estimate for the windows done so
+    far, unless ``cost_limit`` is off. Selection and translation afterwards
+    are counted in the spend but not paused (see ``app.services.cost_guard``).
+    """
     if not settings.GEMINI_API_KEY:
         session_local = get_sessionmaker()
         async with session_local() as session:
@@ -1696,16 +1710,30 @@ async def extract_book_voices(
 
         async with session_local() as s4:
             b0 = await s4.get(Book, book_id)
-            if b0 is not None:
-                b0.voice_extraction_cancel_requested = False
-                b0.voice_extraction_windows_total = total
-                b0.voice_extraction_windows_completed = start_window - 1
+            if b0 is None:
+                raise RuntimeError("book disappeared during voice extraction")
+            b0.voice_extraction_cancel_requested = False
+            b0.voice_extraction_windows_total = total
+            b0.voice_extraction_windows_completed = start_window - 1
+            # The window phase alone: the estimate with no characters to select for.
+            windows_cost = estimate_voice_extraction(
+                word_count=b0.word_count, character_count=0, settings=settings
+            ).pass2.estimated_cost_usd
+            guard = start_guard(
+                b0,
+                "voices",
+                settings=settings,
+                expected=linear(windows_cost, total),
+                units_total=total,
+                start_units=start_window - 1,
+                limit=cost_limit,
+            )
             await s4.commit()
 
         cancelled = False
-        with propagate_attributes(
-            session_id=str(book_id),
-            trace_name="voice_extraction",
+        with (
+            propagate_attributes(session_id=str(book_id), trace_name="voice_extraction"),
+            counting(guard.spend),
         ):
             for n in range(start_window, total + 1):
                 wtext = win_list[n - 1]
@@ -1771,6 +1799,14 @@ async def extract_book_voices(
                         glossary_characters=characters,
                     )
                     book.voice_extraction_windows_completed = n
+                    guard.units_done = n
+                    reason = guard.overrun() if n < total else None
+                    save_state(book, guard)
+                    if reason:
+                        book.voice_extraction_cancel_requested = True
+                        log.warning(
+                            "voice_extraction_cost_pause", book_id=str(book_id), reason=reason
+                        )
                     await session.commit()
                 if n % 5 == 0 or n == total:
                     log.info(
@@ -1784,8 +1820,9 @@ async def extract_book_voices(
             return
 
         try:
-            await run_selection_for_book(book_id=book_id, settings=settings)
-            await run_translation_for_book(book_id=book_id, settings=settings)
+            with counting(guard.spend):
+                await run_selection_for_book(book_id=book_id, settings=settings)
+                await run_translation_for_book(book_id=book_id, settings=settings)
         except Exception as exc2:
             log.exception(
                 "voice_post_extraction_phases_failed",
@@ -1803,6 +1840,7 @@ async def extract_book_voices(
         async with session_local() as s6:
             b3 = await s6.get(Book, book_id)
             if b3 is not None:
+                save_state(b3, guard)
                 b3.voice_extraction_status = "completed"
                 b3.voice_extraction_last_error = None
                 b3.voice_extraction_cancel_requested = False

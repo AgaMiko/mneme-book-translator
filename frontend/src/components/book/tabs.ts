@@ -1,4 +1,4 @@
-import type { BookDetail } from "@/lib/api/client";
+import type { BookDetail, MarkableStage } from "@/lib/api/client";
 import { formatNumber } from "@/lib/utils";
 
 /**
@@ -9,10 +9,10 @@ import { formatNumber } from "@/lib/utils";
  * That is why the header no longer needs a row of status pills — the
  * navigation itself carries the state.
  *
- * `Voices` unlocks after glossary extraction completes (canonical
- * characters exist). `Translation` unlocks once the voices are extracted
- * too: the translation prompts use both. A book that already has a
- * translation run keeps the tab open so the result stays readable.
+ * `Voices` unlocks once the glossary is usable (canonical characters
+ * exist). `Translation` unlocks once the voices are extracted too: the
+ * translation prompts use both. A book with translated text keeps the tab
+ * open so the result stays readable.
  */
 
 /**
@@ -42,12 +42,56 @@ export const EMPTY_TAB_COUNTS: TabCounts = {
   translationTotal: 0,
 };
 
+/**
+ * Later steps can use the glossary: extraction finished, or was stopped or
+ * failed after finding terms (those are kept), or you marked it finished.
+ * Never while it runs. Mirrors `glossary_ready` in `backend/app/services/stages.py`.
+ */
+export function glossaryUsable(book: BookDetail): boolean {
+  const s = book.glossary_extraction_status;
+  if (s === "running") return false;
+  return (
+    book.stages_marked_finished.includes("glossary") ||
+    s === "completed" ||
+    s === "cancelled" ||
+    s === "failed"
+  );
+}
+
+/** Voices are done: Pass 2 completed, or you marked the stage finished. Never while running. */
+export function voicesFinished(book: BookDetail): boolean {
+  if (book.voice_extraction_status === "running" || book.speakers_extraction_status === "running") {
+    return false;
+  }
+  return (
+    book.stages_marked_finished.includes("voices") || book.voice_extraction_status === "completed"
+  );
+}
+
+/** Whether the toggle has anything to offer: hidden while running and after a real finish. */
+export function showStageFinishedToggle(
+  book: BookDetail,
+  stage: MarkableStage,
+  running: boolean,
+  completed: boolean,
+): boolean {
+  return !running && (!completed || book.stages_marked_finished.includes(stage));
+}
+
 /** Steps that must finish before a translation can start (mirrors the backend check). */
 export function translationBlockers(book: BookDetail): ("glossary" | "voices")[] {
   const missing: ("glossary" | "voices")[] = [];
-  if (book.glossary_extraction_status !== "completed") missing.push("glossary");
-  if (book.voice_extraction_status !== "completed") missing.push("voices");
+  if (!glossaryUsable(book)) missing.push("glossary");
+  if (!voicesFinished(book)) missing.push("voices");
   return missing;
+}
+
+/**
+ * Translation stays closed until its prerequisites are done, unless the
+ * book already has translated text to read.
+ */
+function translationLocked(book: BookDetail, counts: Pick<TabCounts, "translationDone">): boolean {
+  return translationBlockers(book).length > 0 && counts.translationDone === 0;
 }
 
 export interface BookTabDef {
@@ -79,8 +123,9 @@ export const BOOK_TABS: readonly BookTabDef[] = [
     label: "Glossary",
     disabled: false,
     state: (b) => {
-      if (b.glossary_extraction_status === "completed") return "done";
       if (b.glossary_extraction_status === "running") return "active";
+      if (b.glossary_extraction_status === "completed") return "done";
+      if (b.stages_marked_finished.includes("glossary")) return "done";
       return "idle";
     },
     caption: (b, counts) => {
@@ -101,15 +146,15 @@ export const BOOK_TABS: readonly BookTabDef[] = [
     label: "Voices",
     disabled: false,
     state: (b) => {
-      if (b.glossary_extraction_status !== "completed") return "locked";
+      if (!glossaryUsable(b)) return "locked";
       if (b.voice_extraction_status === "running" || b.speakers_extraction_status === "running") {
         return "active";
       }
-      if (b.voice_extraction_status === "completed") return "done";
+      if (voicesFinished(b)) return "done";
       return "idle";
     },
     caption: (b, counts) => {
-      if (b.glossary_extraction_status !== "completed") return "glossary first";
+      if (!glossaryUsable(b)) return "glossary first";
       if (b.speakers_extraction_status === "running") {
         const p = windowProgress(
           b.speakers_extraction_windows_completed,
@@ -136,16 +181,13 @@ export const BOOK_TABS: readonly BookTabDef[] = [
     label: "Translation",
     disabled: false,
     state: (b, counts) => {
-      if (counts.translationStatus === null && translationBlockers(b).length > 0) return "locked";
+      if (translationLocked(b, counts)) return "locked";
       if (counts.translationStatus === "running") return "active";
       if (counts.translationStatus === "completed") return "done";
       return "idle";
     },
     caption: (b, counts) => {
-      if (counts.translationStatus === null) {
-        const missing = translationBlockers(b);
-        if (missing.length > 0) return `${missing[0]} first`;
-      }
+      if (translationLocked(b, counts)) return `${translationBlockers(b)[0]} first`;
       const p = windowProgress(counts.translationDone, counts.translationTotal);
       switch (counts.translationStatus) {
         case "running":
@@ -172,13 +214,17 @@ export const DEFAULT_BOOK_TAB: BookTab = "manuscript";
 /**
  * The tab a book opens on: the furthest stage that has been started.
  * A fresh upload opens on the manuscript; a book whose voices are done
- * opens on voices; once a translation run exists, on translation.
+ * opens on voices; once a translation run exists, on translation, but
+ * only if that tab is open (a run with nothing translated, on a book whose
+ * voices are not done, does not count).
  */
 export function startTabFor(
   book: BookDetail,
-  translationStatus: TabCounts["translationStatus"],
+  counts: Pick<TabCounts, "translationStatus" | "translationDone">,
 ): BookTab {
-  if (translationStatus !== null) return "translation";
+  if (counts.translationStatus !== null && !translationLocked(book, counts)) {
+    return "translation";
+  }
   const started = (s: string) => s !== "idle";
   if (started(book.voice_extraction_status) || started(book.speakers_extraction_status)) {
     return "voices";

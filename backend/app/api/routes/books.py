@@ -35,8 +35,9 @@ from sqlalchemy.exc import NoResultFound
 from app.core.config import Settings, get_settings
 from app.core.db import get_session, rowcount
 from app.core.logging import get_logger
+from app.generation import GenerationDisabledError
 from app.models.book import Book
-from app.models.glossary import GlossaryEntry
+from app.models.glossary import INACTIVE_STATUSES, GlossaryEntry
 from app.schemas.book import (
     BookDetail,
     BookSummary,
@@ -64,6 +65,7 @@ from app.schemas.voice import (
 )
 from app.services import (
     book_service,
+    glossary_llm_review,
     glossary_service,
     speakers_service,
     voice_service,
@@ -282,7 +284,7 @@ async def get_voice_extraction_estimate(
             .where(
                 GlossaryEntry.book_id == book_id,
                 GlossaryEntry.term_type == "character_name",
-                GlossaryEntry.status != "rejected",
+                GlossaryEntry.status.not_in(INACTIVE_STATUSES),
             ),
         )
         or 0,
@@ -319,6 +321,50 @@ async def get_working_glossary(
     if book is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
     return await glossary_service.build_working_glossary_response(session, book_id=book_id)
+
+
+@router.post(
+    "/{book_id}/glossary-working/review",
+    summary="Decide the pending glossary terms with the LLM, for the author to check",
+)
+async def review_pending_glossary_terms(
+    book_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+) -> dict[str, int]:
+    try:
+        return await glossary_llm_review.review_pending_terms(
+            session, book_id=book_id, settings=settings
+        )
+    except LookupError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except glossary_llm_review.ReviewConflictError as exc:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except GenerationDisabledError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="GEMINI_API_KEY is not configured.",
+        ) from exc
+
+
+@router.post(
+    "/{book_id}/glossary-working/confirm-auto",
+    summary="Confirm every automatic glossary decision that is still unconfirmed",
+)
+async def confirm_auto_glossary_reviews(
+    book_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> dict[str, int]:
+    if await session.get(Book, book_id) is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
+    try:
+        confirmed = await glossary_service.confirm_auto_reviews(session, book_id=book_id)
+    except LookupError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No glossary extraction run exists for this book.",
+        ) from exc
+    return {"confirmed": confirmed}
 
 
 @router.patch(

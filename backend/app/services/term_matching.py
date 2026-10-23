@@ -55,6 +55,26 @@ def is_form_of(canonical: str, variant: str) -> bool:
     return True
 
 
+def is_same_term(a: str, b: str) -> bool:
+    """True when ``a`` and ``b`` are the same term, possibly in another case or number.
+
+    Stricter than ``is_form_of``: word by word, the longer word may only add
+    a short ending to the shorter one (the rule used to find terms in the
+    text), so "Strategii Obronnych" matches "Strategie Obronne" and "Wysoki
+    Ród" matches "Wysokie Rody", while "Sysjusz" does not match "system" and
+    "Cień" does not match "cieplak". Used to carry an author's decision over
+    to a pending term, where a false match would be costly.
+    """
+    a_words, b_words = fold(a).split(), fold(b).split()
+    if not a_words or len(a_words) != len(b_words):
+        return False
+    for x, y in zip(a_words, b_words, strict=True):
+        shorter, longer = sorted((x, y), key=len)
+        if not _stem_match(shorter, longer):
+            return False
+    return True
+
+
 # (shared prefix needed, letters the text word may add) by term-word length.
 # Short words are strict: "Rada" must not match "Radość".
 def _stem_rule(length: int) -> tuple[int, int]:

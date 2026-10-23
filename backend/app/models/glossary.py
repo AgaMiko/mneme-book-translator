@@ -7,7 +7,7 @@ Layers
   reproducible without re-calling the LLM.
 - **Working glossary** — ``GlossaryEntry`` rows scoped to a run; author
   workflow (``proposed`` / ``accepted`` / ``adjusted`` / ``rejected``) applies
-  here. Translation *review* reads this set for the active completed run.
+  here, plus ``merged`` for rows auto review folded into another row. Translation *review* reads this set for the active completed run.
 - **Final glossary** — ``FinalGlossary`` + ``FinalGlossaryEntry`` are an
   immutable snapshot promoted from reviewed working rows. Later pipeline
   steps (fragment translation, consistency checks) should read **only** the
@@ -46,6 +46,11 @@ from app.core.db import Base
 
 if TYPE_CHECKING:
     from app.models.book import Book
+
+
+# Working rows left out of everything downstream: removed by the author, or
+# merged into another row by auto review (kept only so the merge can be undone).
+INACTIVE_STATUSES = ("rejected", "merged")
 
 
 class GlossaryExtractionRun(Base):
@@ -174,6 +179,18 @@ class GlossaryEntry(Base):
     variants: Mapped[list[str]] = mapped_column(ARRAY(String(200)), default=list)
 
     status: Mapped[str] = mapped_column(String(16), default="proposed", server_default="proposed")
+
+    # Set when the status was decided automatically rather than by the author
+    # (see ``glossary_auto_review``): why, from which reviewed term, and what
+    # to restore on undo. Cleared once the author confirms or changes the row.
+    auto_review: Mapped[dict[str, Any] | None] = mapped_column(JSONB, default=None)
+    # For ``status == "merged"``: the row this one was folded into. The merged
+    # row is kept so the merge can be undone.
+    merged_into_id: Mapped[UUID | None] = mapped_column(
+        SA_UUID(as_uuid=True),
+        ForeignKey("glossary_entries.id", ondelete="SET NULL"),
+        default=None,
+    )
 
     id: Mapped[UUID] = mapped_column(
         SA_UUID(as_uuid=True), primary_key=True, default=uuid4, init=False

@@ -139,6 +139,22 @@ export const GlossaryWorkingEntrySchema = z.object({
   occurrence_count: z.number().int(),
   created_at: z.string(),
   updated_at: z.string(),
+  /** Set while the status is an automatic decision you have not confirmed or undone. */
+  auto_review: z
+    .object({
+      action: z.enum(["merge", "accept", "reject"]),
+      reason: z.string(),
+      source_canonical_form: z.string().optional(),
+      /** Set when the LLM review decided it; form matches carry none. */
+      confidence: z.enum(["high", "low"]).optional(),
+      better_target: z.string().optional(),
+      removed_variants: z.array(z.string()).optional(),
+    })
+    .passthrough()
+    .nullable()
+    .optional(),
+  /** For `status === "merged"`: the term this one was merged into. */
+  merged_into_id: z.string().uuid().nullable().optional(),
 });
 export type GlossaryWorkingEntry = z.infer<typeof GlossaryWorkingEntrySchema>;
 
@@ -260,12 +276,23 @@ export type VoiceProfilePatchBody = {
   needs_regeneration?: boolean;
 };
 
+export const GlossaryReviewResultSchema = z.object({
+  by_form: z.number().int(),
+  accepted: z.number().int(),
+  rejected: z.number().int(),
+  merged: z.number().int(),
+  skipped: z.number().int(),
+});
+export type GlossaryReviewResult = z.infer<typeof GlossaryReviewResultSchema>;
+
 export type GlossaryEntryPatchBody = {
   proposed_target?: string;
   suggestion?: "keep_original" | "translate";
   accept?: boolean;
   reject?: boolean;
   merge_into_entry_id?: string;
+  confirm_auto?: boolean;
+  undo_auto?: boolean;
 };
 
 // ─── Translation (Step 5) ───────────────────────────────
@@ -601,6 +628,18 @@ export const api = {
         body: JSON.stringify(body),
       }),
       GlossaryWorkingEntrySchema,
+    ),
+
+  reviewPendingGlossaryTerms: async (bookId: string): Promise<GlossaryReviewResult> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${bookId}/glossary-working/review`, { method: "POST" }),
+      GlossaryReviewResultSchema,
+    ),
+
+  confirmAutoGlossaryReviews: async (bookId: string): Promise<{ confirmed: number }> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${bookId}/glossary-working/confirm-auto`, { method: "POST" }),
+      z.object({ confirmed: z.number().int() }),
     ),
 
   startGlossaryExtraction: async (id: string): Promise<GlossaryExtractionStartResponse> =>

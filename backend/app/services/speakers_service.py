@@ -42,7 +42,7 @@ from app.generation.prompt_manager.models.identify_speakers_model import (
     SpeakersInWindow,
 )
 from app.models.book import Book
-from app.models.glossary import GlossaryEntry
+from app.models.glossary import INACTIVE_STATUSES, GlossaryEntry
 from app.models.speakers import SpeakerNotepad, WindowSpeaker
 from app.schemas.speakers import (
     CharacterSpeakerMapOut,
@@ -167,7 +167,7 @@ async def can_run_speakers_extraction(
         .where(
             GlossaryEntry.book_id == book_id,
             GlossaryEntry.term_type == "character_name",
-            GlossaryEntry.status != "rejected",
+            GlossaryEntry.status.not_in(INACTIVE_STATUSES),
         )
     )
     if n == 0:
@@ -237,7 +237,7 @@ async def load_glossary_characters_for_speakers(
         return []
     out: list[GlossaryCharacterRef] = []
     for e in entries:
-        if e.term_type != "character_name" or e.status == "rejected":
+        if e.term_type != "character_name" or e.status in INACTIVE_STATUSES:
             continue
         out.append(
             GlossaryCharacterRef(

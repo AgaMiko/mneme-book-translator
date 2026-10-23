@@ -4,6 +4,7 @@ import {
   Braces,
   Building2,
   Check,
+  CheckCheck,
   ChevronDown,
   GitMerge,
   Library,
@@ -13,7 +14,9 @@ import {
   Search,
   Shapes,
   Sparkles,
+  Undo2,
   UserRound,
+  Wand2,
   XCircle,
 } from "lucide-react";
 
@@ -25,7 +28,12 @@ import type {
   GlossarySelectOption,
   GlossaryWorkingEntry,
 } from "@/lib/api/client";
-import { usePatchGlossaryWorkingEntry, useWorkingGlossary } from "@/lib/api/hooks";
+import {
+  useConfirmAutoGlossaryReviews,
+  usePatchGlossaryWorkingEntry,
+  useReviewPendingGlossaryTerms,
+  useWorkingGlossary,
+} from "@/lib/api/hooks";
 import { cn, formatNumber } from "@/lib/utils";
 
 /**
@@ -112,19 +120,34 @@ function runStatusTone(status: string): string {
  * Which slice of the run you are looking at. This is one control rather
  * than a toggle plus an implicit "everything" state: a term is pending,
  * accepted, or removed, and you review one of those piles at a time.
+ *
+ * "Auto-decided" cuts across the others: terms that were forms of terms you
+ * had already accepted or removed, and got the same decision automatically
+ * (merged, accepted or removed). They stay there until you confirm or undo.
  */
-type StatusFilter = "pending" | "accepted" | "removed";
+type StatusFilter = "pending" | "accepted" | "removed" | "auto";
 
 const STATUS_FILTERS: readonly { id: StatusFilter; label: string }[] = [
   { id: "pending", label: "Pending" },
   { id: "accepted", label: "Accepted" },
   { id: "removed", label: "Removed" },
+  { id: "auto", label: "Auto-decided" },
 ];
 
+function isAutoDecided(e: GlossaryWorkingEntry): boolean {
+  return e.auto_review != null;
+}
+
 function matchesStatus(entry: GlossaryWorkingEntry, filter: StatusFilter): boolean {
+  if (filter === "auto") return isAutoDecided(entry);
   if (filter === "pending") return isAwaitingAcceptance(entry);
   if (filter === "accepted") return entry.status === "accepted";
   return entry.status === "rejected";
+}
+
+/** "auto-decided terms", "pending terms", … */
+function pileNoun(filter: StatusFilter): string {
+  return filter === "auto" ? "auto-decided" : filter;
 }
 
 /** Which section of the expanded editor the row was opened for. */
@@ -145,6 +168,8 @@ export function GlossaryReviewPanel({
   onFocusHandled,
 }: Props) {
   const patchGlossaryEntry = usePatchGlossaryWorkingEntry(bookId);
+  const confirmAll = useConfirmAutoGlossaryReviews(bookId);
+  const review = useReviewPendingGlossaryTerms(bookId);
   const { data, isLoading, isError, error } = useWorkingGlossary(bookId, {
     enabled: true,
     refetchIntervalMs: pollWhileRunning ? 2000 : false,
@@ -170,11 +195,13 @@ export function GlossaryReviewPanel({
       return;
     }
     setStatusFilter(
-      isAwaitingAcceptance(entry)
-        ? "pending"
-        : entry.status === "rejected"
-          ? "removed"
-          : "accepted",
+      entry.status === "merged"
+        ? "auto"
+        : isAwaitingAcceptance(entry)
+          ? "pending"
+          : entry.status === "rejected"
+            ? "removed"
+            : "accepted",
     );
     setTermType("");
     setSearch("");
@@ -213,19 +240,27 @@ export function GlossaryReviewPanel({
     let awaiting = 0;
     let accepted = 0;
     let removed = 0;
+    let auto = 0;
     for (const e of all) {
+      if (isAutoDecided(e)) auto += 1;
       if (isAwaitingAcceptance(e)) awaiting += 1;
       else if (e.status === "accepted") accepted += 1;
       else if (e.status === "rejected") removed += 1;
     }
-    return { awaiting, accepted, removed, total: all.length };
+    return { awaiting, accepted, removed, auto, total: all.length };
   }, [data?.entries]);
 
   const statusCounts: Record<StatusFilter, number> = {
     pending: reviewStats.awaiting,
     accepted: reviewStats.accepted,
     removed: reviewStats.removed,
+    auto: reviewStats.auto,
   };
+
+  // The auto-decided pile only exists while it has terms; leave it once emptied.
+  useEffect(() => {
+    if (statusFilter === "auto" && data && reviewStats.auto === 0) setStatusFilter("pending");
+  }, [statusFilter, data, reviewStats.auto]);
 
   /** Entries in the selected pile — the denominator for the type select. */
   const entriesInScope = useMemo(
@@ -235,14 +270,20 @@ export function GlossaryReviewPanel({
 
   const filtered = useMemo(() => {
     const needle = search.trim().toLowerCase();
-    return entriesInScope.filter((e) => {
+    const out = entriesInScope.filter((e) => {
       if (termType !== "") {
         if (canonicalTermTypeId(e.term_type, termTypeOptionIds) !== termType) return false;
       }
       if (needle && !e.canonical_form.toLowerCase().includes(needle)) return false;
       return true;
     });
-  }, [entriesInScope, termType, termTypeOptionIds, search]);
+    // Check the uncertain decisions first.
+    if (statusFilter === "auto") {
+      const low = (e: GlossaryWorkingEntry) => (e.auto_review?.confidence === "low" ? 0 : 1);
+      out.sort((a, b) => low(a) - low(b));
+    }
+    return out;
+  }, [entriesInScope, termType, termTypeOptionIds, search, statusFilter]);
 
   /** Per-type counts within the selected pile, for the select labels. */
   const termTypeCounts = useMemo(() => {
@@ -279,7 +320,7 @@ export function GlossaryReviewPanel({
             aria-label="Filter by review status"
             className="inline-flex rounded-lg border border-ink-700 bg-ink-900 p-0.5"
           >
-            {STATUS_FILTERS.map((f) => {
+            {STATUS_FILTERS.filter((f) => f.id !== "auto" || statusCounts.auto > 0).map((f) => {
               const active = statusFilter === f.id;
               return (
                 <button
@@ -368,6 +409,66 @@ export function GlossaryReviewPanel({
         </p>
       )}
 
+      {!isLoading &&
+        !isError &&
+        statusFilter === "pending" &&
+        statusCounts.pending > 0 &&
+        data?.run?.status !== "running" && (
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-ink-800 bg-ink-900 px-3 py-2.5">
+            <p className="min-w-0 flex-1 text-xs leading-relaxed text-ink-400">
+              Let the model decide the pending terms: accept, remove or merge each one, judged
+              against your earlier decisions. Every decision goes to Auto-decided for you to confirm
+              or undo.
+            </p>
+            <Button
+              variant="accent"
+              size="sm"
+              disabled={review.isPending}
+              onClick={() => review.mutate(undefined, { onSuccess: () => setStatusFilter("auto") })}
+            >
+              {review.isPending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+              ) : (
+                <Wand2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+              )}
+              {review.isPending ? "Reviewing…" : "Auto-review"}
+            </Button>
+            {review.isError && (
+              <p className="w-full text-xs text-danger" role="alert">
+                {review.error.message}
+              </p>
+            )}
+          </div>
+        )}
+
+      {!isLoading && !isError && statusFilter === "auto" && statusCounts.auto > 0 && (
+        <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-ink-800 bg-ink-900 px-3 py-2.5">
+          <p className="min-w-0 flex-1 text-xs leading-relaxed text-ink-400">
+            These terms are forms of terms you already accepted or removed, so they got the same
+            decision without asking. Confirm keeps the decision. Undo puts the term back in Pending.
+          </p>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="border border-ink-700"
+            disabled={confirmAll.isPending}
+            onClick={() => confirmAll.mutate()}
+          >
+            {confirmAll.isPending ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+            ) : (
+              <CheckCheck className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            )}
+            Confirm all {formatNumber(statusCounts.auto)}
+          </Button>
+          {confirmAll.isError && (
+            <p className="w-full text-xs text-danger" role="alert">
+              {confirmAll.error.message}
+            </p>
+          )}
+        </div>
+      )}
+
       {!isLoading && !isError && data && filtered.length > 0 && (
         <>
           <p className="mb-3 font-mono text-xs text-ink-500">
@@ -378,7 +479,7 @@ export function GlossaryReviewPanel({
                 <span className="tabular-nums">{formatNumber(entriesInScope.length)}</span>
               </>
             )}{" "}
-            {statusFilter} term{filtered.length === 1 ? "" : "s"}
+            {pileNoun(statusFilter)} term{filtered.length === 1 ? "" : "s"}
           </p>
           <div className="overflow-hidden rounded-lg border border-ink-800 bg-ink-900 shadow-sm ring-1 ring-black/5">
             <ul className="divide-y divide-ink-800">
@@ -406,7 +507,7 @@ export function GlossaryReviewPanel({
           {entriesInScope.length === 0
             ? statusFilter === "pending"
               ? "Nothing left to accept — every active term is already reviewed."
-              : `No ${statusFilter} terms in this run.`
+              : `No ${pileNoun(statusFilter)} terms in this run.`
             : "No terms match the current filters."}
         </p>
       )}
@@ -467,7 +568,7 @@ function EntryStatusChip({ status }: { status: string }) {
       ? "border-success-border bg-success-surface text-success"
       : status === "adjusted"
         ? "border-accent bg-accent-soft text-accent"
-        : status === "rejected"
+        : status === "rejected" || status === "merged"
           ? "border-ink-700 bg-ink-950 text-ink-500"
           : "border-ink-700 bg-ink-900 text-ink-400";
   return (
@@ -565,10 +666,16 @@ function GlossaryEntryRow({
   onOpen: (intent: RowIntent) => void;
 }) {
   const tr = readTranslation(entry.translation_recommendation);
-  const dimmed = entry.status === "rejected";
+  const auto = entry.auto_review ?? null;
+  const merged = entry.status === "merged";
+  const dimmed = entry.status === "rejected" || merged;
+  const mergedInto = merged ? allEntries.find((e) => e.id === entry.merged_into_id) : undefined;
 
   const mergeTargets = useMemo(
-    () => allEntries.filter((e) => e.id !== entry.id && e.status !== "rejected"),
+    () =>
+      allEntries.filter(
+        (e) => e.id !== entry.id && e.status !== "rejected" && e.status !== "merged",
+      ),
     [allEntries, entry.id],
   );
 
@@ -580,7 +687,9 @@ function GlossaryEntryRow({
   );
   const [mergeTargetId, setMergeTargetId] = useState("");
   const [reviewError, setReviewError] = useState<string | null>(null);
-  const [rowBusy, setRowBusy] = useState<null | "save" | "accept" | "remove" | "merge">(null);
+  const [rowBusy, setRowBusy] = useState<
+    null | "save" | "accept" | "remove" | "merge" | "confirm" | "undo"
+  >(null);
   const mergeSelectRef = useRef<HTMLSelectElement>(null);
 
   useEffect(() => {
@@ -602,7 +711,7 @@ function GlossaryEntryRow({
   }, [expanded, intent]);
 
   const runPatch = async (
-    busyKind: "save" | "accept" | "remove" | "merge",
+    busyKind: "save" | "accept" | "remove" | "merge" | "confirm" | "undo",
     body: GlossaryEntryPatchBody,
   ) => {
     setReviewError(null);
@@ -631,7 +740,8 @@ function GlossaryEntryRow({
       <div
         className={cn(
           "transition-colors duration-200 ease-out",
-          dimmed ? "opacity-50" : "",
+          // Auto-decided rows keep their Confirm / Undo buttons at full strength.
+          dimmed && !auto ? "opacity-50" : "",
           expanded ? "bg-ink-800" : "hover:bg-ink-800",
         )}
       >
@@ -643,6 +753,7 @@ function GlossaryEntryRow({
             className={cn(
               "group flex min-w-0 flex-1 items-start gap-2.5 px-3 py-2.5 text-left sm:gap-3 sm:px-4 sm:py-3",
               "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent",
+              dimmed && auto ? "opacity-60" : "",
             )}
           >
             <span
@@ -670,7 +781,30 @@ function GlossaryEntryRow({
                   termTypeOptionIds={termTypeOptionIds}
                 />
                 <EntryStatusChip status={entry.status} />
+                {auto ? (
+                  <span className="rounded-full border border-accent bg-accent-soft px-2 py-0.5 font-mono text-[9px] font-medium uppercase tracking-wider text-accent">
+                    auto
+                  </span>
+                ) : null}
+                {auto?.confidence === "low" ? (
+                  <span className="rounded-full border border-warning px-2 py-0.5 font-mono text-[9px] font-medium uppercase tracking-wider text-warning">
+                    unsure
+                  </span>
+                ) : null}
               </div>
+              {auto ? (
+                <p className="mt-1.5 flex items-start gap-1.5 font-sans text-xs leading-snug text-accent">
+                  <Wand2 className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
+                  <span>
+                    {auto.reason}
+                    {mergedInto ? ` Merged into “${mergedInto.canonical_form}”.` : ""}
+                    {auto.better_target ? ` Suggested English: “${auto.better_target}”.` : ""}
+                    {auto.removed_variants?.length
+                      ? ` Removed variants: ${auto.removed_variants.join(", ")}.`
+                      : ""}
+                  </span>
+                </p>
+              ) : null}
               <CollapsedTranslationPill
                 tr={tr}
                 translationSuggestionOptions={translationSuggestionOptions}
@@ -686,7 +820,52 @@ function GlossaryEntryRow({
               ) : null}
             </div>
           </button>
-          {!dimmed ? (
+          {auto ? (
+            <div
+              className={cn(
+                "flex shrink-0 items-start gap-1 border-l border-ink-800 bg-ink-950",
+                "px-1.5 py-2",
+              )}
+            >
+              <Button
+                variant="ghost"
+                size="sm"
+                className="border border-ink-700"
+                disabled={rowBusy !== null}
+                title="Keep this decision"
+                aria-label={`Confirm the decision for ${entry.canonical_form}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void runPatch("confirm", { confirm_auto: true });
+                }}
+              >
+                {rowBusy === "confirm" ? (
+                  <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
+                ) : (
+                  <Check className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                )}
+                <span className="hidden min-[380px]:inline">Confirm</span>
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={rowBusy !== null}
+                title="Put this term back in Pending"
+                aria-label={`Undo the decision for ${entry.canonical_form}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void runPatch("undo", { undo_auto: true });
+                }}
+              >
+                {rowBusy === "undo" ? (
+                  <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" aria-hidden />
+                ) : (
+                  <Undo2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+                )}
+                <span className="hidden min-[380px]:inline">Undo</span>
+              </Button>
+            </div>
+          ) : !dimmed ? (
             <div
               className={cn(
                 "flex shrink-0 items-start gap-1 border-l border-ink-800 bg-ink-950",
@@ -773,8 +952,9 @@ function GlossaryEntryRow({
               ) : null}
               {dimmed ? (
                 <p className="rounded-lg border border-ink-800 bg-ink-900 px-3 py-2 text-xs leading-relaxed text-ink-400">
-                  This term is rejected and is skipped during glossary extraction and when building
-                  a final glossary snapshot.
+                  {merged
+                    ? `This term was merged into “${mergedInto?.canonical_form ?? "another term"}”. Its forms now count as that term. Undo puts it back in Pending.`
+                    : "This term is rejected and is skipped during glossary extraction and when building a final glossary snapshot."}
                 </p>
               ) : null}
               {!dimmed ? (

@@ -8,7 +8,7 @@ from uuid import UUID
 
 from langfuse import propagate_attributes
 from pydantic import ValidationError
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import selectinload
 
 from app.constants.glossary_extraction import (
@@ -32,6 +32,7 @@ from app.generation.prompt_manager.models.extract_glossary_model import (
 )
 from app.models.book import Book, Chapter
 from app.models.glossary import (
+    INACTIVE_STATUSES,
     GlossaryEntry,
     GlossaryExtractionRun,
     GlossaryNotepad,
@@ -43,6 +44,12 @@ from app.schemas.glossary import (
     GlossaryWorkingEntryOut,
     GlossaryWorkingEntryPatchIn,
     WorkingGlossaryResponse,
+)
+from app.services.glossary_auto_review import (
+    PendingTerm,
+    ReviewedTerm,
+    plan_auto_decisions,
+    term_forms,
 )
 
 if TYPE_CHECKING:
@@ -193,6 +200,13 @@ async def build_working_glossary_response(
             term_type_options=term_type_options,
             translation_suggestion_options=translation_suggestion_options,
         )
+    # Catch up with decisions made since the last look, here or in other
+    # books. Not while extraction runs: it is still writing these rows. The
+    # loaded rows are updated in place.
+    if run.status != "running" and await apply_form_matches(
+        session, book_id=book_id, extraction_run_id=run.id
+    ):
+        await session.commit()
     plaintext = await _load_book_plaintext(session, book_id)
     wins = make_windows(plaintext) if plaintext else []
     out_entries = enrich_glossary_entries_for_review(entries, plaintext or "", wins)
@@ -265,15 +279,21 @@ async def merge_working_glossary_entries(
         or loser.extraction_run_id != run.id
     ):
         raise LookupError("entry")
-    if winner.status == "rejected" or loser.status == "rejected":
+    if winner.status in INACTIVE_STATUSES or loser.status in INACTIVE_STATUSES:
         raise ValueError(
-            "Merge is only available between non-rejected entries.",
+            "Merge is only available between entries that are not removed or merged.",
         )
 
     w_var = list(winner.variants or [])
     l_var = list(loser.variants or [])
     winner.variants = _unique_variants(
         w_var + l_var + [loser.canonical_form],
+    )
+    # Rows auto review merged into the loser now belong to the winner.
+    await session.execute(
+        update(GlossaryEntry)
+        .where(GlossaryEntry.merged_into_id == loser.id)
+        .values(merged_into_id=winner.id)
     )
     await session.delete(loser)
     await session.commit()
@@ -309,6 +329,20 @@ async def patch_working_glossary_entry(
     if entry is None or entry.book_id != book_id or entry.extraction_run_id != run.id:
         raise LookupError("entry")
 
+    if patch.undo_auto or patch.confirm_auto:
+        if entry.auto_review is None or entry.auto_review.get("undone"):
+            raise ValueError("This term was not decided automatically.")
+        if patch.undo_auto:
+            entry = await _undo_auto_review(session, entry)
+        else:
+            entry = await _confirm_auto_review(session, entry)
+        await session.commit()
+        await session.refresh(entry)
+        return await _enrich_one(session, book_id, entry)
+
+    if entry.status == "merged":
+        raise ValueError("This term was merged into another one. Undo the merge first.")
+
     if patch.merge_into_entry_id is not None:
         return await merge_working_glossary_entries(
             session,
@@ -317,20 +351,21 @@ async def patch_working_glossary_entry(
             winner_id=patch.merge_into_entry_id,
         )
 
+    # Whatever the author does to a row makes its decision the author's own.
+    entry.auto_review = None
+
     if patch.reject:
         entry.status = "rejected"
         await session.commit()
-        await session.refresh(entry)
-        plaintext = await _load_book_plaintext(session, book_id)
-        wins = make_windows(plaintext) if plaintext else []
-        enriched = enrich_glossary_entries_for_review([entry], plaintext or "", wins)
         log.info(
             "glossary_author_reject",
             book_id=str(book_id),
             entry_id=str(entry_id),
             extraction_run_id=str(run.id),
         )
-        return enriched[0]
+        await _apply_form_matches_after_review(session, book_id=book_id, run_id=run.id)
+        await session.refresh(entry)
+        return await _enrich_one(session, book_id, entry)
 
     raw = dict(entry.translation_recommendation or {})
     if patch.proposed_target is not None:
@@ -360,12 +395,26 @@ async def patch_working_glossary_entry(
         entry.status = "adjusted"
 
     await session.commit()
+    if entry.status in ("accepted", "adjusted"):
+        await _apply_form_matches_after_review(session, book_id=book_id, run_id=run.id)
     await session.refresh(entry)
+    return await _enrich_one(session, book_id, entry)
 
+
+async def _apply_form_matches_after_review(
+    session: AsyncSession, *, book_id: UUID, run_id: UUID
+) -> None:
+    """After the author decides a term, decide pending forms of it the same way."""
+    if await apply_form_matches(session, book_id=book_id, extraction_run_id=run_id):
+        await session.commit()
+
+
+async def _enrich_one(
+    session: AsyncSession, book_id: UUID, entry: GlossaryEntry
+) -> GlossaryWorkingEntryOut:
     plaintext = await _load_book_plaintext(session, book_id)
     wins = make_windows(plaintext) if plaintext else []
-    enriched = enrich_glossary_entries_for_review([entry], plaintext or "", wins)
-    return enriched[0]
+    return enrich_glossary_entries_for_review([entry], plaintext or "", wins)[0]
 
 
 async def _max_stored_glossary_window(
@@ -432,6 +481,20 @@ def _is_reviewed(entry: GlossaryEntry) -> bool:
     return entry.status in REVIEWED_STATUSES
 
 
+def _is_author_reviewed(entry: GlossaryEntry) -> bool:
+    """Reviewed by the author, not decided by auto review and still unconfirmed."""
+    return _is_reviewed(entry) and entry.auto_review is None
+
+
+async def _follow_merge(session: AsyncSession, entry: GlossaryEntry) -> GlossaryEntry:
+    """The row an auto-merged entry was folded into; the entry itself otherwise."""
+    if entry.status == "merged" and entry.merged_into_id is not None:
+        winner = await session.get(GlossaryEntry, entry.merged_into_id)
+        if winner is not None:
+            return winner
+    return entry
+
+
 async def _resolve_entry(
     session: AsyncSession, extraction_run_id: UUID, ref: str
 ) -> GlossaryEntry | None:
@@ -455,7 +518,159 @@ async def _resolve_entry(
         ).scalar_one_or_none()
     if entry is None or entry.extraction_run_id != extraction_run_id:
         return None
+    return await _follow_merge(session, entry)
+
+
+def _reviewed_term(entry: GlossaryEntry, *, same_book: bool, book_title: str = "") -> ReviewedTerm:
+    return ReviewedTerm(
+        id=entry.id,
+        canonical_form=entry.canonical_form,
+        variants=list(entry.variants or []),
+        status=entry.status,
+        translation_recommendation=dict(entry.translation_recommendation or {}),
+        same_book=same_book,
+        book_title=book_title,
+    )
+
+
+async def apply_form_matches(
+    session: AsyncSession,
+    *,
+    book_id: UUID,
+    extraction_run_id: UUID,
+) -> int:
+    """Decide pending terms that are forms of terms the author already reviewed.
+
+    Evidence is this run's author-reviewed rows and the author-reviewed rows
+    of every other book's latest glossary (see ``glossary_auto_review``).
+    Pending rows whose earlier automatic decision the author undid are left
+    alone. Flushes; the caller commits. Returns the number of rows decided.
+    """
+    entries = list(
+        (
+            await session.execute(
+                select(GlossaryEntry).where(GlossaryEntry.extraction_run_id == extraction_run_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    pending = [
+        PendingTerm(id=e.id, canonical_form=e.canonical_form, variants=list(e.variants or []))
+        for e in entries
+        if e.status == "proposed" and e.auto_review is None
+    ]
+    if not pending:
+        return 0
+    reviewed = [_reviewed_term(e, same_book=True) for e in entries if _is_author_reviewed(e)]
+    other_books = (
+        (
+            await session.execute(
+                select(Book).where(Book.id != book_id).order_by(Book.created_at.desc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+    titles = [b.title for b in other_books]
+    for other in other_books:
+        # Books of one series often share a title; the file name tells them apart.
+        label = other.title
+        if titles.count(other.title) > 1:
+            label = f"{other.title} ({other.original_filename})"
+        _run, rows = await load_working_glossary_for_latest_run(session, book_id=other.id)
+        reviewed += [
+            _reviewed_term(e, same_book=False, book_title=label)
+            for e in rows
+            if _is_author_reviewed(e)
+        ]
+
+    by_id = {e.id: e for e in entries}
+    decisions = plan_auto_decisions(pending, reviewed)
+    for d in decisions:
+        entry = by_id[d.entry_id]
+        note: dict[str, Any] = {
+            "action": d.action,
+            "reason": d.reason,
+            "source_entry_id": str(d.source.id),
+            "source_canonical_form": d.source.canonical_form,
+        }
+        if d.action == "merge":
+            winner = by_id[d.source.id]
+            have = {v.strip().lower() for v in [winner.canonical_form, *(winner.variants or [])]}
+            # Only the forms come along: aliases in the variants may be wrong.
+            added = [
+                f
+                for f in _unique_variants(
+                    term_forms(entry.canonical_form, list(entry.variants or []))
+                )
+                if f.lower() not in have
+            ]
+            winner.variants = _unique_variants(list(winner.variants or []) + added)
+            entry.status = "merged"
+            entry.merged_into_id = winner.id
+            note["added_variants"] = added
+        elif d.action == "reject":
+            entry.status = "rejected"
+        else:
+            note["previous_translation_recommendation"] = entry.translation_recommendation
+            entry.translation_recommendation = dict(d.source.translation_recommendation)
+            entry.status = "accepted"
+        entry.auto_review = note
+    await session.flush()
+    if decisions:
+        log.info(
+            "glossary_form_matches_applied",
+            book_id=str(book_id),
+            extraction_run_id=str(extraction_run_id),
+            merged=sum(d.action == "merge" for d in decisions),
+            accepted=sum(d.action == "accept" for d in decisions),
+            rejected=sum(d.action == "reject" for d in decisions),
+        )
+    return len(decisions)
+
+
+async def _undo_auto_review(session: AsyncSession, entry: GlossaryEntry) -> GlossaryEntry:
+    """Put an automatically decided row back to pending, as it was before."""
+    note = entry.auto_review or {}
+    if entry.status == "merged" and entry.merged_into_id is not None:
+        winner = await session.get(GlossaryEntry, entry.merged_into_id)
+        if winner is not None:
+            drop = {v.strip().lower() for v in note.get("added_variants", [])}
+            winner.variants = [v for v in winner.variants or [] if v.strip().lower() not in drop]
+    previous = note.get("previous_translation_recommendation")
+    if previous is not None:
+        entry.translation_recommendation = previous
+    if note.get("removed_variants"):
+        entry.variants = _unique_variants(list(entry.variants or []) + note["removed_variants"])
+    entry.status = "proposed"
+    entry.merged_into_id = None
+    # Remembered so the same automatic decision is not made again.
+    entry.auto_review = {"undone": True}
     return entry
+
+
+async def _confirm_auto_review(session: AsyncSession, entry: GlossaryEntry) -> GlossaryEntry:
+    """Make an automatic decision the author's own. A confirmed merge drops the row."""
+    if entry.status == "merged":
+        winner = await _follow_merge(session, entry)
+        await session.delete(entry)
+        return winner
+    entry.auto_review = None
+    return entry
+
+
+async def confirm_auto_reviews(session: AsyncSession, *, book_id: UUID) -> int:
+    """Confirm every unconfirmed automatic decision in the book's latest glossary."""
+    run, entries = await load_working_glossary_for_latest_run(session, book_id=book_id)
+    if run is None:
+        raise LookupError("no_run")
+    pending = [e for e in entries if e.auto_review is not None and not e.auto_review.get("undone")]
+    for entry in pending:
+        await _confirm_auto_review(session, entry)
+    await session.commit()
+    log.info("glossary_auto_reviews_confirmed", book_id=str(book_id), count=len(pending))
+    return len(pending)
 
 
 def _dedupe_new_terms_in_delta(entries: list[NewTerm]) -> list[NewTerm]:
@@ -606,7 +821,7 @@ async def load_compact_glossary(
 ) -> list[GlossaryEntryCompact]:
     stmt = select(GlossaryEntry).where(
         GlossaryEntry.extraction_run_id == extraction_run_id,
-        GlossaryEntry.status != "rejected",
+        GlossaryEntry.status.not_in(INACTIVE_STATUSES),
     )
     rows = (await session.execute(stmt)).scalars().all()
     out: list[GlossaryEntryCompact] = []
@@ -788,6 +1003,7 @@ async def apply_delta(
             )
         ).scalar_one_or_none()
         if existing is not None:
+            existing = await _follow_merge(session, existing)
             existing.variants = _unique_variants(
                 list(existing.variants or []) + list(nt.variants),
             )
@@ -1077,6 +1293,7 @@ async def extract_book_glossary(
                 plaintext=plaintext or "",
                 windows=wins,
             )
+            await apply_form_matches(session, book_id=book_id, extraction_run_id=run_id)
             run_row = await session.get(GlossaryExtractionRun, run_id)
             if run_row:
                 run_row.status = "completed"
@@ -1153,8 +1370,10 @@ async def list_glossary_import_sources(
     out: list[dict[str, Any]] = []
     for b in books:
         _run, entries = await load_working_glossary_for_latest_run(session, book_id=b.id)
-        accepted = sum(1 for e in entries if e.status in ("accepted", "adjusted"))
-        removed = sum(1 for e in entries if e.status == "rejected")
+        accepted = sum(
+            1 for e in entries if _is_author_reviewed(e) and e.status in ("accepted", "adjusted")
+        )
+        removed = sum(1 for e in entries if _is_author_reviewed(e) and e.status == "rejected")
         if accepted or removed:
             out.append(
                 {
@@ -1182,6 +1401,8 @@ async def import_glossary_from_book(
     stop extraction proposing them again); unreviewed proposals are not
     copied. A term this book has already reviewed keeps this book's decision;
     a term that is only proposed here takes the other book's decision.
+    Unconfirmed automatic decisions count as proposals on both sides. After
+    the import, pending forms of reviewed terms are decided automatically.
     Variants are combined. Occurrence counts are recomputed for this book, so
     terms the book never uses show 0.
     """
@@ -1191,7 +1412,7 @@ async def import_glossary_from_book(
     _src_run, source_entries = await load_working_glossary_for_latest_run(
         session, book_id=source_book_id
     )
-    reviewed = [e for e in source_entries if _is_reviewed(e)]
+    reviewed = [e for e in source_entries if _is_author_reviewed(e)]
     if not reviewed:
         raise ValueError("The other book has no reviewed glossary terms to import.")
 
@@ -1210,6 +1431,8 @@ async def import_glossary_from_book(
         rec = dict(src.translation_recommendation or {})
         rec["imported_from_book_id"] = str(source_book_id)
         target = by_canonical.get(src.canonical_form)
+        if target is not None:
+            target = await _follow_merge(session, target)
         if target is None:
             session.add(
                 GlossaryEntry(
@@ -1226,12 +1449,14 @@ async def import_glossary_from_book(
                 )
             )
             added += 1
-        elif _is_reviewed(target):
+        elif _is_author_reviewed(target):
             target.variants = _unique_variants(
                 list(target.variants or []) + list(src.variants or [])
             )
             kept += 1
         else:
+            # Pending, or decided automatically: the other book's decision wins.
+            target.auto_review = None
             target.term_type = src.term_type
             target.meaning = src.meaning
             target.translation_recommendation = rec
@@ -1250,6 +1475,7 @@ async def import_glossary_from_book(
         plaintext=plaintext,
         windows=make_windows(plaintext) if plaintext else [],
     )
+    await apply_form_matches(session, book_id=book_id, extraction_run_id=run.id)
     if book.glossary_extraction_status in ("idle", "failed", "cancelled"):
         book.glossary_extraction_status = "completed"
         _clear_book_glossary_progress_fields(book)

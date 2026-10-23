@@ -16,6 +16,7 @@ import {
   type GlossaryExtractionStopResponse,
   type GlossaryImportResult,
   type GlossaryImportSource,
+  type GlossaryReviewResult,
   type GlossaryWorkingEntry,
   type StartTranslationBody,
   type TranslationEstimate,
@@ -124,6 +125,35 @@ export function useWorkingGlossary(
     queryFn: () => api.getWorkingGlossary(bookId),
     enabled: opts.enabled,
     refetchInterval: opts.refetchIntervalMs === false ? false : opts.refetchIntervalMs,
+  });
+}
+
+/** Let the LLM decide the pending glossary terms; the author checks them afterwards. */
+export function useReviewPendingGlossaryTerms(
+  bookId: string,
+): UseMutationResult<GlossaryReviewResult, Error, void> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.reviewPendingGlossaryTerms(bookId),
+    // Returned so callers' onSuccess runs once the glossary has refetched.
+    onSuccess: () =>
+      Promise.all([
+        qc.invalidateQueries({ queryKey: bookKeys.workingGlossary(bookId) }),
+        qc.invalidateQueries({ queryKey: bookKeys.translationTerms(bookId) }),
+      ]),
+  });
+}
+
+/** Confirm every automatic glossary decision that is still unconfirmed. */
+export function useConfirmAutoGlossaryReviews(
+  bookId: string,
+): UseMutationResult<{ confirmed: number }, Error, void> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: () => api.confirmAutoGlossaryReviews(bookId),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: bookKeys.workingGlossary(bookId) });
+    },
   });
 }
 

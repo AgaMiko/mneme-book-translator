@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Literal, Self
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class GlossaryWorkingEntryOut(BaseModel):
@@ -21,6 +21,17 @@ class GlossaryWorkingEntryOut(BaseModel):
     occurrence_count: int
     created_at: datetime
     updated_at: datetime
+    # Set while the status is an automatic decision the author has not
+    # confirmed or undone: ``action`` (merge / accept / reject) and ``reason``.
+    auto_review: dict[str, Any] | None = None
+    merged_into_id: UUID | None = None
+
+    @field_validator("auto_review")
+    @classmethod
+    def _hide_undone(cls, v: dict[str, Any] | None) -> dict[str, Any] | None:
+        # An undone decision is only a marker for the server; to the author
+        # the row is an ordinary pending term again.
+        return None if v is None or v.get("undone") else v
 
 
 class GlossaryRunMetaOut(BaseModel):
@@ -58,9 +69,23 @@ class GlossaryWorkingEntryPatchIn(BaseModel):
     accept: bool = False
     reject: bool = False
     merge_into_entry_id: UUID | None = None
+    # Make an automatic decision the author's own, or put the term back to pending.
+    confirm_auto: bool = False
+    undo_auto: bool = False
 
     @model_validator(mode="after")
     def _exclusive_and_nonempty(self) -> Self:
+        if self.confirm_auto or self.undo_auto:
+            others = (
+                self.merge_into_entry_id is not None
+                or self.reject
+                or self.accept
+                or self.proposed_target is not None
+                or self.suggestion is not None
+            )
+            if others or (self.confirm_auto and self.undo_auto):
+                raise ValueError("confirm_auto and undo_auto cannot be combined with other fields.")
+            return self
         merge = self.merge_into_entry_id is not None
         rej = self.reject
         acc = self.accept

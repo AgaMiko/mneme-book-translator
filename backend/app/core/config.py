@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     # Needed only when a translation stage uses an OpenAI model (gpt-…).
     OPENAI_API_KEY: str | None = None
     GEMINI_MODEL: str = "gemini-3.1-flash-lite-preview"
+    # Glossary review (decides pending terms like the author would). Falls
+    # back to GEMINI_MODEL. Thinking: "minimal" | "low" | "medium" | "high".
+    GLOSSARY_REVIEW_MODEL: str | None = None
+    GLOSSARY_REVIEW_THINKING: str | None = "medium"
     # Fragment translation (Step 5). Each stage falls back to TRANSLATION_MODEL,
     # then to GEMINI_MODEL. Default (chosen in blind tests on Zaplataczka
     # chapters 3 and 5, 2026-10-21): one step, gpt-6.1-sol translating straight

@@ -72,7 +72,7 @@ from app.generation.prompt_manager.models.translate_passage_model import (
     TranslationStrategy,
 )
 from app.models.book import Book
-from app.models.glossary import GlossaryEntry
+from app.models.glossary import INACTIVE_STATUSES, GlossaryEntry
 from app.models.voice import (
     CharacterVoice,
     VoiceNotepad,
@@ -352,7 +352,7 @@ async def can_run_voice_extraction(
         .where(
             GlossaryEntry.book_id == book_id,
             GlossaryEntry.term_type == "character_name",
-            GlossaryEntry.status != "rejected",
+            GlossaryEntry.status.not_in(INACTIVE_STATUSES),
         )
     )
     if n == 0:
@@ -429,7 +429,7 @@ async def load_glossary_characters(
     have_voice: set[UUID] = {row[0] for row in gres.all()}
     out: list[GlossaryCharacterRef] = []
     for e in entries:
-        if e.term_type != "character_name" or e.status == "rejected":
+        if e.term_type != "character_name" or e.status in INACTIVE_STATUSES:
             continue
         out.append(
             GlossaryCharacterRef(

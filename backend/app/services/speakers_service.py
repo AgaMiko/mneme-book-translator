@@ -44,6 +44,8 @@ from app.schemas.speakers import (
     CharacterSpeakerMapOut,
     DialogueLineOut,
     DialogueLinesResponse,
+    ManuscriptSpeakerLineOut,
+    ManuscriptSpeakersResponse,
     WorkingSpeakersResponse,
 )
 from app.services import speakers_validation
@@ -655,6 +657,41 @@ async def list_dialogue_lines(
         for dl, text, pos, title, who, to in rows[:limit]
     ]
     return DialogueLinesResponse(lines=lines, truncated=len(rows) > limit)
+
+
+async def list_manuscript_speakers(
+    session: AsyncSession, *, book_id: UUID
+) -> ManuscriptSpeakersResponse:
+    """Every dialogue line of the book with its speaker, without the text.
+
+    The manuscript already has the paragraphs, so this returns only what
+    it needs to mark them. ``not_dialogue`` lines are left out.
+    """
+    speaker_e = aliased(GlossaryEntry)
+    addressee_e = aliased(GlossaryEntry)
+    rows = (
+        await session.execute(
+            select(DialogueLine, speaker_e.canonical_form, addressee_e.canonical_form)
+            .outerjoin(speaker_e, speaker_e.id == DialogueLine.speaker_glossary_entry_id)
+            .outerjoin(addressee_e, addressee_e.id == DialogueLine.addressee_glossary_entry_id)
+            .where(DialogueLine.book_id == book_id, DialogueLine.kind != "not_dialogue")
+            .order_by(DialogueLine.line_index)
+        )
+    ).all()
+    return ManuscriptSpeakersResponse(
+        lines=[
+            ManuscriptSpeakerLineOut(
+                paragraph_id=dl.paragraph_id,
+                kind=dl.kind,
+                speaker_id=dl.speaker_glossary_entry_id,
+                speaker_name=who,
+                addressee_name=to,
+                confidence=dl.confidence,
+                mixed=dl.mixed,
+            )
+            for dl, who, to in rows
+        ]
+    )
 
 
 # ─── The attribution loop ───────────────────────────────

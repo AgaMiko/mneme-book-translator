@@ -326,6 +326,22 @@ export const DialogueLinesResponseSchema = z.object({
 });
 export type DialogueLinesResponse = z.infer<typeof DialogueLinesResponseSchema>;
 
+export const ManuscriptSpeakerLineSchema = z.object({
+  paragraph_id: z.string().uuid(),
+  kind: z.string(),
+  speaker_id: z.string().uuid().nullable(),
+  speaker_name: z.string().nullable(),
+  addressee_name: z.string().nullable(),
+  confidence: z.string().nullable(),
+  mixed: z.boolean(),
+});
+export type ManuscriptSpeakerLine = z.infer<typeof ManuscriptSpeakerLineSchema>;
+
+export const ManuscriptSpeakersResponseSchema = z.object({
+  lines: z.array(ManuscriptSpeakerLineSchema),
+});
+export type ManuscriptSpeakersResponse = z.infer<typeof ManuscriptSpeakersResponseSchema>;
+
 export const VoicePassEstimateSchema = z.object({
   model: z.string(),
   window_count: z.number().int(),
@@ -546,6 +562,7 @@ export const GlossaryTermSchema = z.object({
   target: z.string(),
   term_type: z.string(),
   note: z.string().nullable(),
+  status: z.string(),
 });
 export type GlossaryTerm = z.infer<typeof GlossaryTermSchema>;
 
@@ -666,6 +683,13 @@ export const api = {
         `${API_URL}/books/${id}/dialogue-lines${speakerId ? `?speaker=${encodeURIComponent(speakerId)}` : ""}`,
       ),
       DialogueLinesResponseSchema,
+    ),
+
+  /** Speaker of every dialogue line, for the manuscript's speaker layer. */
+  getManuscriptSpeakers: async (id: string): Promise<ManuscriptSpeakersResponse> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/manuscript/speakers`),
+      ManuscriptSpeakersResponseSchema,
     ),
 
   patchVoiceWorkingProfile: async (
@@ -895,8 +919,14 @@ export const api = {
   getTranslation: async (id: string): Promise<TranslationView> =>
     handleResponse(await fetch(`${API_URL}/books/${id}/translation`), TranslationViewSchema),
 
-  getTranslationTerms: async (id: string): Promise<TranslationTerms> =>
-    handleResponse(await fetch(`${API_URL}/books/${id}/translation/terms`), TranslationTermsSchema),
+  /** `includePending` also returns terms still under review (the manuscript shows them). */
+  getTranslationTerms: async (id: string, includePending = false): Promise<TranslationTerms> =>
+    handleResponse(
+      await fetch(
+        `${API_URL}/books/${id}/translation/terms${includePending ? "?include_pending=true" : ""}`,
+      ),
+      TranslationTermsSchema,
+    ),
 
   getTranslationEstimate: async (
     id: string,

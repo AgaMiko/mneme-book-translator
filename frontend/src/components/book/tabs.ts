@@ -4,10 +4,12 @@ import { formatNumber } from "@/lib/utils";
 /**
  * Sections of an open book — single source of truth.
  *
- * The tabs double as the pipeline: each one reports where its step
- * stands (`state`) and a one-line summary of what is inside (`caption`).
- * That is why the header no longer needs a row of status pills — the
- * navigation itself carries the state.
+ * The Manuscript is the reading view, not a step: it is always there and
+ * shows the results of every step on the text. The other tabs are the
+ * pipeline: each one reports where its step stands (`state`) and a
+ * one-line summary of what is inside (`caption`). That is why the header
+ * no longer needs a row of status pills — the navigation itself carries
+ * the state.
  *
  * `Voices` unlocks once the glossary is usable (canonical characters
  * exist). `Translation` unlocks once the voices are extracted too: the
@@ -97,6 +99,8 @@ function translationLocked(book: BookDetail, counts: Pick<TabCounts, "translatio
 export interface BookTabDef {
   id: "manuscript" | "glossary" | "voices" | "translation";
   label: string;
+  /** `view` sits apart from the numbered pipeline steps in the header. */
+  kind: "view" | "step";
   disabled: boolean;
   state: (book: BookDetail, counts: TabCounts) => TabState;
   caption: (book: BookDetail, counts: TabCounts) => string;
@@ -112,6 +116,7 @@ export const BOOK_TABS: readonly BookTabDef[] = [
   {
     id: "manuscript",
     label: "Manuscript",
+    kind: "view",
     disabled: false,
     // The text is always there — parsing happens at upload.
     state: () => "done",
@@ -121,6 +126,7 @@ export const BOOK_TABS: readonly BookTabDef[] = [
   {
     id: "glossary",
     label: "Glossary",
+    kind: "step",
     disabled: false,
     state: (b) => {
       if (b.glossary_extraction_status === "running") return "active";
@@ -144,6 +150,7 @@ export const BOOK_TABS: readonly BookTabDef[] = [
   {
     id: "voices",
     label: "Voices",
+    kind: "step",
     disabled: false,
     state: (b) => {
       if (!glossaryUsable(b)) return "locked";
@@ -179,6 +186,7 @@ export const BOOK_TABS: readonly BookTabDef[] = [
   {
     id: "translation",
     label: "Translation",
+    kind: "step",
     disabled: false,
     state: (b, counts) => {
       if (translationLocked(b, counts)) return "locked";

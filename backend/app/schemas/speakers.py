@@ -61,3 +61,19 @@ class DialogueLineOut(BaseModel):
 class DialogueLinesResponse(BaseModel):
     lines: list[DialogueLineOut] = Field(default_factory=list)
     truncated: bool = False
+
+
+class ManuscriptSpeakerLineOut(BaseModel):
+    """Who says one dialogue paragraph, for the manuscript's speaker layer."""
+
+    paragraph_id: UUID
+    kind: str
+    speaker_id: UUID | None = None
+    speaker_name: str | None = None
+    addressee_name: str | None = None
+    confidence: str | None = None
+    mixed: bool = False
+
+
+class ManuscriptSpeakersResponse(BaseModel):
+    lines: list[ManuscriptSpeakerLineOut] = Field(default_factory=list)

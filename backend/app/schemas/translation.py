@@ -111,6 +111,7 @@ class GlossaryTermOut(BaseModel):
     target: str
     term_type: str
     note: str | None
+    status: str = "accepted"
 
 
 class TermSpanOut(BaseModel):

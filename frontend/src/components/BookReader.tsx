@@ -94,7 +94,7 @@ export function BookReader({ bookId, onBack }: Props) {
 
   const handleScrollHandled = useCallback(() => setChapterScrollTarget(null), []);
 
-  /** A glossary term clicked in the Translation tab: open it in the glossary. */
+  /** A glossary term clicked in the manuscript or translation: open it in the glossary. */
   const [glossaryFocus, setGlossaryFocus] = useState<string | null>(null);
   const handleOpenTerm = useCallback(
     (termId: string) => {
@@ -145,6 +145,7 @@ export function BookReader({ bookId, onBack }: Props) {
               onActiveChapterChange={setActiveChapter}
               scrollTarget={chapterScrollTarget}
               onScrollHandled={handleScrollHandled}
+              onOpenTerm={handleOpenTerm}
             />
           )}
           {activeTab === "glossary" && (

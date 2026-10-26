@@ -81,7 +81,7 @@ def render_cast(
         out.append("Current strategy:")
         out.append(p.strategy.strip() or "(none)")
         if p.sample_lines:
-            out.append("Sample lines (theirs, across the book):")
+            out.append("Lines (theirs, across the book):")
             out += [f"- {ln}" for ln in p.sample_lines]
         if p.lines_to_them:
             out.append("Said to them by others:")
@@ -162,17 +162,31 @@ def validate_flags(result: PassageCheck, rendered: RenderedCast) -> dict[UUID, t
     return flags
 
 
-SAMPLE_LINES = 12
+# A character with up to ALL_LINES_UP_TO lines is sent all of them;
+# others get SAMPLE_LINES spread over the book.
+ALL_LINES_UP_TO = 30
+SAMPLE_LINES = 25
 LINES_TO_THEM = 5
 MIN_SAMPLE_WORDS = 6
 
 
-def pick_sample(lines: list[SpokenLine], k: int, *, min_words: int = MIN_SAMPLE_WORDS) -> list[str]:
+def pick_sample(
+    lines: list[SpokenLine],
+    k: int,
+    *,
+    min_words: int = MIN_SAMPLE_WORDS,
+    keep_all_up_to: int = 0,
+) -> list[str]:
     """Up to ``k`` lines spread over the book, as ``"[ch. N] text"``.
+
+    All lines when there are no more than ``keep_all_up_to``.
 
     Prefers lines with at least ``min_words`` words and a speaker the text
     names; falls back to any line when there are too few.
     """
+
+    if len(lines) <= keep_all_up_to:
+        return [f"[ch. {ln.chapter_number}] {ln.text}" for ln in lines]
 
     def evenly(items: list[SpokenLine], n: int) -> list[SpokenLine]:
         if n >= len(items):

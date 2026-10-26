@@ -150,3 +150,22 @@ def test_pick_sample_spreads_and_prefers_named_longer_lines() -> None:
     assert all(p.count("słowo") == 8 for p in picked)
     assert picked[0].startswith("[ch. 2]")
     assert pick_sample(lines[:3], 6) == [f"[ch. 1] {ln.text}" for ln in lines[:3]]
+
+
+def test_pick_sample_sends_every_line_of_a_small_part() -> None:
+    from app.services.voice_cast import pick_sample
+    from app.services.voice_profiles import SpokenLine
+
+    lines = [
+        SpokenLine(
+            paragraph_id=uuid4(),
+            line_index=i,
+            chapter_id=uuid4(),
+            chapter_number=1,
+            kind="speech",
+            text="Toż ino prawda.",
+        )
+        for i in range(14)
+    ]
+    assert len(pick_sample(lines, 5, keep_all_up_to=30)) == 14
+    assert len(pick_sample(lines, 5)) == 5

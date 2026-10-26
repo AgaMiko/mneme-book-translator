@@ -117,7 +117,7 @@
 
   /* Drop cap on the very first paragraph of each chapter. Clay in both
      modes — interactive accent doubles as the typographic flourish. */
-  .chapter-body > p:first-of-type::first-letter {
+  .chapter-body > .manuscript-paragraph:first-child > p:first-of-type::first-letter {
     @apply font-serif text-5xl float-left mr-2 leading-none;
     line-height: 0.85;
     color: var(--color-accent);

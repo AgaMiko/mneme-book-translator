@@ -1,4 +1,5 @@
-import { AlertCircle, ArrowLeft, ArrowRight, Check, Lock } from "lucide-react";
+import { AlertCircle, ArrowLeft, ArrowRight, BookOpen, Check, Lock } from "lucide-react";
+import { Fragment } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
@@ -25,7 +26,9 @@ interface Props {
  *
  * Three things live here that used to be spread across the app: the way
  * back to the library, the pipeline (as tabs that report their own
- * state), and the single primary action for whatever comes next.
+ * state), and the single primary action for whatever comes next. The
+ * Manuscript tab sits before the pipeline, set apart by a rule: it is the
+ * reading view that shows every step's results, not a step itself.
  */
 export function BookHeader({ book, activeTab, onSelectTab, onBack, counts }: Props) {
   const language = (book.manuscript_language ?? book.source_language).toUpperCase();
@@ -101,57 +104,79 @@ export function BookHeader({ book, activeTab, onSelectTab, onBack, counts }: Pro
           </div>
         )}
 
-        {/* Tab strip — the pipeline. Two lines per tab: state + label,
-            then a caption reporting what is inside. */}
+        {/* Tab strip — the reading view, then the pipeline. Two lines per
+            tab: state + label, then a caption reporting what is inside. */}
         <nav className="-mb-px mt-4 flex gap-1" role="tablist" aria-label="Book sections">
-          {BOOK_TABS.map((t) => {
+          {BOOK_TABS.map((t, i) => {
             const active = t.id === activeTab;
             const state = t.state(book, counts);
             const tabDisabled = t.disabled || state === "locked";
+            const stepNumber = BOOK_TABS.slice(0, i + 1).filter((x) => x.kind === "step").length;
+            const firstStep = t.kind === "step" && BOOK_TABS[i - 1]?.kind === "view";
             return (
-              <button
-                key={t.id}
-                type="button"
-                role="tab"
-                aria-selected={active}
-                aria-disabled={tabDisabled || undefined}
-                disabled={tabDisabled}
-                onClick={() => !tabDisabled && onSelectTab(t.id)}
-                className={cn(
-                  "relative -mb-px min-w-[9.5rem] px-[18px] pb-[11px] pt-3 text-left",
-                  "transition-colors duration-150 ease-out",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                  // The whole shorthand in both branches — a longhand
-                  // override on top of a shorthand base leaves the
-                  // bottom colour unset, which resolves to white.
-                  active
-                    ? "border-b-2 border-b-accent border-solid"
-                    : "border-b-2 border-b-transparent border-solid",
-                  tabDisabled && "cursor-not-allowed",
+              <Fragment key={t.id}>
+                {firstStep && (
+                  <span aria-hidden className="mx-2 my-2.5 w-px self-stretch bg-ink-700" />
                 )}
-              >
-                <span className="flex items-center gap-2">
-                  <TabBadge state={state} index={BOOK_TABS.indexOf(t) + 1} />
-                  <span
-                    className={cn(
-                      "font-sans text-[13px] font-medium",
-                      active ? "text-ink-50" : tabDisabled ? "text-ink-500" : "text-ink-200",
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  aria-disabled={tabDisabled || undefined}
+                  disabled={tabDisabled}
+                  onClick={() => !tabDisabled && onSelectTab(t.id)}
+                  className={cn(
+                    "relative -mb-px min-w-[9.5rem] px-[18px] pb-[11px] pt-3 text-left",
+                    "transition-colors duration-150 ease-out",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                    // The whole shorthand in both branches — a longhand
+                    // override on top of a shorthand base leaves the
+                    // bottom colour unset, which resolves to white.
+                    active
+                      ? "border-b-2 border-b-accent border-solid"
+                      : "border-b-2 border-b-transparent border-solid",
+                    tabDisabled && "cursor-not-allowed",
+                  )}
+                >
+                  <span className="flex items-center gap-2">
+                    {t.kind === "view" ? (
+                      <ViewBadge />
+                    ) : (
+                      <TabBadge state={state} index={stepNumber} />
                     )}
-                  >
-                    {t.label}
+                    <span
+                      className={cn(
+                        "font-sans text-[13px] font-medium",
+                        active ? "text-ink-50" : tabDisabled ? "text-ink-500" : "text-ink-200",
+                      )}
+                    >
+                      {t.label}
+                    </span>
                   </span>
-                </span>
-                {/* Indented past the badge so the caption hangs under the
+                  {/* Indented past the badge so the caption hangs under the
                     label rather than under the step marker. */}
-                <span className="mt-1 block truncate pl-[26px] font-mono text-[10px] tracking-wide text-ink-500">
-                  {t.caption(book, counts)}
-                </span>
-              </button>
+                  <span className="mt-1 block truncate pl-[26px] font-mono text-[10px] tracking-wide text-ink-500">
+                    {t.caption(book, counts)}
+                  </span>
+                </button>
+              </Fragment>
             );
           })}
         </nav>
       </div>
     </header>
+  );
+}
+
+/** The reading view has no state of its own: a book, not a numeral or check. */
+function ViewBadge() {
+  return (
+    <span
+      className="flex h-[18px] w-[18px] shrink-0 items-center justify-center text-ink-400"
+      aria-hidden
+    >
+      <BookOpen className="h-3.5 w-3.5" />
+    </span>
   );
 }
 

@@ -56,6 +56,7 @@ from app.generation.prompt_manager.prompts.translate_fragment_prompt import (
 )
 from app.generation.usage import counting
 from app.models.book import Book, Chapter, Paragraph
+from app.models.glossary import INACTIVE_STATUSES
 from app.models.speakers import WindowSpeaker
 from app.models.translation import (
     TRANSLATION_STAGES,
@@ -1183,19 +1184,28 @@ def run_json(run: TranslationRun | None) -> dict[str, Any] | None:
 
 # ─── Glossary terms in the source (Translation tab highlighting) ──
 
-_TERM_VIEW_CACHE: dict[UUID, tuple[tuple[Any, ...], dict[str, Any]]] = {}
+_TERM_VIEW_CACHE: dict[tuple[UUID, bool], tuple[tuple[Any, ...], dict[str, Any]]] = {}
 _TERM_NOTE_CHARS = 200
 
 
-async def build_term_view(session: AsyncSession, *, book_id: UUID) -> dict[str, Any]:
+async def build_term_view(
+    session: AsyncSession, *, book_id: UUID, include_pending: bool = False
+) -> dict[str, Any]:
     """Accepted glossary terms and where they occur in each source paragraph.
+
+    With ``include_pending``, terms still under review are returned too
+    (everything but rejected and merged), so the manuscript can show what
+    the glossary has found so far.
 
     ``terms``: id, source form, English target, type and a short note.
     ``paragraphs``: paragraph id -> ``[{term_id, start, end}]`` character spans
     in the source text. Cached per book until the glossary or the text changes.
     """
     _run, entries = await load_working_glossary_for_latest_run(session, book_id=book_id)
-    accepted = [e for e in entries if e.status in ("accepted", "adjusted")]
+    if include_pending:
+        accepted = [e for e in entries if e.status not in INACTIVE_STATUSES]
+    else:
+        accepted = [e for e in entries if e.status in ("accepted", "adjusted")]
     paragraphs = (
         await session.execute(
             select(Paragraph.id, Paragraph.text)
@@ -1208,7 +1218,8 @@ async def build_term_view(session: AsyncSession, *, book_id: UUID) -> dict[str, 
         max((e.updated_at for e in accepted), default=None),
         len(paragraphs),
     )
-    cached = _TERM_VIEW_CACHE.get(book_id)
+    cache_key = (book_id, include_pending)
+    cached = _TERM_VIEW_CACHE.get(cache_key)
     if cached is not None and cached[0] == fingerprint:
         return cached[1]
 
@@ -1225,6 +1236,7 @@ async def build_term_view(session: AsyncSession, *, book_id: UUID) -> dict[str, 
                 "target": str(rec.get("proposed_target") or "").strip() or e.canonical_form,
                 "term_type": e.term_type,
                 "note": note or None,
+                "status": e.status,
             }
         )
     index = TermIndex.build(
@@ -1237,5 +1249,5 @@ async def build_term_view(session: AsyncSession, *, book_id: UUID) -> dict[str, 
             spans[str(pid)] = [{"term_id": t, "start": a, "end": b} for t, a, b in found]
 
     view = {"terms": terms_out, "paragraphs": spans}
-    _TERM_VIEW_CACHE[book_id] = (fingerprint, view)
+    _TERM_VIEW_CACHE[cache_key] = (fingerprint, view)
     return view

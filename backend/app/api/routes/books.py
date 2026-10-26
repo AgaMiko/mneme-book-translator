@@ -60,7 +60,11 @@ from app.schemas.glossary import (
     GlossaryWorkingEntryPatchIn,
     WorkingGlossaryResponse,
 )
-from app.schemas.speakers import DialogueLinesResponse, WorkingSpeakersResponse
+from app.schemas.speakers import (
+    DialogueLinesResponse,
+    ManuscriptSpeakersResponse,
+    WorkingSpeakersResponse,
+)
 from app.schemas.voice import (
     VoiceWorkingProfileOut,
     VoiceWorkingProfilePatchIn,
@@ -863,6 +867,24 @@ async def get_dialogue_lines(
             detail="Book not found",
         )
     return await speakers_service.list_dialogue_lines(session, book_id=book_id, speaker=speaker)
+
+
+@router.get(
+    "/{book_id}/manuscript/speakers",
+    response_model=ManuscriptSpeakersResponse,
+    summary="Speaker of every dialogue line, for marking the manuscript",
+)
+async def get_manuscript_speakers(
+    book_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> ManuscriptSpeakersResponse:
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Book not found",
+        )
+    return await speakers_service.list_manuscript_speakers(session, book_id=book_id)
 
 
 @router.get(

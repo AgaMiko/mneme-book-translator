@@ -20,6 +20,7 @@ import {
   type GlossaryReviewEstimate,
   type GlossaryReviewResult,
   type GlossaryWorkingEntry,
+  type ManuscriptSpeakersResponse,
   type MarkableStage,
   type ModelCatalog,
   type RunOptions,
@@ -52,6 +53,9 @@ export const bookKeys = {
     [...bookKeys.all, "dialogue-lines", id, speakerId ?? "none"] as const,
   translation: (id: string) => [...bookKeys.all, "translation", id] as const,
   translationTerms: (id: string) => [...bookKeys.all, "translation-terms", id] as const,
+  // Under `translationTerms` so glossary edits that refresh one refresh both.
+  manuscriptTerms: (id: string) => [...bookKeys.translationTerms(id), "with-pending"] as const,
+  manuscriptSpeakers: (id: string) => [...bookKeys.all, "manuscript-speakers", id] as const,
   translationEstimate: (id: string, chapterIds: readonly string[] | null) =>
     [...bookKeys.all, "translation-estimate", id, chapterIds ?? "all"] as const,
 };
@@ -353,6 +357,19 @@ export function useDialogueLines(
   });
 }
 
+/** Speaker of every dialogue line, for marking the manuscript. */
+export function useManuscriptSpeakers(
+  bookId: string,
+  opts: { enabled: boolean; refetchIntervalMs: number | false },
+): UseQueryResult<ManuscriptSpeakersResponse, Error> {
+  return useQuery({
+    queryKey: bookKeys.manuscriptSpeakers(bookId),
+    queryFn: () => api.getManuscriptSpeakers(bookId),
+    enabled: opts.enabled,
+    refetchInterval: opts.refetchIntervalMs,
+  });
+}
+
 export function useWorkingVoices(
   bookId: string,
   opts: { enabled: boolean; refetchIntervalMs: number | false },
@@ -563,5 +580,19 @@ export function useTranslationTerms(bookId: string): UseQueryResult<TranslationT
     queryKey: bookKeys.translationTerms(bookId),
     queryFn: () => api.getTranslationTerms(bookId),
     staleTime: 60_000,
+  });
+}
+
+/** Glossary terms in the source, pending ones included, for the manuscript. */
+export function useManuscriptTerms(
+  bookId: string,
+  opts: { enabled: boolean; refetchIntervalMs: number | false },
+): UseQueryResult<TranslationTerms, Error> {
+  return useQuery({
+    queryKey: bookKeys.manuscriptTerms(bookId),
+    queryFn: () => api.getTranslationTerms(bookId, true),
+    enabled: opts.enabled,
+    refetchInterval: opts.refetchIntervalMs,
+    staleTime: 30_000,
   });
 }

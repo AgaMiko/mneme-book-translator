@@ -8,7 +8,7 @@ import { parseInline } from "./inline";
 import { TermContext, useTerms } from "./terms";
 
 /**
- * Glossary terms in the Translation tab.
+ * Glossary terms in the Translation tab and the manuscript.
  *
  * The server finds terms in each Polish paragraph, case forms included
  * (`GET /books/{id}/translation/terms`). Here the English side is matched by
@@ -17,7 +17,8 @@ import { TermContext, useTerms } from "./terms";
  * about: English often replaces a name with "she" or "he".
  *
  * Hovering a term shows a short card; clicking opens the term in the
- * glossary.
+ * glossary. The manuscript also shows terms not reviewed yet, with a
+ * fainter underline.
  */
 
 const TYPE_LABELS: Record<string, string> = {
@@ -105,6 +106,7 @@ function TermMark({
 }) {
   const ctx = useTerms();
   const [open, setOpen] = useState(false);
+  const pending = term.status === "proposed";
   return (
     <span
       className="relative"
@@ -121,7 +123,9 @@ function TermMark({
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
           warn
             ? "bg-warning-surface text-warning decoration-warning"
-            : "decoration-ink-500 hover:bg-ink-800 hover:decoration-accent",
+            : pending
+              ? "decoration-ink-700 hover:bg-ink-800 hover:decoration-ink-500"
+              : "decoration-ink-500 hover:bg-ink-800 hover:decoration-accent",
         )}
       >
         {children}
@@ -141,6 +145,7 @@ function TermMark({
           </span>
           <span className="mt-0.5 block font-mono text-[10px] uppercase tracking-wider text-ink-500">
             {TYPE_LABELS[term.term_type] ?? term.term_type}
+            {pending && " · not reviewed yet"}
           </span>
           {term.note && <span className="mt-1 block text-ink-400">{term.note}</span>}
           {warn && (

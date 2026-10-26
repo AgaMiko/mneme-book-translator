@@ -22,6 +22,7 @@ import {
   type GlossaryWorkingEntry,
   type ManuscriptSpeakersResponse,
   type MarkableStage,
+  type NarrationPovResponse,
   type ModelCatalog,
   type RunOptions,
   type StartTranslationBody,
@@ -56,6 +57,8 @@ export const bookKeys = {
   // Under `translationTerms` so glossary edits that refresh one refresh both.
   manuscriptTerms: (id: string) => [...bookKeys.translationTerms(id), "with-pending"] as const,
   manuscriptSpeakers: (id: string) => [...bookKeys.all, "manuscript-speakers", id] as const,
+  // Under `workingGlossary`: POV names are matched to glossary characters.
+  manuscriptNarration: (id: string) => [...bookKeys.workingGlossary(id), "narration"] as const,
   translationEstimate: (id: string, chapterIds: readonly string[] | null) =>
     [...bookKeys.all, "translation-estimate", id, chapterIds ?? "all"] as const,
 };
@@ -367,6 +370,21 @@ export function useManuscriptSpeakers(
     queryFn: () => api.getManuscriptSpeakers(bookId),
     enabled: opts.enabled,
     refetchInterval: opts.refetchIntervalMs,
+  });
+}
+
+/**
+ * Whose POV each scene follows. Read from the text, so it is there from
+ * upload; refreshed with the glossary, whose characters the names are
+ * matched to.
+ */
+export function useManuscriptNarration(
+  bookId: string,
+): UseQueryResult<NarrationPovResponse, Error> {
+  return useQuery({
+    queryKey: bookKeys.manuscriptNarration(bookId),
+    queryFn: () => api.getManuscriptNarration(bookId),
+    staleTime: 60_000,
   });
 }
 

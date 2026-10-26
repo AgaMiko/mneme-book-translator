@@ -3,10 +3,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type {
   BookDetail,
   ManuscriptSpeakerLine,
+  NarrationScene,
   TermSpan,
   TranslationView,
 } from "@/lib/api/client";
-import { useManuscriptSpeakers, useManuscriptTerms, useTranslation } from "@/lib/api/hooks";
+import {
+  useManuscriptNarration,
+  useManuscriptSpeakers,
+  useManuscriptTerms,
+  useTranslation,
+} from "@/lib/api/hooks";
 import { cn, formatNumber } from "@/lib/utils";
 
 import { BOOK_PANEL_CONTAINER, BOOK_PANEL_SURFACE } from "./layout";
@@ -28,13 +34,15 @@ interface Props {
 
 /**
  * What each pipeline step has added to the text, drawn as layers you can
- * switch on and off: who speaks each dialogue line, the glossary terms
- * found so far (pending ones too), and the translation under each
- * paragraph. A layer is offered once its step has produced something.
+ * switch on and off: whose point of view each scene's narration follows,
+ * who speaks each dialogue line, the glossary terms found so far (pending
+ * ones too), and the translation under each paragraph. A layer is offered
+ * once there is something to show.
  */
-type Layer = "speakers" | "glossary" | "translation";
+type Layer = "narration" | "speakers" | "glossary" | "translation";
 
 const LAYER_LABELS: Record<Layer, string> = {
+  narration: "Narration POV",
   speakers: "Speakers",
   glossary: "Glossary",
   translation: "Translation",
@@ -43,7 +51,7 @@ const LAYER_LABELS: Record<Layer, string> = {
 const LAYERS_STORAGE_KEY = "manuscript-layers";
 
 function loadLayers(): Record<Layer, boolean> {
-  const all = { speakers: true, glossary: true, translation: false };
+  const all = { narration: true, speakers: true, glossary: true, translation: false };
   try {
     const saved = JSON.parse(localStorage.getItem(LAYERS_STORAGE_KEY) ?? "null");
     return saved ? { ...all, ...saved } : all;
@@ -61,7 +69,8 @@ function saveLayers(layers: Record<Layer, boolean>) {
 }
 
 /**
- * Bar colours for speakers, in order of first appearance in the book.
+ * Character colours, shared by the speaker bars and the narration band:
+ * speakers in order of first line, then POV characters with no lines.
  * Mid-tone hues so the bar reads on parchment and on the dark surface.
  */
 const SPEAKER_COLORS = [
@@ -115,26 +124,40 @@ export function ManuscriptView({
     refetchIntervalMs: book.glossary_extraction_status === "running" ? 5000 : false,
   });
   const translation = useTranslation(book.id);
+  const narration = useManuscriptNarration(book.id);
 
   const speakerByParagraph = useMemo(
     () => new Map((speakers.data?.lines ?? []).map((l) => [l.paragraph_id, l])),
     [speakers.data],
   );
-  const speakerColor = useMemo(() => {
+  const sceneByParagraph = useMemo(() => {
+    const out = new Map<string, SceneSpot>();
+    for (const scene of narration.data?.scenes ?? []) {
+      const ids = scene.paragraph_ids;
+      ids.forEach((id, i) => out.set(id, { scene, first: i === 0, last: i === ids.length - 1 }));
+    }
+    return out;
+  }, [narration.data]);
+  const characterColor = useMemo(() => {
     const colors = new Map<string, string>();
-    for (const l of speakers.data?.lines ?? []) {
-      if (l.speaker_id && !colors.has(l.speaker_id)) {
-        colors.set(l.speaker_id, SPEAKER_COLORS[colors.size % SPEAKER_COLORS.length]);
+    const ids = [
+      ...(speakers.data?.lines ?? []).map((l) => l.speaker_id),
+      ...(narration.data?.scenes ?? []).map((s) => s.pov_id),
+    ];
+    for (const id of ids) {
+      if (id && !colors.has(id)) {
+        colors.set(id, SPEAKER_COLORS[colors.size % SPEAKER_COLORS.length]);
       }
     }
     return colors;
-  }, [speakers.data]);
+  }, [speakers.data, narration.data]);
   const translationByParagraph = useMemo(
     () => translatedParagraphs(translation.data),
     [translation.data],
   );
 
   const counts: Record<Layer, number> = {
+    narration: narration.data?.scenes.length ?? 0,
     speakers: speakerByParagraph.size,
     glossary: terms.data?.terms.length ?? 0,
     translation: translationByParagraph.size,
@@ -208,6 +231,7 @@ export function ManuscriptView({
                   ) : (
                     chapter.paragraphs.map((p) => {
                       const line = show("speakers") ? speakerByParagraph.get(p.id) : undefined;
+                      const spot = show("narration") ? sceneByParagraph.get(p.id) : undefined;
                       return (
                         <ManuscriptParagraph
                           key={p.id}
@@ -216,7 +240,11 @@ export function ManuscriptView({
                             show("glossary") ? (terms.data?.paragraphs[p.id] ?? NO_SPANS) : NO_SPANS
                           }
                           line={line}
-                          color={line?.speaker_id ? speakerColor.get(line.speaker_id) : undefined}
+                          color={line?.speaker_id ? characterColor.get(line.speaker_id) : undefined}
+                          spot={spot}
+                          povColor={
+                            spot?.scene.pov_id ? characterColor.get(spot.scene.pov_id) : undefined
+                          }
                           translated={
                             show("translation") ? translationByParagraph.get(p.id) : undefined
                           }
@@ -282,6 +310,13 @@ function LayerBar({
   );
 }
 
+/** Where a paragraph sits in its scene, for drawing the narration band. */
+interface SceneSpot {
+  scene: NarrationScene;
+  first: boolean;
+  last: boolean;
+}
+
 const KIND_LABELS: Record<string, string> = {
   speech: "says",
   thought: "thinks",
@@ -291,23 +326,46 @@ const KIND_LABELS: Record<string, string> = {
 /**
  * One source paragraph with whatever layers are on. A dialogue line gets
  * a bar in the left gutter in its speaker's colour (dashed when the
- * speaker is unknown); hovering the paragraph names the speaker.
+ * speaker is unknown); hovering the paragraph names the speaker. Further
+ * out, a band runs down each scene in its POV character's colour, with a
+ * label at the scene's start; it is dashed where the POV is not marked.
  */
 function ManuscriptParagraph({
   text,
   spans,
   line,
   color,
+  spot,
+  povColor,
   translated,
 }: {
   text: string;
   spans: TermSpan[];
   line: ManuscriptSpeakerLine | undefined;
   color: string | undefined;
+  spot: SceneSpot | undefined;
+  povColor: string | undefined;
   translated: string | undefined;
 }) {
+  const marked = spot && (spot.scene.source === "heading" || spot.scene.source === "scene_break");
   return (
     <div className="manuscript-paragraph group relative">
+      {spot && (
+        <>
+          {/* Runs into the gap below so a scene reads as one band. */}
+          <span
+            aria-hidden
+            className={cn(
+              "absolute -left-7 top-0 w-0 border-l-2",
+              spot.last ? "bottom-0" : "-bottom-5",
+              marked ? "border-solid" : "border-dashed",
+              !povColor && "border-ink-600",
+            )}
+            style={povColor ? { borderColor: povColor, opacity: marked ? 0.7 : 0.45 } : undefined}
+          />
+          {spot.first && <PovLabel scene={spot.scene} color={povColor} />}
+        </>
+      )}
       {line && (
         <>
           <span
@@ -329,6 +387,29 @@ function ManuscriptParagraph({
           <HighlightedText text={translated} spans={NO_SPANS} />
         </p>
       )}
+    </div>
+  );
+}
+
+const POV_NOTES: Record<NarrationScene["source"], string> = {
+  heading: "from the chapter heading",
+  scene_break: "named at the scene break",
+  assumed: "assumed: unnamed scene break, carried over from the chapter heading",
+  unknown: "no POV marker",
+};
+
+function PovLabel({ scene, color }: { scene: NarrationScene; color: string | undefined }) {
+  const flagged = scene.source === "assumed" || scene.source === "unknown";
+  return (
+    <div className="mb-1.5 flex items-center gap-1.5 font-sans text-[11px] leading-none">
+      <span
+        aria-hidden
+        className="h-2 w-2 rounded-full bg-ink-600"
+        style={color ? { backgroundColor: color } : undefined}
+      />
+      <span className="font-mono uppercase tracking-wider text-ink-500">POV</span>
+      <span className="font-medium text-ink-200">{scene.pov_name ?? "unknown"}</span>
+      <span className={flagged ? "text-warning" : "text-ink-500"}>· {POV_NOTES[scene.source]}</span>
     </div>
   );
 }

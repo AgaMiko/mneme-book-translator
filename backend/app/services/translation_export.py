@@ -44,6 +44,7 @@ from app.models.translation import (
     FragmentRendition,
     TranslationFragment,
 )
+from app.services.narration_pov import CHAPTER_LINE, SCENE_BREAK
 from app.services.translation_service import current_renditions
 
 if TYPE_CHECKING:
@@ -56,8 +57,6 @@ BlockKind = Literal[
     "pov", "chapter", "epigraph", "scene_break", "scene_pov", "paragraph", "missing"
 ]
 
-_CHAPTER_LINE = re.compile(r"^(chapter|rozdzia[łl])\s+\d+", re.IGNORECASE)
-_SCENE_BREAK = re.compile(r"^\s*(?:#{1,3}\s*)?\*\s*\*\s*\*\s*$")
 _ATTRIBUTION = re.compile(r"^[\u2013\u2014-]\s*")
 
 
@@ -90,7 +89,7 @@ def heading_blocks(text: str) -> list[Block]:
     lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
     if not lines:
         return []
-    idx = next((i for i, ln in enumerate(lines) if _CHAPTER_LINE.match(_strip_marks(ln))), None)
+    idx = next((i for i, ln in enumerate(lines) if CHAPTER_LINE.match(_strip_marks(ln))), None)
     if idx is None:
         # No "Chapter N" line: first line is the heading, the rest an epigraph.
         idx = 0
@@ -105,7 +104,7 @@ def heading_blocks(text: str) -> list[Block]:
 def body_blocks(text: str) -> list[Block]:
     """One translated paragraph → blocks (scene breaks carry an optional POV)."""
     lines = [ln.strip() for ln in text.split("\n")]
-    if lines and _SCENE_BREAK.match(lines[0]):
+    if lines and SCENE_BREAK.match(lines[0]):
         out = [Block("scene_break")]
         rest = " ".join(ln for ln in lines[1:] if ln)
         if rest:

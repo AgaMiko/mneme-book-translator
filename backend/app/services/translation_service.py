@@ -249,6 +249,7 @@ async def load_voice_profiles(
             name=name,
             observation=v.source_voice_observation,
             strategy=v.target_voice_strategy,
+            brief=v.translation_brief,
         )
     return out
 

@@ -35,6 +35,7 @@ deployment-specific. The signatures and docstrings define the contract.
 
 from __future__ import annotations
 
+import asyncio
 import math
 from typing import TYPE_CHECKING, Any, Literal
 from uuid import UUID
@@ -198,6 +199,8 @@ def _character_voice_to_working_out(
             translation_proposed=p.translation_proposed,
             translation_authoritative=p.translation_authoritative,
             status=p.status,
+            translation_review=p.translation_review,
+            translation_revised=p.translation_revised,
         )
         for p in ordered
     ]
@@ -225,6 +228,7 @@ def _character_voice_to_working_out(
         canonical_name=g.canonical_form,
         source_voice_observation=voice.source_voice_observation,
         target_voice_strategy=voice.target_voice_strategy,
+        translation_brief=voice.translation_brief,
         reference_passage_source=primary.source_text if primary else "",
         reference_passage_translation_proposed=(primary.translation_proposed or "")
         if primary
@@ -353,6 +357,9 @@ async def patch_working_voice_profile(
         if patch.target_voice_strategy is not None:
             voice.target_voice_strategy = patch.target_voice_strategy
             voice.status = "adjusted"
+        if patch.translation_brief is not None:
+            voice.translation_brief = patch.translation_brief.strip() or None
+            voice.status = "adjusted"
         if patch.reference_passage_translation is not None:
             if primary is None:
                 msg = "No selected reference passage to update for this profile."
@@ -370,6 +377,9 @@ async def patch_working_voice_profile(
             if patch.selected_passage_translation is not None:
                 passage.translation_authoritative = patch.selected_passage_translation
                 passage.status = "adjusted"
+                # The author has decided; the cast pass flag is settled.
+                passage.translation_review = None
+                passage.translation_revised = None
                 voice.status = "adjusted"
         if patch.needs_regeneration is not None:
             voice.needs_regeneration = patch.needs_regeneration
@@ -975,24 +985,37 @@ async def run_translation_for_voices(
     book_id: UUID,
     voice_ids: list[UUID],
     settings: Settings,
-) -> None:
-    """Phase 3 for selected passages belonging to the given voices."""
+    retranslate: bool = False,
+) -> int:
+    """Translate the reference passages of the given voices. Returns how many.
+
+    By default only passages without a translation. With ``retranslate``,
+    every passage the author has not reviewed (status ``proposed``) is
+    translated again and its cast-pass flag cleared. Each voice's
+    ``translation_brief`` is used when it has one. Calls run
+    ``VOICE_BUILD_CONCURRENCY`` at a time.
+    """
     if not voice_ids:
-        return
+        return 0
     session_maker = get_sessionmaker()
     with propagate_attributes(session_id=str(book_id), trace_name="voice_translation"):
         async with session_maker() as session:
             book = await session.get(Book, book_id)
             if book is None:
-                return
+                return 0
             terms = await load_accepted_glossary_terms(session, book_id=book_id)
+            which = (
+                VoiceSelectedPassage.status == "proposed"
+                if retranslate
+                else VoiceSelectedPassage.translation_proposed.is_(None)
+            )
             stmt = (
                 select(VoiceSelectedPassage)
                 .join(CharacterVoice, CharacterVoice.id == VoiceSelectedPassage.voice_id)
                 .where(
                     CharacterVoice.book_id == book_id,
                     CharacterVoice.id.in_(voice_ids),
-                    VoiceSelectedPassage.translation_proposed.is_(None),
+                    which,
                 )
                 .options(
                     selectinload(VoiceSelectedPassage.voice).selectinload(
@@ -1001,33 +1024,43 @@ async def run_translation_for_voices(
                 )
             )
             to_translate = (await session.execute(stmt)).scalars().all()
-            for sp in to_translate:
+            sem = asyncio.Semaphore(max(1, settings.VOICE_BUILD_CONCURRENCY))
+
+            async def one(sp: VoiceSelectedPassage) -> PassageTranslation | None:
                 voice = sp.voice
                 if voice is None:
                     log.warning("voice_selected_passage missing voice: %s", sp.id)
-                    continue
+                    return None
                 ge = voice.glossary_entry
-                name = ge.canonical_form if ge is not None else "—"
-                out = await translate_passage(
-                    selected_passage_id=str(sp.id),
-                    profile_id=str(voice.id),
-                    canonical_name=name,
-                    source_voice_observation=voice.source_voice_observation,
-                    target_voice_strategy=voice.target_voice_strategy,
-                    passage_source_text=sp.source_text,
-                    glossary_terms=terms,
-                    source_language=book.source_language,
-                    target_language=book.target_language,
-                    settings=settings,
-                )
+                async with sem:
+                    return await translate_passage(
+                        selected_passage_id=str(sp.id),
+                        profile_id=str(voice.id),
+                        canonical_name=ge.canonical_form if ge is not None else "—",
+                        source_voice_observation=voice.source_voice_observation,
+                        target_voice_strategy=voice.target_voice_strategy,
+                        voice_brief=voice.translation_brief,
+                        passage_source_text=sp.source_text,
+                        glossary_terms=terms,
+                        source_language=book.source_language,
+                        target_language=book.target_language,
+                        settings=settings,
+                    )
+
+            results = await asyncio.gather(*(one(sp) for sp in to_translate))
+            done = 0
+            for sp, out in zip(to_translate, results, strict=True):
+                if out is None:
+                    continue
                 if out.selected_passage_id != str(sp.id):
                     log.warning("Translation id drift for passage %s", sp.id)
-                await persist_translation(
-                    session,
-                    selected_passage_id=sp.id,
-                    translation=out,
-                )
+                await persist_translation(session, selected_passage_id=sp.id, translation=out)
+                if retranslate:
+                    sp.translation_review = None
+                    sp.translation_revised = None
+                done += 1
             await session.commit()
+            return done
 
 
 # ─── Phase 2: passage selection ─────────────────────────

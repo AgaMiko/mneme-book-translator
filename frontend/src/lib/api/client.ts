@@ -223,6 +223,9 @@ export const VoiceSelectedPassageSchema = z.object({
   translation_proposed: z.string().nullable(),
   translation_authoritative: z.string().nullable(),
   status: z.string(),
+  /** Cast pass: why the proposed English loses the voice, and a revision. */
+  translation_review: z.string().nullable(),
+  translation_revised: z.string().nullable(),
 });
 export type VoiceSelectedPassage = z.infer<typeof VoiceSelectedPassageSchema>;
 
@@ -252,6 +255,8 @@ export const VoiceWorkingProfileSchema = z.object({
   canonical_name: z.string(),
   source_voice_observation: z.string(),
   target_voice_strategy: z.string(),
+  /** Short rules from the cast pass; what translation sends when set. */
+  translation_brief: z.string().nullable(),
   /** Primary passage (rank 0); use `selected_passages` for the full v3 set. */
   reference_passage_source: z.string(),
   reference_passage_translation_proposed: z.string(),
@@ -386,6 +391,7 @@ export type VoiceProfilePatchBody = {
   reject?: boolean;
   source_voice_observation?: string;
   target_voice_strategy?: string;
+  translation_brief?: string;
   reference_passage_translation?: string;
   selected_passage_id?: string;
   selected_passage_translation?: string;
@@ -759,6 +765,24 @@ export const api = {
       }),
       GlossaryExtractionStartResponseSchema,
     ),
+
+  /**
+   * Rewrite the briefs (unless `rebuildBriefs` is false), retranslate the
+   * unreviewed reference passages with them, and check the passages.
+   */
+  runVoiceCastPass: async (
+    id: string,
+    opts?: RunOptions & { rebuildBriefs?: boolean },
+  ): Promise<GlossaryExtractionStartResponse> => {
+    const q = runQuery(opts);
+    const extra = opts?.rebuildBriefs === false ? `${q ? "&" : "?"}rebuild_briefs=false` : "";
+    return handleResponse(
+      await fetch(`${API_URL}/books/${id}/voice-extraction/cast-pass${q}${extra}`, {
+        method: "POST",
+      }),
+      GlossaryExtractionStartResponseSchema,
+    );
+  },
 
   stopVoiceExtraction: async (id: string): Promise<GlossaryExtractionStopResponse> =>
     handleResponse(

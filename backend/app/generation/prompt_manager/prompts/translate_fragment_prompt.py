@@ -8,7 +8,7 @@ calibration prompt (``translate_passage_prompt.py``), with the changes listed
 in ``docs/step5-translation-pipeline.md`` §4:
 
 - an explicit exception to "plain words over Latinate" when a character's
-  voice strategy names a Latinate, clinical, elevated, archaic or broken
+  voice profile names a Latinate, clinical, elevated, archaic or broken
   register;
 - names always in the nominative (no Polish case endings);
 - punctuation guidance for dialogue dashes, em dashes and ellipses;
@@ -49,8 +49,8 @@ this", not "Well, please".
 4. **Plain words over Latinate words in narration.** Polish uses Latinate \
 words casually; English fiction prefers shorter, plainer words. "prawdziwa \
 katastrofa" → "serious trouble", not "a real catastrophe".
-   **Exception:** when a character's voice strategy names a Latinate, \
-clinical, elevated, archaic or broken register, follow the strategy for that \
+   **Exception:** when a character's voice profile names a Latinate, \
+clinical, elevated, archaic or broken register, follow the profile for that \
 character's lines and for free indirect thought in their point of view. A \
 character who speaks in clinical Latinate terms keeps them ("haemorrhage", \
 "fabricates images"). A character with broken non-native grammar keeps the \
@@ -59,7 +59,7 @@ broken grammar.
 5. **Verbs over abstract nouns.** Break long abstract noun phrases into \
 verbs. "wymusić strach na obywatelach" → "terrorise the public".
 
-6. **Contractions in dialogue**, unless the character's voice strategy says \
+6. **Contractions in dialogue**, unless the character's voice profile says \
 otherwise (formal, ritual or archaic speech).
 
 7. **Names in the nominative.** Polish names change their endings by case \
@@ -73,9 +73,14 @@ an ordinary word is NOT the glossary term (for example, a literal hair braid \
 is not the magic "weave"). For a new name or term in the same family as \
 glossary terms, follow the same strategy, and report it as a term_choice note.
 
-9. **Voices.** Follow each character's target voice strategy. The source \
-observation explains why. Use the named markers only where the source has \
-voice to translate; do not sprinkle them in.
+9. **Voices.** The source text comes first: translate what the character \
+says, with nothing added or lost. The character's voice profile guides \
+*how* you say it in {target_language}: which words to reach for (plain, \
+educated, technical, rural, old-fashioned) and how to build the sentence, \
+so each character keeps their register and sounds unlike the others. Do \
+not add markers the source line does not carry. A brief may end with a \
+short sample in the character's voice: use it to hear how they sound, \
+never copy its phrases into the translation.
 
 10. **Free indirect thought** stays in past tense. Only direct thought is in \
 italics.
@@ -190,8 +195,9 @@ neutral narration.
 - When two characters of the same gender talk, make sure the reader can tell \
 who speaks. You may add a minimal clarifying beat (a name, "he said"). \
 Report every such addition as an added_clarification note.
-- Do not flatten voices: keep each character's register as the voice \
-strategy describes.
+- Do not flatten voices. The source line comes first; the voice profile \
+guides word choice and sentence structure in that character's lines, so \
+they keep their register and sound unlike the others.
 - Keep glossary terms, names, placeholders, epigraphs and letters exactly.
 - Fix every problem listed under "Problems found by automatic checks", and \
 look at each spot listed under "Rhythm and repetition in the draft".
@@ -289,6 +295,8 @@ class VoiceRow:
     name: str
     observation: str
     strategy: str
+    # Short rules from the cast pass; sent instead of observation + strategy.
+    brief: str | None = None
 
 
 def render_glossary(rows: list[GlossaryRow]) -> str:
@@ -306,6 +314,9 @@ def render_voices(rows: list[VoiceRow]) -> str:
         return "(no voice profiles for the characters in this fragment)"
     parts = []
     for r in rows:
+        if r.brief:
+            parts.append(f"### {r.name}\n\nVoice brief (how they come across):\n{r.brief}")
+            continue
         parts.append(
             f"### {r.name}\n\nSource voice (what the character does in the source):\n"
             f"{r.observation}\n\nTarget voice strategy (how to render it):\n{r.strategy}"

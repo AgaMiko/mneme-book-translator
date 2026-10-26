@@ -1185,6 +1185,73 @@ async def regenerate_flagged_voice_profiles(
     return GlossaryExtractionStartResponse(book_id=book_id)
 
 
+def _schedule_cast_pass(book_id: UUID, settings: Settings, *, rebuild_briefs: bool) -> None:
+    task = asyncio.create_task(
+        voice_build_service.cast_pass_job(
+            book_id=book_id, settings=settings, rebuild_briefs=rebuild_briefs
+        )
+    )
+
+    def _on_done(t: asyncio.Task[object]) -> None:
+        try:
+            t.result()
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            log.exception("cast_pass_background_unhandled", book_id=str(book_id))
+
+    task.add_done_callback(_on_done)
+
+
+@router.post(
+    "/{book_id}/voice-extraction/cast-pass",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=GlossaryExtractionStartResponse,
+    summary=(
+        "Rewrite the voice briefs (optional), retranslate unreviewed reference "
+        "passages with them, and check the passages with the whole cast in view"
+    ),
+)
+async def run_voice_cast_pass(
+    book_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    settings: Settings = Depends(get_settings),
+    model: str | None = Query(default=None),
+    # False: keep the current briefs and only retranslate and check the passages.
+    rebuild_briefs: bool = Query(default=True),
+) -> GlossaryExtractionStartResponse:
+    settings = _step_settings(settings, "voices", model)
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
+    ok, reason = await voice_build_service.can_run_cast_pass(session, book_id=book_id)
+    if not ok:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=reason or "The cast pass cannot start.",
+        )
+    result = await session.execute(
+        update(Book)
+        .where(Book.id == book_id, Book.voice_extraction_status != "running")
+        .values(
+            voice_extraction_status="running",
+            voice_extraction_cancel_requested=False,
+            voice_extraction_windows_total=None,
+            voice_extraction_windows_completed=None,
+            voice_extraction_last_error=None,
+        ),
+    )
+    await session.commit()
+    if rowcount(result) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Voice extraction is already running for this book.",
+        )
+    _schedule_cast_pass(book_id, settings, rebuild_briefs=rebuild_briefs)
+    log.info("cast_pass_scheduled", book_id=str(book_id))
+    return GlossaryExtractionStartResponse(book_id=book_id)
+
+
 @router.post(
     "/{book_id}/voice-extraction/stop",
     status_code=status.HTTP_202_ACCEPTED,

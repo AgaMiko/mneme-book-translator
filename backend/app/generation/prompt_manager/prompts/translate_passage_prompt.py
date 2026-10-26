@@ -53,35 +53,7 @@ verbatim.** Copy it exactly.
 **(2) The ``canonical_name`` you return must match the input.** \
 Cross-checked.
 
-## How to use the two voice fields
-
-You receive two fields describing this character's voice:
-
-- ``source_voice_observation`` describes what the character is REALLY \
-doing in {source_language}. Specific markers: particles, archaic \
-vocabulary, deliberate misspellings, address conventions, register \
-shifts.
-- ``target_voice_strategy`` directs you to a specific {target_language} \
-register, names markers to use, and names things to avoid.
-
-**The strategy is your primary directive.** Apply it specifically: \
-when it names a marker (e.g., "use 'ye' for informal you"), use that \
-marker. When it names an avoidance (e.g., "no Americanisms"), avoid \
-the named pattern.
-
-**The observation gives you context.** When you see a marker in the \
-source that the observation has named, you know it's deliberate — the \
-source author put it there to mark voice. Render its functional \
-equivalent in {target_language}, using the strategy's markers.
-
-Example, if the observation reads "uses the -że emphatic particle \
-(Łapaćże, lepiejże)" and the strategy reads "use 'would ye' as the \
--że equivalent," then when you see -że in the source, you render \
-with "would ye." That's the loop.
-
-If observation and strategy seem to conflict (rare; should be caught \
-in author review), follow the strategy. The strategy is the craft \
-decision; the observation supports it.
+{voice_guide}
 
 ## Glossary discipline
 
@@ -181,17 +153,7 @@ Brief. This is for review traceability, not justification.
 profile_id: {profile_id}
 canonical_name: {canonical_name}
 
-### Source voice observation
-
-What this character is doing in {source_language}:
-
-{source_voice_observation}
-
-### Target voice strategy
-
-How to render in {target_language}:
-
-{target_voice_strategy}
+{voice_block}
 
 ## Accepted glossary ({n_terms} terms)
 
@@ -218,3 +180,53 @@ def render_glossary_block(terms: list[Any]) -> str:
         notes = t.notes if t.notes else "—"
         lines.append(f"{t.term_source} | {t.term_target} | {t.translation_strategy} | {notes}")
     return "\n".join(lines)
+
+
+VOICE_GUIDE_PROFILE = """\
+## How to use the two voice fields
+
+You receive two fields describing this character's voice:
+
+- ``source_voice_observation`` describes what the character is REALLY \
+doing in {source_language}. Specific markers: particles, archaic \
+vocabulary, deliberate misspellings, address conventions, register \
+shifts.
+- ``target_voice_strategy`` directs you to a specific {target_language} \
+register, names markers to use, and names things to avoid.
+
+**The strategy is your primary directive.** Apply it specifically: \
+when it names a marker (e.g., "use 'ye' for informal you"), use that \
+marker. When it names an avoidance (e.g., "no Americanisms"), avoid \
+the named pattern.
+
+**The observation gives you context.** When you see a marker in the \
+source that the observation has named, you know it's deliberate — the \
+source author put it there to mark voice. Render its functional \
+equivalent in {target_language}, using the strategy's markers.
+
+If observation and strategy seem to conflict (rare; should be caught \
+in author review), follow the strategy. The strategy is the craft \
+decision; the observation supports it."""
+
+VOICE_GUIDE_BRIEF = """\
+## How to use the voice brief
+
+**The source passage comes first:** translate what is said, with \
+nothing added or lost. The voice brief tells you how this character \
+comes across in {target_language}: who they sound like, how plain or \
+elevated their words are, how formal they are. Let it guide *how* you \
+say it: which words you reach for and how you build each sentence, so \
+the character keeps their register and sounds unlike anyone else in \
+the book. The brief ends with a short sample in the character's voice: \
+use it to hear how they sound, never copy its phrases into the \
+translation. Wherever the prompt below mentions "the strategy", read it \
+as this brief."""
+
+
+def render_voice_block(*, observation: str, strategy: str, brief: str | None) -> str:
+    """The character's voice section: the brief when there is one, else both fields."""
+    if brief:
+        return f"### Voice brief\n\n{brief}"
+    return (
+        f"### Source voice observation\n\n{observation}\n\n### Target voice strategy\n\n{strategy}"
+    )

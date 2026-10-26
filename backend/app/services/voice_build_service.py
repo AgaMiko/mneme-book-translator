@@ -45,6 +45,7 @@ from app.services.glossary_extraction_estimate import glossary_window_count
 from app.services.speaker_chunks import windows_for_span
 from app.services.stages import glossary_ready
 from app.services.voice_cast import (
+    ALL_LINES_UP_TO,
     LINES_TO_THEM,
     SAMPLE_LINES,
     CastPassage,
@@ -671,7 +672,11 @@ async def load_cast(session: AsyncSession, *, book_id: UUID) -> list[CastProfile
                 ],
                 strategy=v.target_voice_strategy,
                 passages=passages,
-                sample_lines=pick_sample(own.get(v.glossary_entry_id, []), SAMPLE_LINES),
+                sample_lines=pick_sample(
+                    own.get(v.glossary_entry_id, []),
+                    SAMPLE_LINES,
+                    keep_all_up_to=ALL_LINES_UP_TO,
+                ),
                 lines_to_them=pick_sample(
                     sorted(to_them.get(v.glossary_entry_id, []), key=lambda ln: ln.line_index),
                     LINES_TO_THEM,

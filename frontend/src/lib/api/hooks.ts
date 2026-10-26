@@ -454,6 +454,23 @@ export function useRegenerateFlaggedVoices(
   });
 }
 
+export function useRunVoiceCastPass(
+  bookId: string,
+): UseMutationResult<
+  GlossaryExtractionStartResponse,
+  Error,
+  (RunOptions & { rebuildBriefs?: boolean }) | void
+> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (opts) => api.runVoiceCastPass(bookId, opts || undefined),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: bookKeys.detail(bookId) });
+      void qc.invalidateQueries({ queryKey: bookKeys.lists() });
+    },
+  });
+}
+
 export function useStopVoiceExtraction(
   bookId: string,
 ): UseMutationResult<GlossaryExtractionStopResponse, Error, void> {

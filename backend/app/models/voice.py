@@ -102,6 +102,11 @@ class CharacterVoice(Base):
     line_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     low_evidence: Mapped[bool] = mapped_column(default=False, server_default="false")
 
+    # Short rules for the translator, written by the cast pass with the whole
+    # cast in view. Translation sends this instead of observation + strategy
+    # when it is set.
+    translation_brief: Mapped[str | None] = mapped_column(Text, default=None)
+
     # Foreign keys and relationships
     glossary_entry_id: Mapped[UUID] = mapped_column(
         SA_UUID(as_uuid=True),
@@ -209,6 +214,11 @@ class VoiceSelectedPassage(Base):
         ForeignKey("voice_passage_candidates.id", ondelete="SET NULL"),
         default=None,
     )
+    # Cast pass: why the proposed English flattens this voice or sounds like
+    # another character, and a revision to consider. Empty when it reads right.
+    translation_review: Mapped[str | None] = mapped_column(Text, default=None)
+    translation_revised: Mapped[str | None] = mapped_column(Text, default=None)
+
     # Paragraph range the passage was cut from (profiles built from lines).
     first_paragraph_id: Mapped[UUID | None] = mapped_column(
         SA_UUID(as_uuid=True),

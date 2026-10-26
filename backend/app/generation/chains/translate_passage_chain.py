@@ -28,7 +28,10 @@ from app.generation.prompt_manager.models.translate_passage_model import (
 )
 from app.generation.prompt_manager.prompts.translate_passage_prompt import (
     PROMPT,
+    VOICE_GUIDE_BRIEF,
+    VOICE_GUIDE_PROFILE,
     render_glossary_block,
+    render_voice_block,
 )
 from app.generation.providers.router import generate_structured, parse_result
 
@@ -49,6 +52,7 @@ async def translate_passage(
     source_voice_observation: str,
     target_voice_strategy: str,
     passage_source_text: str,
+    voice_brief: str | None = None,
     glossary_terms: list[GlossaryTermRef],
     source_language: str,
     target_language: str,
@@ -65,13 +69,20 @@ async def translate_passage(
     Set Langfuse ``session_id=str(book_id)`` so all translations for a
     book group together with their extraction and selection calls.
     """
+    guide = (VOICE_GUIDE_BRIEF if voice_brief else VOICE_GUIDE_PROFILE).format(
+        source_language=source_language, target_language=target_language
+    )
     rendered = PROMPT.format(
         source_language=source_language,
         target_language=target_language,
         profile_id=profile_id,
         canonical_name=canonical_name,
-        source_voice_observation=source_voice_observation,
-        target_voice_strategy=target_voice_strategy,
+        voice_guide=guide,
+        voice_block=render_voice_block(
+            observation=source_voice_observation,
+            strategy=target_voice_strategy,
+            brief=voice_brief,
+        ),
         n_terms=len(glossary_terms),
         glossary_block=render_glossary_block(glossary_terms),
         selected_passage_id=selected_passage_id,

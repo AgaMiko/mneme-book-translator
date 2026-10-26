@@ -23,7 +23,7 @@ from typing import TYPE_CHECKING, Any
 
 from langfuse import propagate_attributes
 from sqlalchemy import delete, func, select
-from sqlalchemy.orm import aliased
+from sqlalchemy.orm import aliased, selectinload
 
 from app.constants.voice_extraction import (
     VOICE_EXTRACTION_OVERLAP_WORDS,
@@ -32,6 +32,7 @@ from app.constants.voice_extraction import (
 from app.core.db import get_sessionmaker
 from app.core.logging import get_logger
 from app.generation.chains.build_voice_profile_chain import build_voice_profiles
+from app.generation.chains.cast_voices_chain import check_passages, write_briefs
 from app.generation.client import GenerationDisabledError
 from app.generation.usage import counting
 from app.models.book import Book, Chapter, Paragraph
@@ -43,6 +44,16 @@ from app.services.cost_guard import CostGuard, save_state, start_guard
 from app.services.glossary_extraction_estimate import glossary_window_count
 from app.services.speaker_chunks import windows_for_span
 from app.services.stages import glossary_ready
+from app.services.voice_cast import (
+    LINES_TO_THEM,
+    SAMPLE_LINES,
+    CastPassage,
+    CastProfile,
+    pick_sample,
+    render_cast,
+    validate_briefs,
+    validate_flags,
+)
 from app.services.voice_extraction_estimate import profile_calls_cost
 from app.services.voice_profiles import (
     MIN_LINES,
@@ -397,15 +408,11 @@ async def _set_failed(book_id: UUID, message: str) -> None:
 
 
 async def _finish(book_id: UUID, state: _RunState, settings: Settings) -> None:
-    """Translate the new passages, then set the final status."""
-    if state.built:
-        await voice_service.run_translation_for_voices(
-            book_id=book_id, voice_ids=state.built, settings=settings
-        )
-    if state.cancelled:
-        async with get_sessionmaker()() as s:
-            await voice_service._finalize_voice_cancelled(s, book_id=book_id)
-        return
+    """Briefs, then passage translation with them, then the passage check; then the status.
+
+    When the run was stopped or some calls failed, the new passages are
+    translated without briefs and the cast pass waits for a complete run.
+    """
     problems = []
     if state.errors:
         problems.append(
@@ -413,8 +420,33 @@ async def _finish(book_id: UUID, state: _RunState, settings: Settings) -> None:
         )
     if state.missing:
         problems.append(f"no profile came back for {', '.join(state.missing)}")
-    if problems:
-        await _set_failed(book_id, "; ".join(problems) + ". Continue retries them.")
+    if state.cancelled or problems:
+        if state.built:
+            await voice_service.run_translation_for_voices(
+                book_id=book_id, voice_ids=state.built, settings=settings
+            )
+        if state.cancelled:
+            async with get_sessionmaker()() as s:
+                await voice_service._finalize_voice_cancelled(s, book_id=book_id)
+        else:
+            await _set_failed(book_id, "; ".join(problems) + ". Continue retries them.")
+        return
+    try:
+        await write_briefs_for_book(book_id=book_id, settings=settings)
+        if state.built:
+            await voice_service.run_translation_for_voices(
+                book_id=book_id, voice_ids=state.built, settings=settings
+            )
+        await check_passages_for_book(book_id=book_id, settings=settings)
+    except GenerationDisabledError:
+        raise
+    except Exception as exc:
+        log.exception("cast_pass_failed", book_id=str(book_id))
+        await _set_failed(
+            book_id,
+            f"Profiles are built, but the cast pass failed ({str(exc)[:300]}). "
+            "Use Rebuild briefs to run it again.",
+        )
         return
     async with get_sessionmaker()() as s:
         b = await s.get(Book, book_id)
@@ -582,3 +614,212 @@ async def regenerate_flagged(*, book_id: UUID, settings: Settings) -> None:
     except Exception as exc:
         log.exception("voice_regeneration_failed", book_id=str(book_id))
         await _set_failed(book_id, str(exc) or type(exc).__name__)
+
+
+# ─── Cast pass ──────────────────────────────────────────
+
+
+async def load_cast(session: AsyncSession, *, book_id: UUID) -> list[CastProfile]:
+    """Every profile not rejected, with its evidence and passages, most lines first."""
+    voices = (
+        (
+            await session.execute(
+                select(CharacterVoice)
+                .where(CharacterVoice.book_id == book_id, CharacterVoice.status != "rejected")
+                .options(
+                    selectinload(CharacterVoice.glossary_entry),
+                    selectinload(CharacterVoice.selected_passages),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    lines = await load_book_lines(session, book_id=book_id)
+    own = {c.glossary_entry_id: c.speech for c in lines.characters}
+    names = {c.glossary_entry_id: c.name for c in lines.characters}
+    to_them: dict[UUID, list[SpokenLine]] = defaultdict(list)
+    for c in lines.characters:
+        for ln in c.speech:
+            target = next((g for g, n in names.items() if n == ln.addressee), None)
+            if target is not None and target != c.glossary_entry_id:
+                to_them[target].append(ln)
+    cast: list[CastProfile] = []
+    for v in voices:
+        if v.glossary_entry is None:
+            continue
+        ev = v.evidence or {}
+        passages = [
+            CastPassage(
+                id=sp.id,
+                source=sp.source_text,
+                english=(sp.translation_authoritative or sp.translation_proposed or ""),
+                accepted=sp.status == "accepted",
+            )
+            for sp in sorted(v.selected_passages, key=lambda sp: sp.selection_rank)
+        ]
+        cast.append(
+            CastProfile(
+                voice_id=v.id,
+                name=v.glossary_entry.canonical_form,
+                accepted=v.status == "accepted",
+                line_count=v.line_count,
+                features=[str(f.get("feature", "")) for f in ev.get("features", [])],
+                shifts=[
+                    f"{x.get('situation', '')}: {x.get('change', '')}"
+                    for x in ev.get("register_shifts", [])
+                ],
+                strategy=v.target_voice_strategy,
+                passages=passages,
+                sample_lines=pick_sample(own.get(v.glossary_entry_id, []), SAMPLE_LINES),
+                lines_to_them=pick_sample(
+                    sorted(to_them.get(v.glossary_entry_id, []), key=lambda ln: ln.line_index),
+                    LINES_TO_THEM,
+                    min_words=1,
+                ),
+            )
+        )
+    cast.sort(key=lambda p: (-p.line_count, p.name.casefold()))
+    return cast
+
+
+async def _cast_inputs(
+    book_id: UUID,
+) -> tuple[list[CastProfile], str, str] | None:
+    async with get_sessionmaker()() as session:
+        book = await session.get(Book, book_id)
+        if book is None:
+            return None
+        cast = await load_cast(session, book_id=book_id)
+        return cast, book.source_language, book.target_language
+
+
+async def write_briefs_for_book(*, book_id: UUID, settings: Settings) -> int:
+    """Write a brief for every profile with the whole cast in view. Returns how many.
+
+    A brief on an accepted profile is kept: the author may have edited it.
+    """
+    inputs = await _cast_inputs(book_id)
+    if inputs is None or not inputs[0]:
+        return 0
+    cast, source_language, target_language = inputs
+    rendered = render_cast(cast)
+    with propagate_attributes(session_id=str(book_id), trace_name="voice_cast_briefs"):
+        result = await write_briefs(
+            cast_section=rendered.text,
+            source_language=source_language,
+            target_language=target_language,
+            settings=settings,
+        )
+    briefs = validate_briefs(result, rendered)
+    async with get_sessionmaker()() as session:
+        for p in cast:
+            voice = await session.get(CharacterVoice, p.voice_id)
+            brief = briefs.get(p.voice_id)
+            if voice is None or not brief:
+                continue
+            if not (voice.status == "accepted" and voice.translation_brief):
+                voice.translation_brief = brief
+        await session.commit()
+    log.info("cast_briefs_done", book_id=str(book_id), briefs=len(briefs), cast=len(cast))
+    return len(briefs)
+
+
+async def check_passages_for_book(*, book_id: UUID, settings: Settings) -> int:
+    """Flag passage translations that lose the voice. Returns the number of flags.
+
+    Flags on passages that are not accepted are replaced by this run's.
+    """
+    inputs = await _cast_inputs(book_id)
+    if inputs is None or not inputs[0]:
+        return 0
+    cast, source_language, target_language = inputs
+    async with get_sessionmaker()() as session:
+        rows = await session.execute(
+            select(CharacterVoice.id, CharacterVoice.translation_brief).where(
+                CharacterVoice.id.in_([p.voice_id for p in cast])
+            )
+        )
+        briefs = {vid: brief or "" for vid, brief in rows.all()}
+    rendered = render_cast(cast, briefs=briefs)
+    with propagate_attributes(session_id=str(book_id), trace_name="voice_cast_check"):
+        result = await check_passages(
+            cast_section=rendered.text,
+            source_language=source_language,
+            target_language=target_language,
+            settings=settings,
+        )
+    flags = validate_flags(result, rendered)
+    async with get_sessionmaker()() as session:
+        for ps in rendered.passages.values():
+            if ps.accepted:
+                continue
+            row = await session.get(VoiceSelectedPassage, ps.id)
+            if row is None:
+                continue
+            row.translation_review, row.translation_revised = flags.get(ps.id, (None, None))
+        await session.commit()
+    log.info(
+        "cast_check_done",
+        book_id=str(book_id),
+        flags_returned=len(result.passage_flags),
+        flags=len(flags),
+    )
+    return len(flags)
+
+
+async def can_run_cast_pass(session: AsyncSession, *, book_id: UUID) -> tuple[bool, str | None]:
+    book = await session.get(Book, book_id)
+    if book is None:
+        return (False, "Book not found.")
+    if book.voice_extraction_status == "running":
+        return (False, "Voice extraction is running.")
+    n = await session.scalar(
+        select(func.count())
+        .select_from(CharacterVoice)
+        .where(CharacterVoice.book_id == book_id, CharacterVoice.status != "rejected")
+    )
+    if not n:
+        return (False, "Build voice profiles first.")
+    return (True, None)
+
+
+async def cast_pass_job(*, book_id: UUID, settings: Settings, rebuild_briefs: bool) -> None:
+    """Background task: optionally rewrite the briefs, then retranslate and check passages.
+
+    Passages the author has reviewed are left alone.
+    """
+    try:
+        if rebuild_briefs:
+            await write_briefs_for_book(book_id=book_id, settings=settings)
+        async with get_sessionmaker()() as session:
+            ids = list(
+                (
+                    await session.execute(
+                        select(CharacterVoice.id).where(
+                            CharacterVoice.book_id == book_id,
+                            CharacterVoice.status != "rejected",
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        await voice_service.run_translation_for_voices(
+            book_id=book_id, voice_ids=ids, settings=settings, retranslate=True
+        )
+        await check_passages_for_book(book_id=book_id, settings=settings)
+    except GenerationDisabledError:
+        await _set_failed(book_id, "LLM generation disabled (missing API key).")
+        return
+    except Exception as exc:
+        log.exception("cast_pass_failed", book_id=str(book_id))
+        await _set_failed(book_id, f"Cast pass failed: {str(exc) or type(exc).__name__}")
+        return
+    async with get_sessionmaker()() as s:
+        b = await s.get(Book, book_id)
+        if b is not None:
+            b.voice_extraction_status = "completed"
+            b.voice_extraction_last_error = None
+            voice_service._clear_voice_progress_fields(b)
+        await s.commit()

@@ -42,6 +42,7 @@ import {
   useDialogueLines,
   usePatchVoiceWorkingProfile,
   useRegenerateFlaggedVoices,
+  useRunVoiceCastPass,
   useResetSpeakersExtraction,
   useResetVoiceExtraction,
   useStartSpeakersExtraction,
@@ -651,6 +652,31 @@ function PassageBlock({
           aria-label={`Translation for reference passage ${pos}`}
         />
       </ProfileBlock>
+      {passage.translation_review && passage.translation_revised ? (
+        <div className="mt-3 rounded-lg border border-warning-border bg-warning-surface p-3">
+          <p className="font-mono text-[10px] uppercase tracking-wider text-warning">Cast check</p>
+          <p className="mt-1 text-xs leading-relaxed text-ink-300">{passage.translation_review}</p>
+          <ProfileBlock label="Suggested revision" className="mt-2">
+            <p className="whitespace-pre-wrap leading-relaxed text-ink-200">
+              {passage.translation_revised}
+            </p>
+          </ProfileBlock>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mt-2 border border-warning-border text-warning hover:bg-warning-surface"
+            disabled={patchPending}
+            onClick={() =>
+              onPatch({
+                selected_passage_id: passage.id,
+                selected_passage_translation: passage.translation_revised ?? "",
+              })
+            }
+          >
+            Use revision
+          </Button>
+        </div>
+      ) : null}
       {auth != null && auth !== "" && same && prop ? (
         <p className="mt-2 font-mono text-[10px] text-ink-500">
           Saved translation matches model draft.
@@ -697,6 +723,54 @@ function StatusChip({ status }: { status: string }) {
     >
       {label}
     </span>
+  );
+}
+
+/** The short rules translation reads for this character; editable. */
+function BriefBlock({
+  v,
+  patchPending,
+  onPatch,
+}: {
+  v: VoiceWorkingProfile;
+  patchPending: boolean;
+  onPatch: (body: VoiceProfilePatchBody) => void;
+}) {
+  const saved = v.translation_brief ?? "";
+  const [draft, setDraft] = useState(saved);
+  useEffect(() => setDraft(saved), [v.id, saved]);
+  if (!saved && !draft) {
+    return (
+      <p className="mt-4 text-xs text-ink-500">
+        No brief yet: translation uses the full strategy below until the cast pass runs.
+      </p>
+    );
+  }
+  return (
+    <ProfileBlock label="Translation brief (what translation reads)" className="mt-4">
+      <textarea
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        disabled={patchPending}
+        rows={Math.min(10, Math.max(4, draft.split("\n").length + 1))}
+        className={cn(
+          "w-full rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 font-sans text-sm text-ink-100",
+          "focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-60",
+        )}
+        aria-label={`Translation brief for ${v.canonical_name}`}
+      />
+      {draft.trim() !== saved.trim() && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="mt-2 border border-ink-700"
+          disabled={patchPending || !draft.trim()}
+          onClick={() => onPatch({ translation_brief: draft })}
+        >
+          Save brief
+        </Button>
+      )}
+    </ProfileBlock>
   );
 }
 
@@ -930,6 +1004,7 @@ function VoiceProfileCard({
 
       {!collapsed && (
         <>
+          <BriefBlock v={v} patchPending={patchPending} onPatch={onPatch} />
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <ProfileBlock label="Source voice observation">
               {v.source_voice_observation}
@@ -1058,6 +1133,19 @@ export function VoiceView({ book }: Props) {
     return { awaiting, accepted, rejected };
   }, [voices.data?.entries]);
 
+  const briefCount = useMemo(
+    () => (voices.data?.entries ?? []).filter((v) => v.translation_brief).length,
+    [voices.data?.entries],
+  );
+  const flaggedPassageCount = useMemo(
+    () =>
+      (voices.data?.entries ?? []).reduce(
+        (n, v) => n + v.selected_passages.filter((p) => p.translation_review).length,
+        0,
+      ),
+    [voices.data?.entries],
+  );
+
   const flaggedProfileCount = useMemo(
     () => (voices.data?.entries ?? []).filter((v) => v.needs_regeneration).length,
     [voices.data?.entries],
@@ -1078,6 +1166,7 @@ export function VoiceView({ book }: Props) {
   const stopVoice = useStopVoiceExtraction(book.id);
   const resetVoice = useResetVoiceExtraction(book.id);
   const regenerateFlagged = useRegenerateFlaggedVoices(book.id);
+  const castPass = useRunVoiceCastPass(book.id);
   const patchVoice = usePatchVoiceWorkingProfile(book.id);
 
   const prevVoice = useRef<string | null>(null);
@@ -1266,7 +1355,7 @@ export function VoiceView({ book }: Props) {
                 title={
                   book.speakers_extraction_status !== "completed"
                     ? "Complete speaker identification first."
-                    : "Re-run extraction only for flagged characters in their speaker windows."
+                    : "Rebuild flagged profiles from their stored lines."
                 }
                 onClick={() => regenerateFlagged.mutate({ model: voicesModel.model })}
               >
@@ -1274,6 +1363,53 @@ export function VoiceView({ book }: Props) {
                   ? "Regenerating…"
                   : "Run regeneration"}
               </Button>
+            </div>
+          ) : null}
+
+          {(voices.data?.entries.length ?? 0) > 0 ? (
+            <div className="flex flex-wrap items-center gap-3 rounded-lg border border-ink-800 bg-ink-900 px-4 py-3">
+              <p className="text-sm text-ink-300">
+                <span className="font-medium tabular-nums text-ink-100">{briefCount}</span> of{" "}
+                {voices.data?.entries.length} profiles have a translation brief
+                {flaggedPassageCount > 0 ? (
+                  <>
+                    {" "}
+                    ·{" "}
+                    <span className="font-medium tabular-nums text-warning">
+                      {flaggedPassageCount}
+                    </span>{" "}
+                    passage{flaggedPassageCount === 1 ? "" : "s"} to check
+                  </>
+                ) : null}
+                .
+              </p>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="border border-ink-700"
+                disabled={book.voice_extraction_status === "running" || castPass.isPending}
+                title="Rewrites every brief with the whole cast in view, retranslates the passages you haven't reviewed with the new briefs, and checks them. Briefs you edited on accepted profiles are kept."
+                onClick={() => castPass.mutate({ model: voicesModel.model })}
+              >
+                {castPass.isPending || book.voice_extraction_status === "running"
+                  ? "Running…"
+                  : "Rebuild briefs"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="border border-ink-700"
+                disabled={book.voice_extraction_status === "running" || castPass.isPending}
+                title="Keeps the current briefs; retranslates the passages you haven't reviewed with them and checks them."
+                onClick={() => castPass.mutate({ model: voicesModel.model, rebuildBriefs: false })}
+              >
+                Retranslate passages
+              </Button>
+              {castPass.isError && (
+                <p className="text-xs text-danger">
+                  {errorDetail(castPass, "Could not start the cast pass.")}
+                </p>
+              )}
             </div>
           ) : null}
 

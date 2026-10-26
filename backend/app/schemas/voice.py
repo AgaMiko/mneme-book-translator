@@ -21,6 +21,9 @@ class VoiceSelectedPassageOut(BaseModel):
     translation_proposed: str | None
     translation_authoritative: str | None
     status: str
+    # Cast pass: why the proposed English loses this voice, and a revision.
+    translation_review: str | None = None
+    translation_revised: str | None = None
 
 
 class VoiceEvidenceLineOut(BaseModel):
@@ -50,6 +53,8 @@ class VoiceWorkingProfileOut(BaseModel):
     canonical_name: str
     source_voice_observation: str
     target_voice_strategy: str
+    # Short rules from the cast pass; what translation sends when set.
+    translation_brief: str | None = None
     # Legacy: primary passage (lowest selection_rank) for old clients / quick scan.
     reference_passage_source: str
     reference_passage_translation_proposed: str
@@ -90,6 +95,7 @@ class VoiceWorkingProfilePatchIn(BaseModel):
     reject: bool = False
     source_voice_observation: str | None = None
     target_voice_strategy: str | None = None
+    translation_brief: str | None = None
     reference_passage_translation: str | None = None
     selected_passage_id: UUID | None = None
     selected_passage_translation: str | None = None
@@ -105,6 +111,7 @@ class VoiceWorkingProfilePatchIn(BaseModel):
             for v in (
                 self.source_voice_observation,
                 self.target_voice_strategy,
+                self.translation_brief,
                 self.reference_passage_translation,
                 self.selected_passage_translation,
                 self.needs_regeneration,

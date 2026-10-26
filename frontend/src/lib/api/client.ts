@@ -342,6 +342,20 @@ export const ManuscriptSpeakersResponseSchema = z.object({
 });
 export type ManuscriptSpeakersResponse = z.infer<typeof ManuscriptSpeakersResponseSchema>;
 
+export const NarrationSceneSchema = z.object({
+  chapter_id: z.string().uuid(),
+  pov_name: z.string().nullable(),
+  pov_id: z.string().uuid().nullable(),
+  source: z.enum(["heading", "scene_break", "assumed", "unknown"]),
+  paragraph_ids: z.array(z.string().uuid()),
+});
+export type NarrationScene = z.infer<typeof NarrationSceneSchema>;
+
+export const NarrationPovResponseSchema = z.object({
+  scenes: z.array(NarrationSceneSchema),
+});
+export type NarrationPovResponse = z.infer<typeof NarrationPovResponseSchema>;
+
 export const VoicePassEstimateSchema = z.object({
   model: z.string(),
   window_count: z.number().int(),
@@ -690,6 +704,13 @@ export const api = {
     handleResponse(
       await fetch(`${API_URL}/books/${id}/manuscript/speakers`),
       ManuscriptSpeakersResponseSchema,
+    ),
+
+  /** Whose POV each scene follows, read from chapter headings and scene breaks. */
+  getManuscriptNarration: async (id: string): Promise<NarrationPovResponse> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/manuscript/narration`),
+      NarrationPovResponseSchema,
     ),
 
   patchVoiceWorkingProfile: async (

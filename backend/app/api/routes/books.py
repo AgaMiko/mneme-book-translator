@@ -63,6 +63,7 @@ from app.schemas.glossary import (
 from app.schemas.speakers import (
     DialogueLinesResponse,
     ManuscriptSpeakersResponse,
+    NarrationPovResponse,
     WorkingSpeakersResponse,
 )
 from app.schemas.voice import (
@@ -74,6 +75,7 @@ from app.services import (
     book_service,
     glossary_llm_review,
     glossary_service,
+    narration_pov,
     speakers_service,
     stages,
     voice_build_service,
@@ -885,6 +887,24 @@ async def get_manuscript_speakers(
             detail="Book not found",
         )
     return await speakers_service.list_manuscript_speakers(session, book_id=book_id)
+
+
+@router.get(
+    "/{book_id}/manuscript/narration",
+    response_model=NarrationPovResponse,
+    summary="Whose point of view each scene follows, read from headings and scene breaks",
+)
+async def get_manuscript_narration(
+    book_id: UUID,
+    session: AsyncSession = Depends(get_session),
+) -> NarrationPovResponse:
+    book = await session.get(Book, book_id)
+    if book is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Book not found",
+        )
+    return await narration_pov.build_narration_pov(session, book_id=book_id)
 
 
 @router.get(

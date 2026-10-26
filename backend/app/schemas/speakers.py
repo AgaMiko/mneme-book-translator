@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from typing import Literal
 from uuid import UUID  # noqa: TC003 - pydantic needs it at runtime
 
 from pydantic import BaseModel, Field
@@ -77,3 +78,20 @@ class ManuscriptSpeakerLineOut(BaseModel):
 
 class ManuscriptSpeakersResponse(BaseModel):
     lines: list[ManuscriptSpeakerLineOut] = Field(default_factory=list)
+
+
+class NarrationSceneOut(BaseModel):
+    """One scene and whose point of view its narration follows."""
+
+    chapter_id: UUID
+    pov_name: str | None = None
+    pov_id: UUID | None = Field(default=None, description="Glossary character, when matched.")
+    source: Literal["heading", "scene_break", "assumed", "unknown"] = Field(
+        description="heading / scene_break: named by the author. assumed: an unnamed scene "
+        "break, POV carried over from the chapter heading. unknown: no marker."
+    )
+    paragraph_ids: list[UUID] = Field(default_factory=list)
+
+
+class NarrationPovResponse(BaseModel):
+    scenes: list[NarrationSceneOut] = Field(default_factory=list)

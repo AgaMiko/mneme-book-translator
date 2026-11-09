@@ -961,7 +961,7 @@ async def run_selection_for_voices(
                     target_voice_strategy=voice.target_voice_strategy,
                     candidates=cands,
                     passage_count=n_want,
-                    source_language=book.source_language,
+                    source_language=book.resolved_source_language,
                     target_language=book.target_language,
                     settings=settings,
                 )
@@ -1042,7 +1042,7 @@ async def run_translation_for_voices(
                         voice_brief=voice.translation_brief,
                         passage_source_text=sp.source_text,
                         glossary_terms=terms,
-                        source_language=book.source_language,
+                        source_language=book.resolved_source_language,
                         target_language=book.target_language,
                         settings=settings,
                     )
@@ -1277,7 +1277,7 @@ async def run_selection_for_book(
                     target_voice_strategy=voice.target_voice_strategy,
                     candidates=cands,
                     passage_count=n_want,
-                    source_language=book.source_language,
+                    source_language=book.resolved_source_language,
                     target_language=book.target_language,
                     settings=settings,
                 )
@@ -1375,7 +1375,7 @@ async def run_translation_for_book(
                     target_voice_strategy=voice.target_voice_strategy,
                     passage_source_text=sp.source_text,
                     glossary_terms=terms,
-                    source_language=book.source_language,
+                    source_language=book.resolved_source_language,
                     target_language=book.target_language,
                     settings=settings,
                 )
@@ -1625,7 +1625,7 @@ async def regenerate_flagged_voices(
                             previous_notepad=regen_notepad,
                             window_number=window_number,
                             total_windows=total_manuscript_windows,
-                            source_language=book.source_language,
+                            source_language=book.resolved_source_language,
                             target_language=book.target_language,
                             settings=settings,
                             speakers_scoped=True,
@@ -1880,7 +1880,7 @@ async def extract_book_voices(
                         previous_notepad=previous,
                         window_number=n,
                         total_windows=total,
-                        source_language=book.source_language,
+                        source_language=book.resolved_source_language,
                         target_language=book.target_language,
                         settings=settings,
                         speakers_scoped=use_speaker_map,

@@ -8,6 +8,8 @@ This repo is a working Docker stack: upload a `.docx`, parse it into chapters an
 
 **Repository:** [github.com/AgaMiko/mneme-book-translator](https://github.com/AgaMiko/mneme-book-translator)
 
+![The Mneme pipeline: upload, metadata, glossary, speakers, voices, translate, export. Each step writes to the book's memory in Postgres.](docs/images/pipeline.svg)
+
 ## Stack
 
 | Layer       | Choice                                          |
@@ -43,6 +45,8 @@ This repo is a working Docker stack: upload a `.docx`, parse it into chapters an
 
 By default each fragment is translated in **one step**: gpt-6.1-sol, at high thinking, translates straight from the Polish into the final English. It works from meaning rather than word for word, keeps the author's style and each character's voice, varies sentence length, avoids repeating words, and aims at measured style targets (few sentences starting with "She"/"He", ellipses and em dashes only where they belong, no stock phrases).
 
+![What one translation call gets: the cached fixed part, the voices in the scene, the neighbouring text and the fragment. The answer is the same paragraphs in English, which are then checked.](docs/images/translation-call.svg)
+
 Each call gets:
 
 - **the fixed part**: translation rules, the book's style sheet (British spelling, quote style, units, scene breaks) and the whole accepted glossary. It is the same for every call, so it is cached and billed at about a tenth of the normal price;
@@ -53,6 +57,18 @@ Each call gets:
 Calls use the OpenAI **Flex** tier (half price, slower). A 100,000-word novel costs about $11–14 to translate this way.
 
 Two other modes exist: `TRANSLATION_STAGE_COUNT=2` adds a faithful draft by gpt-6-luna before Sol's pass, and `3` adds a separate final edit. Any stage can use a Gemini model instead. The default was chosen by blind comparisons on the author's novel: one step won 30 of 40 paragraphs against two steps, with fewer errors, at about the same cost. Results and costs of all tested setups are in [docs/step5-translation-pipeline.md](docs/step5-translation-pipeline.md#model-and-pipeline-tests-2026-10-21).
+
+## Languages
+
+Mneme was built and tested on Polish novels translated into English. The prompts are written once, in English, and contain no examples in the source language: they describe what to look for, and the model finds it in the book. [`backend/app/constants/languages.py`](backend/app/constants/languages.py) holds the few facts the code needs per language: its English name and the letters that must not be left in the English text. Chapter-heading words are in the manuscript parser.
+
+| Source | Status |
+| ------ | ------ |
+| Polish (`pl`) | Tested on a full manuscript. Default for uploads. |
+| German (`de`) | Not yet run on a German manuscript ([#4](https://github.com/AgaMiko/mneme-book-translator/issues/4)). |
+| Kannada (`kn`) | Kannada script is handled. Chapter headings and glossary matching of words with case suffixes need a native reader ([#5](https://github.com/AgaMiko/mneme-book-translator/issues/5)). |
+
+Uploads use Polish unless the API call sets `source_language`.
 
 ## Quickstart
 
@@ -97,13 +113,7 @@ Then open:
 
 ## Architecture overview
 
-```
-┌─────────────┐      ┌─────────────┐      ┌─────────────┐
-│   React     │─────▶│   FastAPI   │─────▶│  Postgres   │
-│  (Vite/TS)  │ JSON │  (async)    │ ORM  │     16      │
-└─────────────┘      └─────────────┘      └─────────────┘
-   :5177                :8000                :5432
-```
+![Architecture: a React frontend calls the FastAPI backend, which stores the book in Postgres and calls Gemini and OpenAI, with traces in Langfuse.](docs/images/architecture.svg)
 
 Three schema layers are kept deliberately separate:
 

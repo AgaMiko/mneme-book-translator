@@ -32,6 +32,7 @@ from langfuse import propagate_attributes
 from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 
+from app.constants.languages import language_name
 from app.constants.voice_extraction import (
     VOICE_EXTRACTION_OVERLAP_WORDS,
     VOICE_EXTRACTION_WINDOW_WORDS,
@@ -668,13 +669,13 @@ async def _translate_fragment(
             if nxt is not None
             else "",
         )
-        target_language = "English" if book.target_language == "en" else book.target_language
+        target_language = language_name(book.target_language)
 
         def checks_for(short: list[tuple[str, str]]) -> list[str]:
             issues = hard_checks(
                 source=source_short,
                 target=short,
-                source_language=book.source_language,
+                source_language=book.resolved_source_language,
                 allowed_words=ctx.allowed_source_words,
             )
             return [f"[{i.paragraph_id}] {i.detail}" for i in issues]
@@ -692,7 +693,7 @@ async def _translate_fragment(
             issues = hard_checks(
                 source=source_pairs,
                 target=texts,
-                source_language=book.source_language,
+                source_language=book.resolved_source_language,
                 allowed_words=ctx.allowed_source_words,
             )
             notes = {
@@ -931,8 +932,8 @@ async def run_translation(*, run_id: UUID, settings: Settings, cost_limit: bool 
     ctx.settings = settings
     ctx.fixed_context = render_fixed_context(
         book_title=book.title,
-        source_language=book.manuscript_language or book.source_language,
-        target_language="English" if book.target_language == "en" else book.target_language,
+        source_language=book.resolved_source_language,
+        target_language=language_name(book.target_language),
         glossary=glossary,
     )
     fragment_by_id = {f.id: f for f in fragments}

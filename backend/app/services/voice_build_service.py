@@ -517,7 +517,7 @@ async def build_book_voices(
                 limit=cost_limit,
                 unit_label="call",
             )
-            source_language, target_language = book.source_language, book.target_language
+            source_language, target_language = book.resolved_source_language, book.target_language
             await session.commit()
 
         with (
@@ -597,7 +597,7 @@ async def regenerate_flagged(*, book_id: UUID, settings: Settings) -> None:
             units = [[c] for c in lines.characters if c.glossary_entry_id in flagged and c.speech]
             book.voice_extraction_windows_total = len(units)
             book.voice_extraction_windows_completed = 0
-            source_language, target_language = book.source_language, book.target_language
+            source_language, target_language = book.resolved_source_language, book.target_language
             await session.commit()
         with propagate_attributes(session_id=str(book_id), trace_name="voice_regeneration"):
             state = await _run_units(
@@ -696,7 +696,7 @@ async def _cast_inputs(
         if book is None:
             return None
         cast = await load_cast(session, book_id=book_id)
-        return cast, book.source_language, book.target_language
+        return cast, book.resolved_source_language, book.target_language
 
 
 async def write_briefs_for_book(*, book_id: UUID, settings: Settings) -> int:

@@ -91,24 +91,19 @@ The patterns themselves apply to all registers:
 
 1. **Idiom for idiom, not word for word.** Find the {target_language} \
 idiom that does the same conversational job, not the literal \
-translation. Polish *"No proszę"* → English *"Would you look at this"*, \
-not *"Well, please"*.
+translation.
 
 2. **Live metaphors, not dead calques.** The {source_language} image \
 often technically exists in {target_language} but reads archaic. Use \
-the equivalent the target language actually uses. Polish *"kwiat \
-młodzieży"* → English *"the cream of the crop"*, not *"the flower \
-of youth"*.
+the equivalent the target language actually uses.
 
-3. **Anglo-Saxon over Latinate.** {source_language} uses Latinate \
-words casually; {target_language} literary prose prefers shorter, \
-plainer roots. Polish *"prawdziwa katastrofa"* → English *"serious \
-trouble"*, not *"a real catastrophe"*.
+3. **Plain words over learned ones.** Where {source_language} uses \
+formal or Latinate words casually, {target_language} literary prose \
+prefers shorter, plainer roots.
 
 4. **Verb-heavy {target_language}, not noun-heavy {source_language}.** \
 {source_language} loves long abstract noun phrases; {target_language} \
-breaks them into verbs. Polish *"wymusić strach na obywatelach"* → \
-English *"terrorize the public"*, not *"force fear upon the citizens"*.
+breaks them into verbs.
 
 5. **Use contractions in dialogue** unless the strategy directs \
 otherwise. Most dialogue contracts (*"we're"*, *"don't"*, *"I'm"*); \
@@ -137,12 +132,11 @@ has voice work to translate; otherwise just translate cleanly.
 
 One or two clauses on translation choices that affect voice or that \
 required interpretation. Examples:
-- "Rendered the -że particle as 'would ye' per strategy."
-- "Kept *kwiatuszku* as 'sweetheart' to preserve the diminutive's \
-patronizing weight."
+- "Followed the strategy for his emphatic particle in both lines."
+- "Kept the diminutive's patronizing weight with an English endearment."
 - "Translated the register shift in sentence 2 by switching to short \
 clipped clauses."
-- "Used 'the Brotherhood' per glossary; kept Pył as Pył."
+- "Used the glossary forms for both names."
 
 Brief. This is for review traceability, not justification.
 

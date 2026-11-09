@@ -42,12 +42,12 @@ not mechanics of single lines.
 **First, read the lines closely.** For each character, go through \
 their lines (the "Lines" list) word by word before writing anything, \
 and notice the subtleties that make the voice:
-- **dialect or regional words** and particles ('ino', 'toż', 'tejdy');
+- **dialect or regional words** and particles;
 - **non-standard grammar**: wrong agreement, a dialect form of a verb, \
-unusual case or word order ('to je Arianna', 'luda gadają');
+unusual case or word order;
 - **old-fashioned or high words** and how learned the vocabulary is \
 (Latinate, technical, scholarly, ceremonial);
-- **eye-dialect spelling** ('Słiszałyście', 'wjęcej');
+- **eye-dialect spelling** (the author misspells words on purpose);
 - how others address them (titles, familiar names).
 
 Count how many lines carry each. Keep apart what is **occasional** \
@@ -55,7 +55,7 @@ Count how many lines carry each. Keep apart what is **occasional** \
 **most lines** (say, dialect words and grammar). What runs through most \
 lines *is* the voice: the brief must say so plainly and the sample \
 must show it. Do not let a profile's caution ("not sustained", \
-"broadly intelligible", "standard Polish") talk you out of what the \
+"broadly intelligible", "standard {source_language}") talk you out of what the \
 lines show.
 
 Format, about 100 words in total, in {target_language}, in two parts:
@@ -67,13 +67,13 @@ plain or elevated their vocabulary is, how formal they are, the \
 and what that should sound like in {target_language}. Then one or two \
 short tips on what must not be lost, including, if the character is in \
 a group from cast_notes, how they differ from the closest voice ("Next \
-to Mira, he sounds noticeably more educated and formal"). Examples of \
+to the healer, he sounds noticeably more educated and formal"). Examples of \
 the tell: "An educated aristocrat and researcher: precise, Latinate \
 vocabulary and courteous, well-formed sentences; in English, cultivated \
 and slightly formal, never slangy." "A healer who talks plainly: \
 everyday words, short practical sentences, medical terms only when she \
 is working." "A village man who speaks dialect in nearly every line \
-('ino', 'je', 'toż', 'tejdy', non-standard agreement): in English, \
+(dialect words and non-standard agreement): in English, \
 consistent country grammar and words in every sentence, readable, not \
 phonetic spelling."
 

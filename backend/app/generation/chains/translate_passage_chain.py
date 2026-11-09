@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 
 from langfuse import observe
 
+from app.constants.languages import language_name
 from app.generation.prompt_manager.models.translate_passage_model import (
     GlossaryTermRef,
     PassageTranslation,
@@ -70,10 +71,10 @@ async def translate_passage(
     book group together with their extraction and selection calls.
     """
     guide = (VOICE_GUIDE_BRIEF if voice_brief else VOICE_GUIDE_PROFILE).format(
-        source_language=source_language, target_language=target_language
+        source_language=language_name(source_language), target_language=target_language
     )
     rendered = PROMPT.format(
-        source_language=source_language,
+        source_language=language_name(source_language),
         target_language=target_language,
         profile_id=profile_id,
         canonical_name=canonical_name,

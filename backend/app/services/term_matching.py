@@ -22,17 +22,27 @@ Multi-word terms match word by word. Pure functions plus a small cache.
 from __future__ import annotations
 
 import os
-import re
 import unicodedata
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
-_WORD = re.compile(r"\w+", re.UNICODE)
+from app.constants.languages import WORD
+
+if TYPE_CHECKING:
+    import re
+
+_WORD = WORD
 
 
 def fold(text: str) -> str:
-    """Lower case without diacritics (ł has no decomposition, so map it by hand)."""
+    """Lower case without diacritics (ł has no decomposition, so map it by hand).
+
+    Only Latin diacritics (U+0300 to U+036F) are dropped. Marks in other
+    scripts are part of the letter (a Kannada virama or vowel sign), so they
+    stay.
+    """
     decomposed = unicodedata.normalize("NFKD", text.lower().replace("ł", "l"))
-    return "".join(c for c in decomposed if not unicodedata.combining(c))
+    return "".join(c for c in decomposed if not "\u0300" <= c <= "\u036f")
 
 
 def is_form_of(canonical: str, variant: str) -> bool:

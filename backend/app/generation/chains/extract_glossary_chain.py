@@ -26,6 +26,7 @@ from typing import TYPE_CHECKING
 
 from langfuse import observe
 
+from app.constants.languages import language_name
 from app.generation.prompt_manager.models.extract_glossary_model import (
     GlossaryEntryCompact,
     GlossaryUpdate,
@@ -73,7 +74,7 @@ async def extract_glossary_window(
         glossary_table=render_glossary_table(current_glossary),
         notepad=render_notepad(previous_notepad),
         window_text=window_text,
-        source_language=source_language,
+        source_language=language_name(source_language),
         target_language=target_language,
     )
 

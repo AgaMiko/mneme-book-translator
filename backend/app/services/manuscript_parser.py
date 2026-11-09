@@ -38,21 +38,22 @@ if TYPE_CHECKING:
 # merged in on top of these (see _chapter_marker_pattern) since translated
 # drafts often keep English chapter words regardless of source language.
 # Numeral suffix covers "Rozdział 1" / "Rozdział IV" style headings.
+_NUMBER = r"\s+[\divxlcdm]+"
 _CHAPTER_MARKERS_BY_LANGUAGE: dict[str, list[str]] = {
     "pl": [
-        r"rozdział\s+[\divxlcdm]+",
+        r"rozdzia[łl]" + _NUMBER,
         r"prolog(?:\s+.*)?$",
         r"epilog(?:\s+.*)?$",
     ],
     "de": [
-        r"kapitel\s+[\divxlcdm]+",
+        r"kapitel" + _NUMBER,
         r"prolog(?:\s+.*)?$",
         r"epilog(?:\s+.*)?$",
     ],
 }
 
 _EN_CHAPTER_MARKERS = [
-    r"chapter\s+[\divxlcdm]+",
+    r"chapter" + _NUMBER,
     r"prologue(?:\s+.*)?$",
     r"epilogue(?:\s+.*)?$",
 ]
@@ -67,6 +68,22 @@ def _chapter_marker_pattern(source_language: str) -> re.Pattern[str]:
     """
     keywords = _CHAPTER_MARKERS_BY_LANGUAGE.get(source_language.lower(), []) + _EN_CHAPTER_MARKERS
     return re.compile(rf"^\s*({'|'.join(keywords)})", re.IGNORECASE)
+
+@cache
+def chapter_number_pattern() -> re.Pattern[str]:
+    """A numbered chapter line in any language listed above ("Rozdział 4", "Kapitel IV").
+
+    Prologue and epilogue lines are not included. Used to find the chapter
+    line inside a heading that also holds a point-of-view name or an epigraph.
+    """
+    numbered = [
+        marker
+        for markers in (*_CHAPTER_MARKERS_BY_LANGUAGE.values(), _EN_CHAPTER_MARKERS)
+        for marker in markers
+        if marker.endswith(_NUMBER)
+    ]
+    return re.compile(rf"^({'|'.join(numbered)})\b", re.IGNORECASE)
+
 
 # Scene / section break inside one docx paragraph (exactly three stars).
 _STAR_SCENE_BREAK = re.compile(r"\s*(?<!\*)\*{3}(?!\*)\s*")

@@ -35,12 +35,11 @@ English renderings would be possible and consistency matters.
 ## Reject
 
 - Everyday words whose English is simply the dictionary word and needs no \
-decision (miecz → sword, sztylet → dagger, medyk → medic, alchemik → \
-alchemist, wzrok → sight, mrok → darkness, golenie → shaving).
-- Descriptive phrases and sensory descriptions that are not names \
-(smak rdzy i miodu, swąd spalenizny, drewniane miecze).
+decision (a sword, a dagger, darkness, shaving).
+- Descriptive phrases and sensory descriptions that are not \
+names (a taste of rust and honey, wooden swords).
 - Ordinary objects, foods and actions.
-- Generic ranks and roles used as common nouns (Generał).
+- Generic ranks and roles used as common nouns (a general).
 
 ## Merge
 

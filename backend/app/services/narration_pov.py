@@ -24,10 +24,12 @@ from typing import TYPE_CHECKING, Literal
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from app.constants.languages import WORD_CHARS
 from app.models.book import Book, Chapter
 from app.models.glossary import INACTIVE_STATUSES
 from app.schemas.speakers import NarrationPovResponse, NarrationSceneOut
 from app.services.glossary_service import load_working_glossary_for_latest_run
+from app.services.manuscript_parser import chapter_number_pattern
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -35,11 +37,11 @@ if TYPE_CHECKING:
 
     from sqlalchemy.ext.asyncio import AsyncSession
 
-CHAPTER_LINE = re.compile(r"^(chapter|rozdzia[łl])\s+\d+", re.IGNORECASE)
+CHAPTER_LINE = chapter_number_pattern()
 SCENE_BREAK = re.compile(r"^\s*(?:#{1,3}\s*)?\*\s*\*\s*\*\s*$")
 
 # A paragraph that is only a name: up to three words, no sentence punctuation.
-_BARE_NAME = re.compile(r"^[^\W\d_][\w'\u2019\- ]{0,40}$")
+_BARE_NAME = re.compile(rf"^[^\W\d_][{WORD_CHARS}'\u2019\- ]{{0,40}}$")
 
 PovSource = Literal["heading", "scene_break", "assumed", "unknown"]
 

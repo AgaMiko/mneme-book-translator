@@ -40,7 +40,7 @@ class VoiceFeature(BaseModel):
 
 class RegisterShift(BaseModel):
     situation: str = Field(
-        description="Who they speak to or what is happening, e.g. 'to Aurel', 'under stress'.",
+        description="Who they speak to or what is happening, e.g. 'to her father', 'under stress'.",
     )
     change: str = Field(description="How the voice changes there.")
     lines: list[int] = Field(description="Line numbers that show it.")

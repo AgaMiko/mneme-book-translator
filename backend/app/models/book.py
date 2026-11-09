@@ -34,6 +34,7 @@ from sqlalchemy.dialects.postgresql import UUID as SA_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.sql import func
 
+from app.constants.languages import resolve_source_language
 from app.core.db import Base
 from app.models.glossary import FinalGlossary, GlossaryEntry, GlossaryExtractionRun
 
@@ -192,6 +193,11 @@ class Book(Base):
         default_factory=list,
         init=False,
     )
+
+    @property
+    def resolved_source_language(self) -> str:
+        """``source_language``, or the detected ``manuscript_language`` when they differ."""
+        return resolve_source_language(self.source_language, self.manuscript_language)
 
 
 class Chapter(Base):

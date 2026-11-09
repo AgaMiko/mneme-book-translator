@@ -50,8 +50,8 @@ class SelectedPassage(BaseModel):
             "Why this passage made the final cut. Should reference what "
             "voice display it shows that other selections don't. "
             "Examples: 'his commanding mode in its purest form'; "
-            "'the rare tender register with Mira, otherwise unrepresented'; "
-            "'the moment of dropped facade when Stein confronts Agata'."
+            "'the rare tender register with her sister, otherwise unrepresented'; "
+            "'the moment of dropped facade when the captain confronts her'."
         ),
     )
 

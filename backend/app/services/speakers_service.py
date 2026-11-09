@@ -802,7 +802,7 @@ async def extract_book_speakers(
                 limit=cost_limit,
                 unit_label="part",
             )
-            source_language = b0.source_language
+            source_language = b0.resolved_source_language
             await s4.commit()
 
         by_code = {c.code: (UUID(c.glossary_entry_id), c.canonical_name) for c in characters}

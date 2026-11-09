@@ -70,7 +70,7 @@ class TranslationRecommendation(BaseModel):
         default=None,
         description=(
             "The concrete form for English running text: normally English words or "
-            "romanization without Polish diacritics. For semantically transparent "
+            "romanization without source-language diacritics. For semantically transparent "
             "names, prefer a translated English name that preserves the image. Explain "
             "in rationale rather than omitting the field."
         ),
@@ -90,8 +90,9 @@ class TranslationRecommendation(BaseModel):
             "Why this suggestion and proposed_target fit. One to three short "
             "sentences. For descriptive names (toponyms, orders built from common "
             "words), name the morpheme-level sense you carried into English. Mention "
-            "when you dropped Polish diacritics in proposed_target for running English "
-            "prose, or when you deliberately kept Polish (only with the keep_original "
+            "when you dropped source-language diacritics in proposed_target for running "
+            "English prose, or when you deliberately kept the source form (only with the "
+            "keep_original "
             "suggestion). "
             "When alternative_targets is non-empty, briefly contrast the options. "
             "Also use for register (archaic, title, word family) or when the author "
@@ -144,7 +145,7 @@ class NewTerm(BaseModel):
         description=(
             "The form the term is most often referred to by (not necessarily the "
             "first occurrence). For names, the bare name without articles. Preserve "
-            "Polish spelling and diacritics here even when proposed_target is "
+            "source spelling and diacritics here even when proposed_target is "
             "romanized or translated for English prose."
         ),
     )
@@ -175,7 +176,7 @@ class NewTerm(BaseModel):
     meaning: str = Field(
         description=(
             "What this term refers to, in clear English for someone who does not "
-            "know Polish. One to three sentences. When the term belongs to a "
+            "know the source language. One to three sentences. When the term belongs to a "
             "derivational or conceptual family already in the glossary (same root, "
             "verb and agent noun, shared in-world metaphor), name the relatives and "
             "the English pattern you are using so translations stay consistent."

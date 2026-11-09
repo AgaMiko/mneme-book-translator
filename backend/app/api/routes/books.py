@@ -144,6 +144,15 @@ async def upload_book(
             detail="Only .docx files are accepted.",
         )
 
+    # The prompts name these languages, so an empty one would read as nonsense.
+    source_language = source_language.strip().lower()
+    target_language = target_language.strip().lower()
+    if not source_language or not target_language:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="source_language and target_language must not be empty.",
+        )
+
     if file.content_type and file.content_type not in {_DOCX_MIME, "application/octet-stream"}:
         log.warning("unexpected_content_type", content_type=file.content_type)
 

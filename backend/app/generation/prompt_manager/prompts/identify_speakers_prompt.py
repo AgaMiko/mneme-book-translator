@@ -13,8 +13,6 @@ Voice profiling, translation and new-character discovery are not in
 scope here.
 """
 
-# ruff: noqa: RUF001 - typographic dashes and quotes in the examples
-
 from typing import Any
 
 PROMPT = """\
@@ -42,7 +40,7 @@ speaker_code and speaker_name null.
 word inside narration, or narration that only looks like dialogue. No \
 speaker.
 4. **confidence**
-   - clear: a speech tag ("powiedział Stein", "szepnęła") or the narration \
+   - clear: a speech tag (a verb of saying with a name) or the narration \
 in or next to the line names the speaker.
    - inferred: no tag; you worked it out from turn order, the addressee or \
 the scene.
@@ -51,13 +49,13 @@ numbered line.
 
 ## How dialogue is written here
 
-In dash dialogue, a line starts with a dash and narration inside it is \
-set off by dashes: `– Idziemy – rzucił Stein. – Już.` The narration \
-part ("rzucił Stein") usually names the speaker. In a two-person \
-exchange without tags, speakers alternate; check that against the \
-content before relying on it. A pronoun tag ("odpowiedziała") narrows \
-the speaker by gender. Names in the line itself are usually the \
-addressee, not the speaker ("– Miro, chodź!" is said to Mira).
+Dialogue may be set off by dashes (a line starts with a dash, and \
+narration inside it is set off by more dashes) or by quotation marks \
+(narration sits around the quoted speech). The narration part usually \
+names the speaker. In a two-person exchange without tags, speakers \
+alternate; check that against the content before relying on it. A \
+pronoun, or a verb form that shows gender, narrows the speaker. Names \
+in the line itself are usually the addressee, not the speaker.
 
 The addressee is the character the line is said to. Leave it null for \
 a group, for no one in particular, or when unclear.

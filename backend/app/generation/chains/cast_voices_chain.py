@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 from langfuse import observe
 from pydantic import BaseModel
 
+from app.constants.languages import language_name
 from app.core.logging import get_logger
 from app.generation.prompt_manager.models.cast_voices_model import CastBriefs, PassageCheck
 from app.generation.prompt_manager.prompts.cast_voices_prompt import (
@@ -60,7 +61,7 @@ async def write_briefs(
 ) -> CastBriefs:
     """Briefs for the whole cast. Raises ``ValueError`` without usable output."""
     prompt = BRIEFS_PROMPT.format(
-        source_language=source_language,
+        source_language=language_name(source_language),
         target_language=target_language,
         cast_section=cast_section,
     )
@@ -73,7 +74,7 @@ async def check_passages(
 ) -> PassageCheck:
     """Flags on passage translations that lose the voice. Raises ``ValueError`` without output."""
     prompt = CHECK_PROMPT.format(
-        source_language=source_language,
+        source_language=language_name(source_language),
         target_language=target_language,
         cast_section=cast_section,
     )

@@ -1264,7 +1264,7 @@ async def extract_book_glossary(
                         previous_notepad=previous_notepad,
                         window_number=n,
                         total_windows=total,
-                        source_language=book.source_language,
+                        source_language=book.resolved_source_language,
                         target_language=book.target_language,
                         settings=settings,
                     )

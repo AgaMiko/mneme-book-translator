@@ -19,6 +19,7 @@ from typing import TYPE_CHECKING
 
 from langfuse import observe
 
+from app.constants.languages import language_name
 from app.core.logging import get_logger
 from app.generation.prompt_manager.models.build_voice_profile_model import VoiceProfiles
 from app.generation.prompt_manager.prompts.build_voice_profile_prompt import (
@@ -55,7 +56,7 @@ async def build_voice_profiles(
     retries; the caller leaves the unit for Continue.
     """
     rendered = PROMPT.format(
-        source_language=source_language,
+        source_language=language_name(source_language),
         target_language=target_language,
         who=who,
         thoughts_note=THOUGHTS_NOTE if has_thoughts else THOUGHTS_NOTE_NONE,

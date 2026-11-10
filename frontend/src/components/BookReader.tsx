@@ -37,13 +37,25 @@ export function BookReader({ bookId, onBack }: Props) {
   const translation = useTranslation(bookId);
   const translationRun = translation.data?.run ?? null;
 
+  // Progress over the whole book: fragments with a final English version.
+  // The latest run's own counts may cover a single chapter.
+  const translationDone = useMemo(
+    () =>
+      (translation.data?.chapters ?? []).reduce(
+        (n, ch) => n + ch.fragments.filter((f) => f.stages.polish).length,
+        0,
+      ),
+    [translation.data?.chapters],
+  );
+  const translationTotal = translation.data?.fragment_count ?? 0;
+
   // Open on the stage the book has reached, once both queries have answered.
   const translationKnown = translation.isSuccess || translation.isError;
   const startTab =
     book && translationKnown
       ? startTabFor(book, {
           translationStatus: translationRun?.status ?? null,
-          translationDone: translationRun?.fragments_completed ?? 0,
+          translationDone,
         })
       : null;
   const [activeTab, setActiveTab] = useBookTab(bookId, startTab, DEFAULT_BOOK_TAB);
@@ -78,19 +90,28 @@ export function BookReader({ bookId, onBack }: Props) {
     const pendingOf = (entries: readonly { status: string }[]) =>
       entries.filter((e) => e.status === "proposed" || e.status === "adjusted").length;
     return {
+      glossaryLoaded: glossary.data !== undefined,
       glossaryTotal: glossaryEntries.length,
       glossaryPending: pendingOf(glossaryEntries),
+      voicesLoaded: voices.data !== undefined,
       voicesTotal: voiceEntries.length,
       voicesPending: pendingOf(voiceEntries),
       translationStatus: translationRun?.status ?? null,
-      translationDone: translationRun?.fragments_completed ?? 0,
-      translationTotal: translationRun?.fragments_total ?? 0,
+      translationDone,
+      translationTotal,
       passagesStatus: passages.data?.state.status ?? "idle",
       passagesTotal: (passages.data?.passages ?? []).filter((p) => p.status !== "dismissed").length,
       passagesOpen: passages.data?.open_flags ?? 0,
       passagesBlocking: passages.data?.blocking_flags ?? 0,
     };
-  }, [glossary.data?.entries, voices.data?.entries, translationRun, passages.data]);
+  }, [
+    glossary.data,
+    voices.data,
+    translationRun,
+    translationDone,
+    translationTotal,
+    passages.data,
+  ]);
 
   /**
    * Picking a chapter from a working tab means "take me back to the text

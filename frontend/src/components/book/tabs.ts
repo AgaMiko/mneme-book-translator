@@ -26,12 +26,18 @@ export type TabState = "done" | "active" | "idle" | "locked";
 
 /** Review counts the header needs for the captions. */
 export interface TabCounts {
+  /** False until the list has loaded: an unloaded list is not an empty one. */
+  glossaryLoaded: boolean;
   glossaryTotal: number;
   glossaryPending: number;
+  voicesLoaded: boolean;
   voicesTotal: number;
   voicesPending: number;
+  /** Status of the latest run, which may cover only some chapters. */
   translationStatus: "running" | "completed" | "failed" | "cancelled" | null;
+  /** Fragments of the whole book with a final English version. */
   translationDone: number;
+  /** Fragments in the whole book; 0 before the first run splits it. */
   translationTotal: number;
   passagesStatus: "idle" | "scanning" | "checking" | "completed" | "failed";
   passagesTotal: number;
@@ -41,8 +47,10 @@ export interface TabCounts {
 }
 
 export const EMPTY_TAB_COUNTS: TabCounts = {
+  glossaryLoaded: false,
   glossaryTotal: 0,
   glossaryPending: 0,
+  voicesLoaded: false,
   voicesTotal: 0,
   voicesPending: 0,
   translationStatus: null,
@@ -106,6 +114,13 @@ function translationLocked(book: BookDetail, counts: Pick<TabCounts, "translatio
   return translationBlockers(book).length > 0 && counts.translationDone === 0;
 }
 
+/** Every fragment of the book has a final English version. */
+export function translationComplete(
+  counts: Pick<TabCounts, "translationDone" | "translationTotal">,
+): boolean {
+  return counts.translationTotal > 0 && counts.translationDone >= counts.translationTotal;
+}
+
 export interface BookTabDef {
   id: "manuscript" | "glossary" | "voices" | "translation" | "review";
   label: string;
@@ -153,6 +168,7 @@ export const BOOK_TABS: readonly BookTabDef[] = [
         return p ? `extracting · pass ${p}` : "extracting…";
       }
       if (b.glossary_extraction_status === "idle") return "not started";
+      if (!counts.glossaryLoaded) return "…";
       if (counts.glossaryTotal === 0) return "no terms yet";
       return `${formatNumber(counts.glossaryTotal)} terms · ${formatNumber(counts.glossaryPending)} pending`;
     },
@@ -186,6 +202,7 @@ export const BOOK_TABS: readonly BookTabDef[] = [
         );
         return p ? `pass 2 · call ${p}` : "pass 2 running…";
       }
+      if (!counts.voicesLoaded && b.voice_extraction_status !== "idle") return "…";
       if (counts.voicesTotal > 0) {
         return `${formatNumber(counts.voicesTotal)} profiles · ${formatNumber(counts.voicesPending)} pending`;
       }
@@ -201,21 +218,24 @@ export const BOOK_TABS: readonly BookTabDef[] = [
     state: (b, counts) => {
       if (translationLocked(b, counts)) return "locked";
       if (counts.translationStatus === "running") return "active";
-      if (counts.translationStatus === "completed") return "done";
+      // Done means the whole book, not the last run (which may be one chapter).
+      if (translationComplete(counts)) return "done";
       return "idle";
     },
     caption: (b, counts) => {
       if (translationLocked(b, counts)) return `${translationBlockers(b)[0]} first`;
+      // Progress over the whole book, whatever the last run covered.
       const p = windowProgress(counts.translationDone, counts.translationTotal);
       switch (counts.translationStatus) {
         case "running":
           return p ? `translating · ${p}` : "translating…";
-        case "completed":
-          return p ? `${p} fragments done` : "done";
         case "cancelled":
           return p ? `stopped · ${p}` : "stopped";
         case "failed":
           return p ? `errors · ${p}` : "failed";
+        case "completed":
+          if (translationComplete(counts)) return "whole book translated";
+          return p ? `${p} translated` : "partly translated";
         default:
           return "not started";
       }
@@ -233,9 +253,7 @@ export const BOOK_TABS: readonly BookTabDef[] = [
         return "active";
       }
       if (counts.passagesStatus === "idle" && counts.passagesTotal === 0) return "idle";
-      return counts.passagesOpen === 0 && counts.translationStatus === "completed"
-        ? "done"
-        : "idle";
+      return counts.passagesOpen === 0 && translationComplete(counts) ? "done" : "idle";
     },
     caption: (_b, counts) => {
       if (counts.passagesStatus === "scanning") return "finding passages…";

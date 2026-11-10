@@ -272,6 +272,14 @@ function RunCard({
   };
   const doneCount = book.chapters.filter((c) => isDone(c.id)).length;
   const allDone = doneCount === book.chapters.length && doneCount > 0;
+  // Fragments of the whole book, so the summary does not read a finished
+  // one-chapter run as a finished book.
+  let bookFragments = 0;
+  let bookFinished = 0;
+  for (const st of status.values()) {
+    bookFragments += st.total;
+    bookFinished += st.finished;
+  }
 
   // Without "Translate again", a whole-book run skips finished chapters,
   // so the estimate covers only the rest.
@@ -307,7 +315,9 @@ function RunCard({
       <div className="flex flex-wrap items-center gap-3 px-4 py-3">
         <RunIcon status={run?.status ?? null} />
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] leading-snug text-ink-100">{summary(run)}</p>
+          <p className="text-[13px] leading-snug text-ink-100">
+            {summary(run, bookFinished, bookFragments)}
+          </p>
           {run && (
             <p className="mt-0.5 font-mono text-[10px] text-ink-500">
               {STAGES.filter((st) => run.models[st.id])
@@ -536,20 +546,31 @@ function Pipeline({ estimate }: { estimate: TranslationEstimate }) {
   );
 }
 
-function summary(run: TranslationRun | null): string {
+/**
+ * One line on the latest run, then where the whole book stands. A run can
+ * cover one chapter, so "finished" alone would read as "the book is done".
+ */
+function summary(run: TranslationRun | null, bookDone: number, bookTotal: number): string {
   if (!run) return "No translation yet. The next run's steps and models are shown below.";
   const progress = `${run.fragments_completed}/${run.fragments_total} fragments`;
+  const left = bookTotal - bookDone;
+  const book =
+    bookTotal === 0
+      ? ""
+      : left <= 0
+        ? " The whole book is translated."
+        : ` Book: ${formatNumber(bookDone)}/${formatNumber(bookTotal)} fragments translated, ${formatNumber(left)} to go.`;
   switch (run.status) {
     case "running":
       return run.cancel_requested
-        ? `Stopping after the current stages · ${progress}.`
-        : `Translating · ${progress} done.`;
+        ? `Stopping after the current stages · this run ${progress}.`
+        : `Translating · this run ${progress} done.`;
     case "completed":
-      return `Translation finished · ${progress}.`;
+      return `Last run finished · ${progress}.${book}`;
     case "cancelled":
-      return `Stopped · ${progress}. Continue to translate the rest.`;
+      return `Stopped · ${progress}. Continue to translate the rest.${book}`;
     case "failed":
-      return `Run ended with errors · ${progress}.`;
+      return `Run ended with errors · ${progress}.${book}`;
   }
 }
 

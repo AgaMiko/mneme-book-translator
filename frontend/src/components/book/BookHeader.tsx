@@ -6,7 +6,7 @@ import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import type { BookDetail } from "@/lib/api/client";
 import { cn, formatNumber } from "@/lib/utils";
 
-import { computeNextAction } from "./nextAction";
+import { computeNextActions } from "./nextAction";
 import type { BookTab, TabCounts, TabState } from "./tabs";
 import { BOOK_TABS } from "./tabs";
 
@@ -32,7 +32,12 @@ interface Props {
  */
 export function BookHeader({ book, activeTab, onSelectTab, onBack, counts }: Props) {
   const language = (book.manuscript_language ?? book.source_language).toUpperCase();
-  const nextAction = computeNextAction(book, activeTab, onSelectTab);
+  const { primary: nextAction, reminders } = computeNextActions(
+    book,
+    counts,
+    activeTab,
+    onSelectTab,
+  );
   const failures = collectFailures(book);
 
   return (
@@ -77,16 +82,41 @@ export function BookHeader({ book, activeTab, onSelectTab, onBack, counts }: Pro
               <span className="font-mono text-[11px] text-ink-500">{book.original_filename}</span>
             </p>
           </div>
-          {nextAction && (
-            <Button
-              variant="primary"
-              size="md"
-              className="shrink-0 font-semibold"
-              onClick={nextAction.onClick}
-            >
-              {nextAction.label}
-              <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-            </Button>
+          {(nextAction || reminders.length > 0) && (
+            <div className="flex shrink-0 flex-col items-end gap-1.5">
+              {nextAction && (
+                <Button
+                  variant="primary"
+                  size="md"
+                  className="font-semibold"
+                  onClick={nextAction.onClick}
+                >
+                  {nextAction.label}
+                  <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                </Button>
+              )}
+              {/* Review work left behind. It does not block the next step. */}
+              {reminders.length > 0 && (
+                <p className="flex flex-wrap justify-end gap-x-2 text-[12px] text-ink-400">
+                  {reminders.map((r, i) => (
+                    <Fragment key={r.label}>
+                      {i > 0 && (
+                        <span className="text-ink-700" aria-hidden>
+                          ·
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={r.onClick}
+                        className="rounded underline-offset-2 hover:text-ink-100 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      >
+                        {r.label}
+                      </button>
+                    </Fragment>
+                  ))}
+                </p>
+              )}
+            </div>
           )}
         </div>
 

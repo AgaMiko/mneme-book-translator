@@ -26,7 +26,6 @@ import { useStepModel } from "@/hooks/useStepModel";
 import { OverflowMenu } from "@/components/ui/OverflowMenu";
 import type {
   GlossaryEntryPatchBody,
-  GlossaryRunMeta,
   GlossarySelectOption,
   GlossaryWorkingEntry,
 } from "@/lib/api/client";
@@ -98,25 +97,6 @@ function readTranslation(rec: Record<string, unknown>) {
 /** Not yet explicitly accepted (rejected rows are intentionally out of scope). */
 function isAwaitingAcceptance(e: GlossaryWorkingEntry): boolean {
   return e.status === "proposed" || e.status === "adjusted";
-}
-
-function formatWhen(iso: string): string {
-  try {
-    return new Intl.DateTimeFormat(undefined, {
-      dateStyle: "medium",
-      timeStyle: "short",
-    }).format(new Date(iso));
-  } catch {
-    return iso;
-  }
-}
-
-function runStatusTone(status: string): string {
-  if (status === "completed") return "text-success";
-  if (status === "running") return "text-accent";
-  if (status === "cancelled") return "text-warning";
-  if (status === "failed") return "text-danger";
-  return "text-ink-400";
 }
 
 /**
@@ -311,9 +291,8 @@ export function GlossaryReviewPanel({
           id="glossary-review-heading"
           className="font-serif text-2xl font-semibold tracking-tight text-ink-50"
         >
-          Working glossary
+          Terms
         </h2>
-        <RunSubtitle run={data?.run ?? null} isLoading={isLoading} />
       </div>
 
       {!isLoading && !isError && data && data.entries.length > 0 && (
@@ -525,26 +504,6 @@ export function GlossaryReviewPanel({
         </p>
       )}
     </section>
-  );
-}
-
-function RunSubtitle({ run, isLoading }: { run: GlossaryRunMeta | null; isLoading: boolean }) {
-  if (isLoading) return null;
-  if (!run) return null;
-  return (
-    <p className="mt-1.5 font-mono text-xs text-ink-400">
-      <span className={runStatusTone(run.status)}>{run.status}</span>
-      <span className="text-ink-600"> · </span>
-      {formatWhen(run.started_at)}
-      <span className="text-ink-600"> · </span>
-      {run.entry_count} term{run.entry_count === 1 ? "" : "s"}
-      {run.model && (
-        <>
-          <span className="text-ink-600"> · </span>
-          <span className="text-ink-500">{run.model}</span>
-        </>
-      )}
-    </p>
   );
 }
 

@@ -1,15 +1,5 @@
 import { useQueryClient, type UseMutationResult, type UseQueryResult } from "@tanstack/react-query";
-import {
-  AlertCircle,
-  CheckCircle2,
-  ChevronDown,
-  Circle,
-  Flag,
-  Loader2,
-  PauseCircle,
-  RotateCcw,
-  Users,
-} from "lucide-react";
+import { ChevronDown, Flag, RotateCcw, Users } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/Button";
@@ -21,7 +11,6 @@ import {
 } from "@/constants/voiceExtraction";
 import type {
   BookDetail,
-  CostGuardState,
   GlossaryExtractionStatus,
   RunOptions,
   VoiceEvidenceLine,
@@ -58,11 +47,14 @@ import { cn, formatNumber } from "@/lib/utils";
 import { BOOK_PANEL_CONTAINER, BOOK_PANEL_SURFACE } from "./layout";
 import { CostGuardNotice } from "./CostGuardNotice";
 import { ModelPicker } from "./ModelPicker";
-import { StageFinishedToggle } from "./StageFinishedToggle";
-import { glossaryUsable, showStageFinishedToggle } from "./tabs";
+import { StepFinish } from "./StepFinish";
+import { StepRunBar, type RunStatus } from "./StepRunBar";
+import { glossaryUsable, type BookTab } from "./tabs";
+import { cancelVoicesAfterSpeakers, requestVoicesAfterSpeakers } from "./voiceChain";
 
 interface Props {
   book: BookDetail;
+  onSelectTab: (tab: BookTab) => void;
 }
 
 type VoidMutation = UseMutationResult<unknown, Error, void>;
@@ -294,19 +286,6 @@ function SpeakerMapPanel({
   );
 }
 
-function PassStatusIcon({ status }: { status: GlossaryExtractionStatus }) {
-  const cls = "h-4 w-4 shrink-0";
-  if (status === "running") {
-    return <Loader2 className={cn(cls, "animate-spin text-accent")} aria-hidden />;
-  }
-  if (status === "completed")
-    return <CheckCircle2 className={cn(cls, "text-success")} aria-hidden />;
-  if (status === "failed") return <AlertCircle className={cn(cls, "text-danger")} aria-hidden />;
-  if (status === "cancelled")
-    return <PauseCircle className={cn(cls, "text-warning")} aria-hidden />;
-  return <Circle className={cn(cls, "text-ink-500")} aria-hidden />;
-}
-
 function passStatusLine(
   status: GlossaryExtractionStatus,
   completed: number | null | undefined,
@@ -329,13 +308,11 @@ function passStatusLine(
 }
 
 /**
- * One pass, one card: what it is, where it stands, what it costs, and —
- * behind a disclosure — everything needed to drive it. Two of these side
- * by side replace the sticky bottom bar that used to stack four button
- * rows under the profiles you were trying to read.
+ * One pass under the run bar's Settings: where it stands, its model and
+ * estimate, and every control for it, including reset.
  */
-function PassCard({
-  eyebrow,
+function PassSettings({
+  title,
   description,
   status,
   unit,
@@ -346,7 +323,6 @@ function PassCard({
   characterCount,
   model,
   modelChoice,
-  costState,
   startLabel,
   start,
   continueMut,
@@ -356,12 +332,12 @@ function PassCard({
   nothingToReset,
   disabled,
   estimateLoading,
-  children,
+  onStart,
 }: {
-  eyebrow: string;
+  title: string;
   description: string;
   status: GlossaryExtractionStatus;
-  /** What one step of the run is: "window" or "part". */
+  /** What one step of the run is: "call" or "part". */
   unit: string;
   windowsCompleted: number | null | undefined;
   windowsTotal: number | null | undefined;
@@ -370,7 +346,6 @@ function PassCard({
   characterCount: number | null;
   model: string | null;
   modelChoice: StepModel;
-  costState: CostGuardState | undefined;
   startLabel: string;
   start: RunMutation;
   continueMut: RunMutation;
@@ -380,9 +355,9 @@ function PassCard({
   nothingToReset: boolean;
   disabled: boolean;
   estimateLoading: boolean;
-  children?: ReactNode;
+  /** Called after "start" is clicked, before the request. */
+  onStart?: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const running = status === "running";
   const resumable = status === "failed" || status === "cancelled";
 
@@ -393,154 +368,103 @@ function PassCard({
     errorDetail(reset, "Could not reset this pass.");
 
   return (
-    <section
-      className="flex flex-col rounded-lg border border-ink-800 bg-ink-800"
-      aria-label={eyebrow}
-    >
-      <div className="flex flex-1 flex-col px-4 py-3">
-        <div className="flex items-start gap-2.5">
-          <PassStatusIcon status={status} />
-          <div className="min-w-0 flex-1">
-            <p className="font-mono text-[10px] uppercase tracking-wider text-ink-400">{eyebrow}</p>
-            <p className="mt-1 text-[13px] leading-snug text-ink-100">
-              {passStatusLine(status, windowsCompleted, windowsTotal, unit)}
-            </p>
-            <p className="mt-1 text-xs leading-relaxed text-ink-500">{description}</p>
-            <p className="mt-2 font-mono text-[11px] tabular-nums text-ink-400">
-              {estimateLoading ? (
-                "estimating…"
-              ) : pass ? (
-                <>
-                  {formatNumber(pass.window_count)} {unit}s<span className="text-ink-600"> · </span>
-                  {formatNumber(pass.estimated_total_tokens)} tok
-                  <span className="text-ink-600"> · </span>
-                  <span className="text-accent">{formatUsd(pass.estimated_cost_usd)}</span>
-                </>
-              ) : (
-                "no estimate available"
-              )}
-            </p>
-          </div>
-        </div>
-
-        <CostGuardNotice
-          state={costState}
-          paused={status === "cancelled"}
-          busy={continueMut.isPending}
-          onContinue={() => continueMut.mutate({ model: modelChoice.model })}
-          onContinueWithoutLimit={() =>
-            continueMut.mutate({ model: modelChoice.model, costLimit: false })
-          }
-          className="mt-3"
-        />
-
-        {lastError && !running && (
-          <p className="mt-3 rounded-lg border border-danger-border bg-danger-surface px-3 py-2 text-xs text-danger">
-            {lastError}
-          </p>
-        )}
-
-        <div className="mt-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            aria-expanded={open}
-            className="-ml-2"
-            onClick={() => setOpen((o) => !o)}
-          >
-            Controls
-            <ChevronDown
-              className={cn(
-                "h-3.5 w-3.5 transition-transform duration-200 ease-out",
-                open && "rotate-180",
-              )}
-              aria-hidden
-            />
-          </Button>
-        </div>
+    <section aria-label={title} className="space-y-3">
+      <div>
+        <p className="text-[13px] font-medium text-ink-100">
+          {title}
+          <span className="ml-2 font-normal text-ink-400">
+            {passStatusLine(status, windowsCompleted, windowsTotal, unit)}
+          </span>
+        </p>
+        <p className="mt-0.5 text-xs leading-relaxed text-ink-500">{description}</p>
       </div>
 
-      {open && (
-        <div className="space-y-4 border-t border-ink-700 px-4 py-4">
-          <ModelPicker choice={modelChoice} disabled={running} />
-          {pass && (
-            <dl className="grid grid-cols-2 gap-2.5">
-              <EstimateCell
-                label={`${unit.charAt(0).toUpperCase()}${unit.slice(1)}s`}
-                value={formatNumber(pass.window_count)}
-              />
-              <EstimateCell
-                label="Tokens"
-                value={formatNumber(pass.estimated_total_tokens)}
-                detail={`${formatNumber(pass.estimated_input_tokens)} in · ${formatNumber(pass.estimated_output_tokens)} out`}
-              />
-              <EstimateCell label="Cost" value={formatUsd(pass.estimated_cost_usd)} accent />
-              <EstimateCell
-                label={characterCount != null ? "Characters" : "Model"}
-                value={characterCount != null ? formatNumber(characterCount) : (model ?? "—")}
-              />
-            </dl>
-          )}
+      {lastError && !running && (
+        <p className="rounded-lg border border-danger-border bg-danger-surface px-3 py-2 text-xs text-danger">
+          {lastError}
+        </p>
+      )}
 
-          <div className="flex flex-wrap items-center gap-2">
-            <Button
-              variant="accent"
-              size="sm"
-              disabled={disabled || running || start.isPending}
-              onClick={() => start.mutate({ model: modelChoice.model })}
-            >
-              {running ? "Running…" : start.isPending ? "Starting…" : startLabel}
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              disabled={disabled || !resumable || continueMut.isPending}
-              title={
-                resumable
-                  ? `Resume from the last completed ${unit}`
-                  : "Only available after a stopped or failed run"
-              }
-              onClick={() => continueMut.mutate({ model: modelChoice.model })}
-            >
-              {continueMut.isPending ? "Continuing…" : "Continue"}
-            </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              disabled={disabled || !running || stop.isPending}
-              title={running ? `Stop after the current ${unit}` : "Only available while running"}
-              onClick={() => stop.mutate()}
-            >
-              {stop.isPending ? "Stopping…" : "Stop"}
-            </Button>
-            <Button
-              variant="danger"
-              size="sm"
-              disabled={disabled || running || nothingToReset || reset.isPending}
-              title={
-                running
-                  ? "Stop the run before resetting"
-                  : nothingToReset
-                    ? "Nothing to clear."
-                    : undefined
-              }
-              onClick={() => {
-                if (!window.confirm(resetConfirm)) return;
-                reset.mutate();
-              }}
-            >
-              {reset.isPending ? "Resetting…" : "Reset…"}
-            </Button>
-          </div>
+      <ModelPicker choice={modelChoice} disabled={running} />
+      {estimateLoading && <p className="text-xs text-ink-400">Calculating estimate…</p>}
+      {pass && (
+        <dl className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          <EstimateCell
+            label={`${unit.charAt(0).toUpperCase()}${unit.slice(1)}s`}
+            value={formatNumber(pass.window_count)}
+          />
+          <EstimateCell
+            label="Tokens"
+            value={formatNumber(pass.estimated_total_tokens)}
+            detail={`${formatNumber(pass.estimated_input_tokens)} in · ${formatNumber(pass.estimated_output_tokens)} out`}
+          />
+          <EstimateCell label="Cost" value={formatUsd(pass.estimated_cost_usd)} accent />
+          <EstimateCell
+            label={characterCount != null ? "Characters" : "Model"}
+            value={characterCount != null ? formatNumber(characterCount) : (model ?? "—")}
+          />
+        </dl>
+      )}
 
-          {mutationError && (
-            <p className="text-sm text-danger" role="alert">
-              {mutationError}
-            </p>
-          )}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="border border-ink-700"
+          disabled={disabled || running || start.isPending}
+          onClick={() => {
+            onStart?.();
+            start.mutate({ model: modelChoice.model });
+          }}
+        >
+          {running ? "Running…" : start.isPending ? "Starting…" : startLabel}
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={disabled || !resumable || continueMut.isPending}
+          title={
+            resumable
+              ? `Resume from the last completed ${unit}`
+              : "Only available after a stopped or failed run"
+          }
+          onClick={() => continueMut.mutate({ model: modelChoice.model })}
+        >
+          {continueMut.isPending ? "Continuing…" : "Continue"}
+        </Button>
+        <Button
+          variant="danger"
+          size="sm"
+          disabled={disabled || !running || stop.isPending}
+          title={running ? `Stop after the current ${unit}` : "Only available while running"}
+          onClick={() => stop.mutate()}
+        >
+          {stop.isPending ? "Stopping…" : "Stop"}
+        </Button>
+        <Button
+          variant="danger"
+          size="sm"
+          disabled={disabled || running || nothingToReset || reset.isPending}
+          title={
+            running
+              ? "Stop the run before resetting"
+              : nothingToReset
+                ? "Nothing to clear."
+                : undefined
+          }
+          onClick={() => {
+            if (!window.confirm(resetConfirm)) return;
+            reset.mutate();
+          }}
+        >
+          {reset.isPending ? "Resetting…" : "Reset…"}
+        </Button>
+      </div>
 
-          {children}
-        </div>
+      {mutationError && (
+        <p className="text-sm text-danger" role="alert">
+          {mutationError}
+        </p>
       )}
     </section>
   );
@@ -1087,7 +1011,50 @@ function VoiceProfileCard({
  * Voice extraction and review: same overlapping windows as the glossary
  * pass, but profiles attach only to glossary characters.
  */
-export function VoiceView({ book }: Props) {
+/** Who speaks each line, from pass 1. Folded by default: the profiles come first. */
+function SpeakersSection({
+  book,
+  speakers,
+}: {
+  book: BookDetail;
+  speakers: UseQueryResult<WorkingSpeakersResponse, Error>;
+}) {
+  const [open, setOpen] = useState(false);
+  const data = speakers.data;
+  return (
+    <section className="mt-8" aria-label="Who speaks">
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        className="flex w-full items-center gap-2 rounded text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+      >
+        <ChevronDown
+          className={cn("h-4 w-4 text-ink-400 transition-transform", !open && "-rotate-90")}
+          aria-hidden
+        />
+        <h3 className="font-serif text-lg text-ink-100">Who speaks</h3>
+        {data && data.lines_total > 0 && (
+          <span className="font-mono text-[11px] tabular-nums text-ink-500">
+            {formatNumber(data.entries.length)} characters · {formatNumber(data.lines_attributed)}{" "}
+            lines
+          </span>
+        )}
+      </button>
+      {open && (
+        <div className="mt-3">
+          <SpeakerMapPanel book={book} speakers={speakers} />
+        </div>
+      )}
+    </section>
+  );
+}
+
+/**
+ * The voices step: both passes in one run bar, the speaker map, the
+ * profiles to review, and at the end of the list the way on to Translate.
+ */
+export function VoiceView({ book, onSelectTab }: Props) {
   const queryClient = useQueryClient();
   const glossaryReady = glossaryUsable(book);
   const voiceCompleted = book.voice_extraction_status === "completed";
@@ -1197,103 +1164,275 @@ export function VoiceView({ book }: Props) {
     voices.data.entries.length === 0;
 
   const est: VoiceExtractionEstimate | undefined = estimate.data;
+  const speakersStatus = book.speakers_extraction_status;
+  const voiceStatus = book.voice_extraction_status;
+  const profileCount = voices.data?.entries.length ?? 0;
+
+  // One run bar for both passes: the pass that is running, stopped or
+  // next decides what the bar says and which action it offers.
+  const onSpeakers = voiceStatus === "idle" && speakersStatus !== "completed";
+  const barStatus: RunStatus = !glossaryReady
+    ? "idle"
+    : speakersStatus === "running" || voiceStatus === "running"
+      ? "running"
+      : onSpeakers
+        ? speakersStatus
+        : speakersStatus === "completed" && voiceStatus === "idle"
+          ? "idle"
+          : voiceStatus;
+  const progress = (done: number | null | undefined, total: number | null | undefined) =>
+    total != null && total > 0 ? ` · ${done ?? 0}/${total}` : "";
+  const speakersProgress = progress(
+    book.speakers_extraction_windows_completed,
+    book.speakers_extraction_windows_total,
+  );
+  const voiceProgress = progress(
+    book.voice_extraction_windows_completed,
+    book.voice_extraction_windows_total,
+  );
+  const fullCost = est ? est.pass1.estimated_cost_usd + est.pass2.estimated_cost_usd : null;
+  const pausedGuard = onSpeakers ? book.cost_guard.speakers : book.cost_guard.voices;
+
+  let summary: string;
+  if (!glossaryReady) summary = "Finish the glossary first: voices need its characters.";
+  else if (speakersStatus === "running")
+    summary = `Finding who speaks each line${speakersProgress}`;
+  else if (voiceStatus === "running") summary = `Writing the voice profiles${voiceProgress}`;
+  else if (speakersStatus === "cancelled")
+    summary = `Stopped while finding speakers${speakersProgress} · lines found so far are kept`;
+  else if (speakersStatus === "failed")
+    summary = "Finding speakers failed. Check the API key or quota, then continue.";
+  else if (speakersStatus === "idle")
+    summary =
+      "No voices yet. Mneme finds who speaks each line, then writes a profile for each character.";
+  else if (voiceStatus === "idle")
+    summary = "Speakers found. Next, write a voice profile for each character.";
+  else if (voiceStatus === "cancelled")
+    summary = `Stopped while writing profiles${voiceProgress} · finished profiles are kept`;
+  else if (voiceStatus === "failed")
+    summary = "Writing profiles failed. Check the API key or quota, then continue.";
+  else summary = `Voices built · ${formatNumber(profileCount)} profiles`;
+
+  const runAction = (() => {
+    if (actionsDisabled) return null;
+    if (speakersStatus === "running") {
+      return (
+        <Button
+          variant="danger"
+          size="sm"
+          disabled={stopSpeakers.isPending}
+          onClick={() => {
+            cancelVoicesAfterSpeakers(book.id);
+            stopSpeakers.mutate();
+          }}
+        >
+          {stopSpeakers.isPending ? "Stopping…" : "Stop"}
+        </Button>
+      );
+    }
+    if (voiceStatus === "running") {
+      return (
+        <Button
+          variant="danger"
+          size="sm"
+          disabled={stopVoice.isPending}
+          onClick={() => stopVoice.mutate()}
+        >
+          {stopVoice.isPending ? "Stopping…" : "Stop"}
+        </Button>
+      );
+    }
+    // A run paused over its cost has its own Continue in the notice.
+    if (pausedGuard?.paused_reason) return null;
+    if (speakersStatus === "cancelled" || speakersStatus === "failed") {
+      return (
+        <Button
+          variant="accent"
+          size="sm"
+          disabled={continueSpeakers.isPending}
+          onClick={() => {
+            requestVoicesAfterSpeakers(book.id);
+            continueSpeakers.mutate({ model: speakersModel.model });
+          }}
+        >
+          {continueSpeakers.isPending ? "Continuing…" : "Continue"}
+        </Button>
+      );
+    }
+    if (speakersStatus === "idle") {
+      return (
+        <Button
+          variant="accent"
+          size="sm"
+          disabled={startSpeakers.isPending}
+          title="Finds who speaks each line, then writes the profiles"
+          onClick={() => {
+            requestVoicesAfterSpeakers(book.id);
+            startSpeakers.mutate({ model: speakersModel.model });
+          }}
+        >
+          {startSpeakers.isPending
+            ? "Starting…"
+            : fullCost != null
+              ? `Build voices · ~${formatUsd(fullCost)}`
+              : "Build voices"}
+        </Button>
+      );
+    }
+    if (voiceStatus === "idle") {
+      return (
+        <Button
+          variant="accent"
+          size="sm"
+          disabled={startVoice.isPending}
+          onClick={() => startVoice.mutate({ model: voicesModel.model })}
+        >
+          {startVoice.isPending
+            ? "Starting…"
+            : est
+              ? `Write profiles · ~${formatUsd(est.pass2.estimated_cost_usd)}`
+              : "Write profiles"}
+        </Button>
+      );
+    }
+    if (voiceStatus === "cancelled" || voiceStatus === "failed") {
+      return (
+        <Button
+          variant="accent"
+          size="sm"
+          disabled={continueVoice.isPending}
+          onClick={() => continueVoice.mutate({ model: voicesModel.model })}
+        >
+          {continueVoice.isPending ? "Continuing…" : "Continue"}
+        </Button>
+      );
+    }
+    return null;
+  })();
+
+  const barError =
+    errorDetail(startSpeakers, "Could not start finding speakers.") ??
+    errorDetail(continueSpeakers, "Could not continue finding speakers.") ??
+    errorDetail(stopSpeakers, "Could not request stop.") ??
+    errorDetail(startVoice, "Could not start writing profiles.") ??
+    errorDetail(continueVoice, "Could not continue writing profiles.") ??
+    errorDetail(stopVoice, "Could not request stop.");
+
+  const pausedStatus = onSpeakers ? speakersStatus : voiceStatus;
+  const pausedContinue = onSpeakers ? continueSpeakers : continueVoice;
+  const pausedModel = onSpeakers ? speakersModel : voicesModel;
+  const paused =
+    pausedStatus === "cancelled" && pausedGuard?.paused_reason ? (
+      <CostGuardNotice
+        state={pausedGuard}
+        paused
+        showSpent={false}
+        busy={pausedContinue.isPending}
+        onContinue={() => pausedContinue.mutate({ model: pausedModel.model })}
+        onContinueWithoutLimit={() =>
+          pausedContinue.mutate({ model: pausedModel.model, costLimit: false })
+        }
+      />
+    ) : null;
+  const notice =
+    paused || barError ? (
+      <>
+        {paused}
+        {barError && (
+          <p className={cn("text-sm text-danger", paused && "mt-2")} role="alert">
+            {barError}
+          </p>
+        )}
+      </>
+    ) : null;
+
+  const settings = (
+    <div className="space-y-6">
+      <PassSettings
+        title="Pass 1 · Who speaks each line"
+        description="Finds every dialogue line and asks who says it and to whom, one part of a chapter at a time. Parts with no dialogue are skipped."
+        status={speakersStatus}
+        unit="part"
+        windowsCompleted={book.speakers_extraction_windows_completed}
+        windowsTotal={book.speakers_extraction_windows_total}
+        lastError={book.speakers_extraction_last_error}
+        pass={est?.pass1 ?? null}
+        characterCount={null}
+        model={est?.pass1.model ?? null}
+        modelChoice={speakersModel}
+        startLabel={speakersStatus === "completed" ? "Run pass 1 again" : "Start pass 1 only"}
+        start={startSpeakers}
+        continueMut={continueSpeakers}
+        stop={stopSpeakers}
+        reset={resetSpeakers}
+        resetConfirm="This will delete every attributed dialogue line and the speaker map for this book. Continue?"
+        nothingToReset={nothingToResetSpeakers}
+        disabled={actionsDisabled}
+        estimateLoading={estimate.isLoading}
+        onStart={() => cancelVoicesAfterSpeakers(book.id)}
+      />
+      <div className="border-t border-ink-700 pt-5">
+        <PassSettings
+          title="Pass 2 · Voice profiles"
+          description={
+            speakersIncomplete
+              ? "Needs a complete pass 1: each profile is built from all of a character's lines."
+              : `One call per character (characters with few lines share one) with all their lines; writes the profile, the evidence behind it and reference passages. Accepted and adjusted profiles are kept on a re-run. Profiles read the text in windows of ~${formatNumber(VOICE_EXTRACTION_WINDOW_WORDS)} words (~${formatNumber(VOICE_EXTRACTION_OVERLAP_WORDS)} overlap).`
+          }
+          status={voiceStatus}
+          unit="call"
+          windowsCompleted={book.voice_extraction_windows_completed}
+          windowsTotal={book.voice_extraction_windows_total}
+          lastError={book.voice_extraction_last_error}
+          pass={est?.pass2 ?? null}
+          characterCount={est?.character_count ?? null}
+          model={est?.pass2.model ?? null}
+          modelChoice={voicesModel}
+          startLabel={voiceStatus === "completed" ? "Run pass 2 again" : "Start pass 2"}
+          start={startVoice}
+          continueMut={continueVoice}
+          stop={stopVoice}
+          reset={resetVoice}
+          resetConfirm="This will permanently delete all character voice profiles and review progress. Continue?"
+          nothingToReset={nothingToResetVoice}
+          disabled={actionsDisabled || speakersIncomplete}
+          estimateLoading={estimate.isLoading}
+        />
+      </div>
+    </div>
+  );
+
+  // Both passes' spending, against both estimates.
+  const speakersGuard = book.cost_guard.speakers;
+  const voicesGuard = book.cost_guard.voices;
+  const cost =
+    speakersGuard || voicesGuard
+      ? {
+          estimate_usd: (speakersGuard?.estimate_usd ?? 0) + (voicesGuard?.estimate_usd ?? 0),
+          spent_usd: (speakersGuard?.spent_usd ?? 0) + (voicesGuard?.spent_usd ?? 0),
+          units_done: 0,
+          units_total: 0,
+          limit: true,
+          paused_reason: null,
+        }
+      : undefined;
 
   return (
     <div className={BOOK_PANEL_SURFACE}>
       <div className={cn(BOOK_PANEL_CONTAINER, "py-8")}>
-        <div>
-          <h2 className="font-serif text-xl font-medium text-ink-50">Character voices</h2>
-          <p className="mt-1 max-w-2xl text-sm leading-relaxed text-ink-500">
-            Pass 1 attributes every dialogue line to a character. Pass 2 builds voice profiles and
-            reference passages over windows of ~{formatNumber(VOICE_EXTRACTION_WINDOW_WORDS)} words
-            (~{formatNumber(VOICE_EXTRACTION_OVERLAP_WORDS)} overlap). Each pass has its own model
-            under Controls.
-          </p>
-          {glossaryReady &&
-            showStageFinishedToggle(book, "voices", speakersPoll, voiceCompleted) && (
-              <div className="mt-3">
-                <StageFinishedToggle
-                  book={book}
-                  stage="voices"
-                  running={speakersPoll}
-                  completed={voiceCompleted}
-                />
-              </div>
-            )}
-        </div>
+        <StepRunBar
+          label="Voices run"
+          status={barStatus}
+          summary={summary}
+          cost={cost}
+          action={runAction}
+          notice={notice}
+          settings={glossaryReady ? settings : undefined}
+        />
 
-        {!glossaryReady && (
-          <p className="mt-4 rounded-lg border border-warning-border bg-warning-surface px-3 py-2 text-sm text-warning">
-            Finish glossary extraction first; voices need at least one character entry.
-          </p>
+        {glossaryReady && speakersStatus !== "idle" && (
+          <SpeakersSection book={book} speakers={speakers} />
         )}
-
-        <div className="mt-6 grid gap-3 lg:grid-cols-2">
-          <PassCard
-            eyebrow="Pass 1 · Speaker identification"
-            description="Finds every dialogue line and asks who says it and to whom, one part of a chapter at a time. Parts with no dialogue are skipped."
-            status={book.speakers_extraction_status}
-            unit="part"
-            windowsCompleted={book.speakers_extraction_windows_completed}
-            windowsTotal={book.speakers_extraction_windows_total}
-            lastError={book.speakers_extraction_last_error}
-            pass={est?.pass1 ?? null}
-            characterCount={null}
-            model={est?.pass1.model ?? null}
-            modelChoice={speakersModel}
-            costState={book.cost_guard.speakers}
-            startLabel={
-              book.speakers_extraction_status === "completed" ? "Re-run Pass 1" : "Start Pass 1"
-            }
-            start={startSpeakers}
-            continueMut={continueSpeakers}
-            stop={stopSpeakers}
-            reset={resetSpeakers}
-            resetConfirm="This will delete every attributed dialogue line and the speaker map for this book. Continue?"
-            nothingToReset={nothingToResetSpeakers}
-            disabled={actionsDisabled}
-            estimateLoading={estimate.isLoading}
-          >
-            {/* The speaker map lives here now — never hidden, just
-                collapsed with the controls that produce it. */}
-            <div className="border-t border-ink-800 pt-3">
-              <p className="mb-2 font-mono text-[10px] uppercase tracking-wider text-ink-500">
-                Speakers
-              </p>
-              <SpeakerMapPanel book={book} speakers={speakers} />
-            </div>
-          </PassCard>
-
-          <PassCard
-            eyebrow="Pass 2 · Voices + passages"
-            description={
-              speakersIncomplete
-                ? "Needs a complete Pass 1: each profile is built from all of a character's lines."
-                : "One call per character (characters with few lines share one) with all their lines; writes the profile, the evidence behind it and reference passages. Accepted and adjusted profiles are kept on a re-run."
-            }
-            status={book.voice_extraction_status}
-            unit="call"
-            windowsCompleted={book.voice_extraction_windows_completed}
-            windowsTotal={book.voice_extraction_windows_total}
-            lastError={book.voice_extraction_last_error}
-            pass={est?.pass2 ?? null}
-            characterCount={est?.character_count ?? null}
-            model={est?.pass2.model ?? null}
-            modelChoice={voicesModel}
-            costState={book.cost_guard.voices}
-            startLabel={
-              book.voice_extraction_status === "completed" ? "Re-run Pass 2" : "Start Pass 2"
-            }
-            start={startVoice}
-            continueMut={continueVoice}
-            stop={stopVoice}
-            reset={resetVoice}
-            resetConfirm="This will permanently delete all character voice profiles and review progress. Continue?"
-            nothingToReset={nothingToResetVoice}
-            disabled={actionsDisabled || speakersIncomplete}
-            estimateLoading={estimate.isLoading}
-          />
-        </div>
 
         <div className="mt-10 space-y-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -1421,7 +1560,7 @@ export function VoiceView({ book }: Props) {
           {voices.isError && <p className="text-sm text-danger">Could not load voice profiles.</p>}
           {voices.data && voices.data.entries.length === 0 && (
             <p className="text-sm text-ink-400">
-              No profiles yet. Run Pass 1, then Pass 2, to build them.
+              No profiles yet. Build the voices above to write them.
             </p>
           )}
           {voices.data && voices.data.entries.length > 0 && profilesInScope.length === 0 && (
@@ -1440,6 +1579,25 @@ export function VoiceView({ book }: Props) {
             />
           ))}
         </div>
+
+        {/* Nothing to review before the first profiles exist. */}
+        {glossaryReady && (profileCount > 0 || book.stages_marked_finished.includes("voices")) && (
+          <StepFinish
+            book={book}
+            stage="voices"
+            running={speakersPoll}
+            completed={voiceCompleted}
+            canFinish={profileCount > 0}
+            cannotFinishReason="Build the voices first."
+            pendingNote={
+              reviewStats.awaiting > 0
+                ? `${formatNumber(reviewStats.awaiting)} profile${reviewStats.awaiting === 1 ? " is" : "s are"} not reviewed yet. The translation uses them as they are; only rejected profiles are left out.`
+                : null
+            }
+            nextLabel="Translate"
+            onNext={() => onSelectTab("translation")}
+          />
+        )}
       </div>
     </div>
   );

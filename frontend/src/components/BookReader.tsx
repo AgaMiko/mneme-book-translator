@@ -12,6 +12,7 @@ import {
   type TabCounts,
 } from "@/components/book/tabs";
 import { TranslationView } from "@/components/book/TranslationView";
+import { useChainVoicesAfterSpeakers } from "@/components/book/voiceChain";
 import { VoiceView } from "@/components/book/VoiceView";
 import { useBookTab } from "@/hooks/useBookTab";
 import {
@@ -34,6 +35,8 @@ interface Props {
  */
 export function BookReader({ bookId, onBack }: Props) {
   const { data: book, isLoading, isError } = useBook(bookId);
+  // "Build voices" asked for both passes: start the second when the first ends.
+  useChainVoicesAfterSpeakers(book);
   const translation = useTranslation(bookId);
   const translationRun = translation.data?.run ?? null;
 
@@ -187,9 +190,10 @@ export function BookReader({ bookId, onBack }: Props) {
               book={book}
               focusEntryId={glossaryFocus}
               onFocusHandled={handleGlossaryFocusHandled}
+              onSelectTab={setActiveTab}
             />
           )}
-          {activeTab === "voices" && <VoiceView book={book} />}
+          {activeTab === "voices" && <VoiceView book={book} onSelectTab={setActiveTab} />}
           {activeTab === "review" && <PassagesView book={book} />}
           {activeTab === "translation" && (
             <TranslationView book={book} onOpenTerm={handleOpenTerm} onSelectTab={setActiveTab} />

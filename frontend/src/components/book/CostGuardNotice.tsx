@@ -4,9 +4,7 @@ import { Button } from "@/components/ui/Button";
 import type { CostGuardState } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
 
-function usd(n: number): string {
-  return n > 0 && n < 0.01 ? "under $0.01" : `$${n.toFixed(2)}`;
-}
+import { usd } from "./cost";
 
 /**
  * What a step's run really cost against its estimate, and, when the run
@@ -22,7 +20,10 @@ export function CostGuardNotice({
   onContinue,
   onContinueWithoutLimit,
   className,
+  showSpent = true,
 }: {
+  /** False when the spent amount is already shown elsewhere (the step run bar). */
+  showSpent?: boolean;
   state: CostGuardState | undefined;
   /** The run is stopped; only then can a pause reason be acted on. */
   paused: boolean;
@@ -32,10 +33,16 @@ export function CostGuardNotice({
   className?: string;
 }) {
   if (!state || (state.spent_usd === 0 && !state.paused_reason)) return null;
+  if (!showSpent && !(paused && state.paused_reason)) return null;
   const over = state.estimate_usd > 0 ? state.spent_usd / state.estimate_usd - 1 : 0;
   return (
     <div className={cn("space-y-2", className)}>
-      <p className="inline-flex flex-wrap items-center gap-1.5 font-mono text-[11px] tabular-nums text-ink-400">
+      <p
+        className={cn(
+          "inline-flex flex-wrap items-center gap-1.5 font-mono text-[11px] tabular-nums text-ink-400",
+          !showSpent && "hidden",
+        )}
+      >
         <CircleDollarSign className="h-3.5 w-3.5" aria-hidden />
         Spent {usd(state.spent_usd)} of ~{usd(state.estimate_usd)} estimated
         {state.units_total > 0 && (

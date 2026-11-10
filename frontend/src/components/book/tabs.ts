@@ -1,4 +1,4 @@
-import type { BookDetail, MarkableStage } from "@/lib/api/client";
+import type { BookDetail } from "@/lib/api/client";
 import { formatNumber } from "@/lib/utils";
 
 /**
@@ -86,16 +86,6 @@ export function voicesFinished(book: BookDetail): boolean {
   return (
     book.stages_marked_finished.includes("voices") || book.voice_extraction_status === "completed"
   );
-}
-
-/** Whether the toggle has anything to offer: hidden while running and after a real finish. */
-export function showStageFinishedToggle(
-  book: BookDetail,
-  stage: MarkableStage,
-  running: boolean,
-  completed: boolean,
-): boolean {
-  return !running && (!completed || book.stages_marked_finished.includes(stage));
 }
 
 /** Steps that must finish before a translation can start (mirrors the backend check). */

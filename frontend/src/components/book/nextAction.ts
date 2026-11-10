@@ -50,13 +50,10 @@ function nextStep(book: BookDetail, counts: TabCounts): Step {
 
   // The glossary has its terms — voices attach to its character entries.
   if (!voicesFinished(book)) {
-    const speakers = book.speakers_extraction_status;
-    if (speakers === "running") return { label: "Watch speaker run", tab: "voices" };
-    if (speakers !== "completed") return { label: "Identify speakers", tab: "voices" };
-    if (book.voice_extraction_status === "running") {
-      return { label: "Watch voice run", tab: "voices" };
-    }
-    return { label: "Extract voices", tab: "voices" };
+    // One step for the author; the Voices tab runs both passes.
+    const running =
+      book.speakers_extraction_status === "running" || book.voice_extraction_status === "running";
+    return { label: running ? "Watch voices run" : "Build voices", tab: "voices" };
   }
 
   const { translationDone: done, translationTotal: total } = counts;

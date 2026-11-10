@@ -14,7 +14,8 @@ import { formatNumber } from "@/lib/utils";
  * `Voices` unlocks once the glossary is usable (canonical characters
  * exist). `Translation` unlocks once the voices are extracted too: the
  * translation prompts use both. A book with translated text keeps the tab
- * open so the result stays readable.
+ * open so the result stays readable. `Review` lists the special passages
+ * (verse, hidden messages, wordplay) and what was done about them.
  */
 
 /**
@@ -32,6 +33,11 @@ export interface TabCounts {
   translationStatus: "running" | "completed" | "failed" | "cancelled" | null;
   translationDone: number;
   translationTotal: number;
+  passagesStatus: "idle" | "scanning" | "checking" | "completed" | "failed";
+  passagesTotal: number;
+  /** Flags the author has not answered, and how many of them block a final export. */
+  passagesOpen: number;
+  passagesBlocking: number;
 }
 
 export const EMPTY_TAB_COUNTS: TabCounts = {
@@ -42,6 +48,10 @@ export const EMPTY_TAB_COUNTS: TabCounts = {
   translationStatus: null,
   translationDone: 0,
   translationTotal: 0,
+  passagesStatus: "idle",
+  passagesTotal: 0,
+  passagesOpen: 0,
+  passagesBlocking: 0,
 };
 
 /**
@@ -97,7 +107,7 @@ function translationLocked(book: BookDetail, counts: Pick<TabCounts, "translatio
 }
 
 export interface BookTabDef {
-  id: "manuscript" | "glossary" | "voices" | "translation";
+  id: "manuscript" | "glossary" | "voices" | "translation" | "review";
   label: string;
   /** `view` sits apart from the numbered pipeline steps in the header. */
   kind: "view" | "step";
@@ -209,6 +219,32 @@ export const BOOK_TABS: readonly BookTabDef[] = [
         default:
           return "not started";
       }
+    },
+  },
+  {
+    // Special passages (verse, hidden messages, wordplay): found in the
+    // manuscript, checked and corrected after translation, then flagged.
+    id: "review",
+    label: "Review",
+    kind: "step",
+    disabled: false,
+    state: (_b, counts) => {
+      if (counts.passagesStatus === "scanning" || counts.passagesStatus === "checking") {
+        return "active";
+      }
+      if (counts.passagesStatus === "idle" && counts.passagesTotal === 0) return "idle";
+      return counts.passagesOpen === 0 && counts.translationStatus === "completed"
+        ? "done"
+        : "idle";
+    },
+    caption: (_b, counts) => {
+      if (counts.passagesStatus === "scanning") return "finding passages…";
+      if (counts.passagesStatus === "checking") return "checking passages…";
+      if (counts.passagesStatus === "idle" && counts.passagesTotal === 0) return "not started";
+      if (counts.passagesTotal === 0) return "no special passages";
+      const n = `${formatNumber(counts.passagesTotal)} passage${counts.passagesTotal === 1 ? "" : "s"}`;
+      if (counts.passagesBlocking > 0) return `${n} · ${counts.passagesBlocking} need a decision`;
+      return `${n} · ${counts.passagesOpen} to review`;
     },
   },
 ];

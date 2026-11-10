@@ -45,7 +45,7 @@ from app.models.translation import (
     TranslationFragment,
 )
 from app.services.narration_pov import CHAPTER_LINE, SCENE_BREAK
-from app.services.translation_service import current_renditions
+from app.services.translation_service import load_current_renditions
 
 if TYPE_CHECKING:
     from uuid import UUID
@@ -141,19 +141,7 @@ async def assemble_book(
         .scalars()
         .all()
     )
-    renditions = (
-        (
-            await session.execute(
-                select(FragmentRendition)
-                .join(TranslationFragment, TranslationFragment.id == FragmentRendition.fragment_id)
-                .where(TranslationFragment.book_id == book_id)
-                .order_by(FragmentRendition.created_at.asc())
-            )
-        )
-        .scalars()
-        .all()
-    )
-    latest = current_renditions(renditions)
+    latest = await load_current_renditions(session, book_id=book_id)
     allowed = TRANSLATION_STAGES[: TRANSLATION_STAGES.index(stage) + 1][::-1]
 
     by_chapter: dict[UUID, list[TranslationFragment]] = {}

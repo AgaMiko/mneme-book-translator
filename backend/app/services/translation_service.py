@@ -135,7 +135,7 @@ def _require_prerequisites(book: Book) -> None:
 # ─── Fragments ───────────────────────────────────────────
 
 
-async def _load_book_with_text(session: AsyncSession, book_id: UUID) -> Book | None:
+async def load_book_with_text(session: AsyncSession, book_id: UUID) -> Book | None:
     stmt = (
         select(Book)
         .where(Book.id == book_id)
@@ -342,7 +342,7 @@ async def start_translation_run(
     settings: Settings,
 ) -> TranslationRun:
     """Create a run. Raises ``LookupError`` or ``TranslationConflictError``."""
-    book = await _load_book_with_text(session, book_id)
+    book = await load_book_with_text(session, book_id)
     if book is None:
         raise LookupError("Book not found")
     current = await latest_run(session, book_id=book_id)
@@ -864,7 +864,7 @@ async def run_translation(*, run_id: UUID, settings: Settings, cost_limit: bool 
         run = await session.get(TranslationRun, run_id)
         if run is None:
             return
-        book = await _load_book_with_text(session, run.book_id)
+        book = await load_book_with_text(session, run.book_id)
         if book is None:
             return
         fragments = await ensure_fragments(session, book)
@@ -1075,6 +1075,21 @@ def current_renditions(
     return out
 
 
+async def load_current_renditions(
+    session: AsyncSession, *, book_id: UUID, chapter_ids: Sequence[UUID] | None = None
+) -> dict[tuple[UUID, str], FragmentRendition]:
+    """``current_renditions`` of the book, or of ``chapter_ids`` only."""
+    stmt = (
+        select(FragmentRendition)
+        .join(TranslationFragment, TranslationFragment.id == FragmentRendition.fragment_id)
+        .where(TranslationFragment.book_id == book_id)
+        .order_by(FragmentRendition.created_at.asc())
+    )
+    if chapter_ids is not None:
+        stmt = stmt.where(TranslationFragment.chapter_id.in_(list(chapter_ids)))
+    return current_renditions((await session.execute(stmt)).scalars().all())
+
+
 async def build_translation_view(session: AsyncSession, *, book_id: UUID) -> dict[str, Any]:
     """Latest run, plus per-chapter translations of each stage.
 
@@ -1093,19 +1108,7 @@ async def build_translation_view(session: AsyncSession, *, book_id: UUID) -> dic
         .scalars()
         .all()
     )
-    renditions = (
-        (
-            await session.execute(
-                select(FragmentRendition)
-                .join(TranslationFragment, TranslationFragment.id == FragmentRendition.fragment_id)
-                .where(TranslationFragment.book_id == book_id)
-                .order_by(FragmentRendition.created_at.asc())
-            )
-        )
-        .scalars()
-        .all()
-    )
-    latest = current_renditions(renditions)
+    latest = await load_current_renditions(session, book_id=book_id)
 
     run_fragment_status: dict[UUID, dict[str, Any]] = {}
     if run is not None:

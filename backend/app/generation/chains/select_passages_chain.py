@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING
 
 from langfuse import observe
 
+from app.constants.languages import language_name
 from app.generation.prompt_manager.models.select_passages_model import (
     CandidateInPool,
     PassageSelection,
@@ -73,7 +74,7 @@ async def select_passages_for_character(
     group together with the extraction calls.
     """
     rendered = PROMPT.format(
-        source_language=source_language,
+        source_language=language_name(source_language),
         target_language=target_language,
         profile_id=profile_id,
         canonical_name=canonical_name,

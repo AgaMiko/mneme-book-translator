@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING
 
 from langfuse import observe
 
+from app.constants.languages import language_name
 from app.generation.prompt_manager.models.review_glossary_model import GlossaryReview
 from app.generation.prompt_manager.prompts.review_glossary_prompt import (
     PROMPT,
@@ -45,7 +46,7 @@ async def review_glossary_batch(
     settings: Settings,
 ) -> GlossaryReview:
     rendered = PROMPT.format(
-        source_language=source_language,
+        source_language=language_name(source_language),
         target_language=target_language,
         n_pending=len(pending),
         pending_block=render_pending(pending),

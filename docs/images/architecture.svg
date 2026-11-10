@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1040 300" width="1040" height="300" role="img" aria-labelledby="t d">
+  <title id="t">Mneme architecture</title>
+  <desc id="d">A React frontend calls a FastAPI backend over JSON. The backend stores everything in Postgres 16 and calls Gemini and OpenAI models, with traces sent to Langfuse.</desc>
+  <style>
+    .sans { font-family: Inter, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif; }
+    .mono { font-family: "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace; }
+    .bg { fill: #f3efe6; }
+    .card { fill: #fffdf8; stroke: #d6d2ca; stroke-width: 1.2; }
+    .key { fill: #fffdf8; stroke: #b76a4a; stroke-width: 1.6; }
+    .ext { fill: #e5e1da; stroke: #d6d2ca; stroke-width: 1.2; }
+    .label { fill: #0f1115; font-size: 17px; font-weight: 600; }
+    .sub { fill: #6e6862; font-size: 12px; }
+    .port { fill: #b76a4a; font-size: 12px; }
+    .edge { fill: #6e6862; font-size: 11px; }
+    .arrow { stroke: #6e6862; stroke-width: 1.4; fill: none; }
+    .dash { stroke: #6e6862; stroke-width: 1.2; stroke-dasharray: 4 4; fill: none; }
+  </style>
+  <defs>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#6e6862"/>
+    </marker>
+  </defs>
+
+  <rect class="bg" width="1040" height="300" rx="14"/>
+
+  <g class="sans">
+    <rect class="card" x="40" y="36" width="250" height="104" rx="12"/>
+    <text class="label" x="62" y="70">Frontend</text>
+    <text class="sub" x="62" y="92">React 18 · Vite · TypeScript</text>
+    <text class="sub" x="62" y="110">TanStack Query · Tailwind</text>
+    <text class="mono port" x="62" y="128">:5177</text>
+
+    <rect class="key" x="395" y="36" width="250" height="104" rx="12"/>
+    <text class="label" x="417" y="70">API</text>
+    <text class="sub" x="417" y="92">FastAPI (async) · Pydantic v2</text>
+    <text class="sub" x="417" y="110">pipeline runs in the background</text>
+    <text class="mono port" x="417" y="128">:8000</text>
+
+    <rect class="card" x="750" y="36" width="250" height="104" rx="12"/>
+    <text class="label" x="772" y="70">Postgres 16</text>
+    <text class="sub" x="772" y="92">SQLAlchemy 2.0 · Alembic</text>
+    <text class="sub" x="772" y="110">the book's memory</text>
+    <text class="mono port" x="772" y="128">:5432</text>
+
+    <rect class="ext" x="300" y="200" width="200" height="72" rx="12"/>
+    <text class="label" x="400" y="230" text-anchor="middle">Gemini</text>
+    <text class="sub" x="400" y="252" text-anchor="middle">metadata · glossary · voices</text>
+
+    <rect class="ext" x="540" y="200" width="200" height="72" rx="12"/>
+    <text class="label" x="640" y="230" text-anchor="middle">OpenAI</text>
+    <text class="sub" x="640" y="252" text-anchor="middle">translation (default)</text>
+
+    <rect class="ext" x="800" y="200" width="200" height="72" rx="12"/>
+    <text class="label" x="900" y="230" text-anchor="middle">Langfuse</text>
+    <text class="sub" x="900" y="252" text-anchor="middle">traces of every LLM call</text>
+  </g>
+
+  <g>
+    <line class="arrow" x1="292" y1="88" x2="391" y2="88" marker-end="url(#a)"/>
+    <text class="sans edge" x="342" y="80" text-anchor="middle">JSON</text>
+    <line class="arrow" x1="647" y1="88" x2="746" y2="88" marker-end="url(#a)"/>
+    <text class="sans edge" x="697" y="80" text-anchor="middle">ORM</text>
+
+    <path class="arrow" d="M480,142 L420,196" marker-end="url(#a)"/>
+    <path class="arrow" d="M560,142 L620,196" marker-end="url(#a)"/>
+    <path class="dash" d="M640,140 C700,170 840,160 880,196" marker-end="url(#a)"/>
+  </g>
+</svg>

@@ -26,6 +26,8 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from app.constants.languages import source_letters
+
 # Polish-brief targets.
 SHE_HE_MAX_PCT = 15.0
 ELLIPSES_MAX_PER_1K = 3.0
@@ -44,11 +46,6 @@ STOCK_PHRASES: tuple[str, ...] = (
     r"for a heartbeat",
     r"\bsuddenly\b",
 )
-
-# Letters that should not appear in English output, per source language.
-SOURCE_LETTERS: dict[str, str] = {
-    "pl": "ąćęłńóśźżĄĆĘŁŃÓŚŹŻ",
-}
 
 PLACEHOLDER_PATTERNS: tuple[str, ...] = (r"x{4,}", r"\[x+\]")
 
@@ -362,8 +359,9 @@ def hard_checks(
     glossary keeps in the original, e.g. "Elżka").
     """
     issues: list[QaIssue] = []
-    letters = SOURCE_LETTERS.get(source_language, "")
-    letter_re = re.compile(f"[{re.escape(letters)}]") if letters else None
+    # Letters that should not appear in English output (a regex class body).
+    letters = source_letters(source_language)
+    letter_re = re.compile(f"[{letters}]") if letters else None
     allowed = {w.lower() for w in (allowed_words or set())}
     source_by_id = dict(source)
 

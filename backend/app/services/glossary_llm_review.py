@@ -235,7 +235,7 @@ async def review_pending_terms(
                 pending=[_prompt_term(e, tuple(passages[str(e.id)])) for e in batch],
                 accepted=accepted_terms,
                 removed=removed_terms,
-                source_language=book.source_language,
+                source_language=book.resolved_source_language,
                 target_language=book.target_language,
                 settings=settings,
             )

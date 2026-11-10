@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 from langfuse import observe
 
+from app.constants.languages import language_name
 from app.core.logging import get_logger
 from app.generation.prompt_manager.models.identify_speakers_model import (
     ChunkAttribution,
@@ -58,7 +59,7 @@ async def identify_speakers_chunk(
     its lines are stored as ``unknown``.
     """
     rendered = PROMPT.format(
-        source_language=source_language,
+        source_language=language_name(source_language),
         n_characters=len(glossary_characters),
         characters_table=render_characters_table(glossary_characters),
         context=context or "(start of chapter)",

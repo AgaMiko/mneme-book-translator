@@ -10,7 +10,7 @@ in ``docs/step5-translation-pipeline.md`` §4:
 - an explicit exception to "plain words over Latinate" when a character's
   voice profile names a Latinate, clinical, elevated, archaic or broken
   register;
-- names always in the nominative (no Polish case endings);
+- names always in the nominative (no source case endings);
 - punctuation guidance for dialogue dashes, em dashes and ellipses;
 - clarifying beats allowed only in the line edit, and always reported;
 - author placeholders copied as is; source typos translated as intended
@@ -27,6 +27,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.constants.languages import language_name
+
 RULES_CORE = """\
 ## Translation rules
 
@@ -40,15 +42,14 @@ and no images, details or stronger wording than the source has; better \
 flow comes from restructuring what the source says.
 
 2. **Idiom for idiom.** Use the {target_language} idiom that does the same \
-job, not a word-for-word copy. Polish "No proszę" → "Would you look at \
-this", not "Well, please".
+job, not a word-for-word copy.
 
 3. **Living images.** If a source image sounds old or odd in \
 {target_language}, use the image {target_language} writers use today.
 
-4. **Plain words over Latinate words in narration.** Polish uses Latinate \
-words casually; English fiction prefers shorter, plainer words. "prawdziwa \
-katastrofa" → "serious trouble", not "a real catastrophe".
+4. **Plain words over learned words in narration.** Where the source uses \
+formal or Latinate words casually, English fiction prefers shorter, plainer \
+words.
    **Exception:** when a character's voice profile names a Latinate, \
 clinical, elevated, archaic or broken register, follow the profile for that \
 character's lines and for free indirect thought in their point of view. A \
@@ -57,20 +58,20 @@ character who speaks in clinical Latinate terms keeps them ("haemorrhage", \
 broken grammar.
 
 5. **Verbs over abstract nouns.** Break long abstract noun phrases into \
-verbs. "wymusić strach na obywatelach" → "terrorise the public".
+verbs.
 
 6. **Contractions in dialogue**, unless the character's voice profile says \
 otherwise (formal, ritual or archaic speech).
 
-7. **Names in the nominative.** Polish names change their endings by case \
-(Miro, Mirze, Mirą are all Mira; Einardzie is Einard; Steina is Stein). \
-Always write the glossary form. Show possession with English 's. Short forms \
-the glossary lists (e.g. Jen, Ein) are separate names; keep them as they are.
+7. **Names in their glossary form.** If the source changes a name's ending \
+by case or adds a suffix to it, still write the glossary form. Show \
+possession with English 's. Short forms the glossary lists are separate \
+names; keep them as they are.
 
 8. **Glossary terms.** For every glossary term in the source, use the \
 glossary's target form exactly. Do not vary it. A term's notes may say when \
-an ordinary word is NOT the glossary term (for example, a literal hair braid \
-is not the magic "weave"). For a new name or term in the same family as \
+an ordinary word is NOT the glossary term (a literal object that shares \
+its name with a lore term). For a new name or term in the same family as \
 glossary terms, follow the same strategy, and report it as a term_choice note.
 
 9. **Voices.** The source text comes first: translate what the character \
@@ -100,8 +101,8 @@ STYLE_SHEET = """\
 ## Book style sheet
 
 - Spelling: {spelling}.
-- Dialogue: Polish dialogue dashes ("\u2013 ") become {target_language} double \
-quotes. Em dashes (—) only for interruptions and sharp asides.
+- Dialogue: the source's dialogue punctuation (dashes, „…“, »…« or other \
+marks) becomes {target_language} double quotes. Em dashes (—) only for interruptions and sharp asides.
 - Ellipses (…): keep in dialogue where a speaker trails off or falters, and \
 at real moments of fear. In narration, prefer a full stop, a comma or a \
 different sentence.
@@ -110,9 +111,9 @@ measurements on charts, documents and instruments stay as in the source \
 (°C). Round converted numbers naturally ("a good five paces"), don't give \
 false precision.
 - Chapter headings: a paragraph may hold the chapter heading: the \
-point-of-view name, "Rozdział N. Title", and an epigraph with its \
-attribution line. Translate all of it and keep its line breaks. \
-"Rozdział" is "Chapter". Epigraphs keep their own register; attribution \
+point-of-view name, the chapter line (number and title), and an epigraph \
+with its attribution line. Translate all of it and keep its line breaks; \
+the chapter word becomes "Chapter". Epigraphs keep their own register; attribution \
 lines start with an em dash.
 - Scene breaks: keep a "***" paragraph as "***". If a scene break carries a \
 point-of-view name (e.g. "*** Kerry"), write "***" and put the name in the \
@@ -174,7 +175,7 @@ impact and action, longer ones for reflection and description, as the \
 author does in the source. Keep the author's deliberate effects (a run of \
 short fragments, a long breathless sentence).
 - Word repetition: do not use the same word again within a few lines. \
-Polish avoids repetition through inflection and synonyms; English needs a \
+The source may avoid repetition through inflection; English needs a \
 synonym, a pronoun or a rebuilt sentence. Keep a repetition only where the \
 source repeats on purpose (anaphora, a refrain, emphasis), and keep \
 glossary terms and names exactly as they are.
@@ -185,8 +186,8 @@ shrine". Prefer a pronoun or a rebuilt sentence to a looser synonym. Do \
 not add images, details or intensity to vary a sentence ("from her knees" \
 does not become "from the muck"; "angry shouts" do not become "ragged \
 screams").
-- Merge or split sentences for {target_language} rhythm. Cut Polish-style \
-chains of "and… and…" or "so… so…".
+- Merge or split sentences for {target_language} rhythm. Break up long \
+chains of clauses carried over from the source.
 - Fix stiff or word-for-word phrases. No modern slang in narration.
 - Ellipses: keep them in dialogue at hesitation or fear; trim them from \
 neutral narration.
@@ -248,7 +249,7 @@ impact and action, longer ones for reflection and description, as the \
 author does in the source. Keep the author's deliberate effects (a run of \
 short fragments, a long breathless sentence).
 - Word repetition: do not use the same word again within a few lines. \
-Polish avoids repetition through inflection and synonyms; English needs a \
+The source may avoid repetition through inflection; English needs a \
 synonym, a pronoun or a rebuilt sentence. Keep a repetition only where the \
 source repeats on purpose (anaphora, a refrain, emphasis), and keep \
 glossary terms and names exactly as they are.
@@ -346,7 +347,7 @@ def render_fixed_context(
     return "\n\n".join(
         [
             f'You are a literary translator working on the novel "{book_title}", '
-            f"translating from {source_language} into {target_language}.",
+            f"translating from {language_name(source_language)} into {target_language}.",
             RULES_CORE.format(target_language=target_language),
             STYLE_SHEET.format(target_language=target_language, spelling=spelling),
             f"## Accepted glossary ({len(glossary)} terms)\n\n{render_glossary(glossary)}",
@@ -389,7 +390,10 @@ def render_fragment_context(
 
 
 def build_faithful_prompt(
-    *, context: str, target_language: str, source: list[tuple[str, str]]
+    *,
+    context: str,
+    target_language: str,
+    source: list[tuple[str, str]],
 ) -> str:
     return "\n\n".join(
         [
@@ -433,7 +437,10 @@ def build_polish_prompt(
 ) -> str:
     return "\n\n".join(
         [
-            POLISH_TASK.format(target_language=target_language, metrics_block=metrics_block),
+            POLISH_TASK.format(
+                target_language=target_language,
+                metrics_block=metrics_block,
+            ),
             context,
             "## Source paragraphs (for checking meaning)\n\n" + render_paragraphs(source),
             "## Line-edited translation to polish\n\n" + render_paragraphs(line_edited),
@@ -468,7 +475,10 @@ def build_revision_prompt(
     """Two-step mode: the line-edit prompt with the style targets added."""
     return "\n\n".join(
         [
-            REVISION_TASK.format(target_language=target_language, metrics_block=metrics_block),
+            REVISION_TASK.format(
+                target_language=target_language,
+                metrics_block=metrics_block,
+            ),
             context,
             "## Problems found by automatic checks\n\n"
             + ("\n".join(f"- {c}" for c in checks) if checks else "(none)"),
@@ -511,7 +521,10 @@ ONE_STEP_TASK = (
 
 
 def build_one_step_prompt(
-    *, context: str, target_language: str, source: list[tuple[str, str]]
+    *,
+    context: str,
+    target_language: str,
+    source: list[tuple[str, str]],
 ) -> str:
     return "\n\n".join(
         [

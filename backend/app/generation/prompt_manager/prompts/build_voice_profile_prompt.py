@@ -8,8 +8,6 @@ cleanup); what changes is the input: every line of the character at
 once, with chapter and addressee, instead of one window at a time.
 """
 
-
-
 PROMPT = """\
 You are building a translator's reference for character voices in a \
 {source_language} fiction manuscript that will be translated into \
@@ -56,8 +54,8 @@ the peasant is concrete, the soldier terse, the courtier indirect);
 - address forms (formal/informal pronouns, titles, diminutives);
 - register shifts with particular people or situations.
 
-Specific beats abstract: "uses the -że emphatic particle (Łapaćże, \
-lepiejże)" beats "rural and informal".
+Specific beats abstract: a marker named and quoted from the lines \
+beats "rural and informal".
 
 ## Thoughts
 
@@ -82,8 +80,9 @@ For each observed feature, write a **when-you-see-X-do-Y** rule with a \
 move:
 - **MIRROR** (carry directly): non-standard grammar, verbal tics, \
 signature phrases, stutters, fragmentation, repetition, \
-code-switching. The realisation may shift (Polish case errors → \
-English article/preposition errors) but the brokenness carries over. \
+code-switching. The realisation may shift (case or agreement errors in \
+the source → article or preposition errors in English) but the \
+brokenness carries over. \
 Keep foreign phrases verbatim and unglossed unless the original glossed.
 - **RECAST** (substitute a {target_language} equivalent): \
 source-specific particles and honorifics, lexical archaism, regional \
@@ -99,7 +98,7 @@ Twain/Scott tradition, one or two marks per sentence); recast for a \
 foreign speaker's accent (use grammar errors, not phonetic \
 stage-accents). Name the {target_language} register to reach for, \
 specifically. Give address-form mappings the translator applies every \
-time ('pan' → 'sir'? the name?).
+time (a title or formal pronoun → 'sir'? the name?).
 
 The test: could a translator who has not read the source produce \
 consistent, specific output from this strategy alone? The author will \

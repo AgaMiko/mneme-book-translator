@@ -11,6 +11,7 @@ from app.models.glossary import (
     GlossaryNotepad,
     GlossaryWindowGeneration,
 )
+from app.models.passages import SpecialPassage, TranslationFlag
 from app.models.speakers import DialogueLine, SpeakerNotepad, WindowSpeaker
 from app.models.translation import (
     FragmentRendition,
@@ -34,6 +35,8 @@ __all__ = [
     "GlossaryWindowGeneration",
     "Paragraph",
     "SpeakerNotepad",
+    "SpecialPassage",
+    "TranslationFlag",
     "TranslationFragment",
     "TranslationRun",
     "TranslationRunFragment",

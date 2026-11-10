@@ -608,14 +608,99 @@ export type StartTranslationBody = {
 
 export type ExportFormat = "pdf" | "epub" | "docx";
 
-/** Download URL for the translated book (a plain link; the API sends a file). */
+/**
+ * Download URL for the translated book (a plain link; the API sends a file).
+ * `draft` exports even when special passages still need a decision.
+ */
 export function translationExportUrl(
   bookId: string,
   format: ExportFormat,
   stage: TranslationStage,
+  draft = false,
 ): string {
-  return `${API_URL}/books/${bookId}/translation/export?format=${format}&stage=${stage}`;
+  const url = `${API_URL}/books/${bookId}/translation/export?format=${format}&stage=${stage}`;
+  return draft ? `${url}&draft=true` : url;
 }
+
+// ─── Special passages (Step 6) ──────────────────────────
+
+export const PassageKindSchema = z.enum(["verse", "hidden_message", "wordplay"]);
+export type PassageKind = z.infer<typeof PassageKindSchema>;
+
+const PassageParagraphSchema = z.object({
+  paragraph_id: z.string(),
+  source: z.string(),
+  /** Current English; null while the paragraph is not translated. */
+  text: z.string().nullable(),
+  /** English before the first correction. */
+  first_text: z.string().nullable(),
+});
+export type PassageParagraph = z.infer<typeof PassageParagraphSchema>;
+
+const PassageCandidateSchema = z.object({
+  paragraphs: z.array(z.object({ paragraph_id: z.string(), text: z.string() })),
+  target_message: z.string().nullable(),
+  notes: z.string(),
+  /** Why this version failed the check; empty when it passed. */
+  problems: z.array(z.string()),
+});
+export type PassageCandidate = z.infer<typeof PassageCandidateSchema>;
+
+export const PassageSchema = z.object({
+  id: z.string(),
+  chapter_id: z.string(),
+  chapter_label: z.string(),
+  kind: PassageKindSchema,
+  rule: z.string(),
+  unit: z.string().nullable(),
+  source_message: z.string().nullable(),
+  target_message: z.string().nullable(),
+  evidence: z.string(),
+  origin: z.enum(["detected", "author"]),
+  status: z.enum(["unchecked", "passed", "corrected", "failed", "author", "dismissed"]),
+  problems: z.array(z.string()),
+  translated: z.boolean(),
+  /** The English changed since the last check. */
+  stale: z.boolean(),
+  paragraphs: z.array(PassageParagraphSchema),
+  dependent_paragraphs: z.array(PassageParagraphSchema),
+  candidates: z.array(PassageCandidateSchema),
+  flag: z
+    .object({
+      id: z.string(),
+      severity: z.enum(["blocking", "review", "fyi"]),
+      status: z.enum(["open", "accepted", "changed", "dismissed"]),
+      question: z.string(),
+    })
+    .nullable(),
+});
+export type Passage = z.infer<typeof PassageSchema>;
+
+export const PassagesViewSchema = z.object({
+  state: z.object({
+    status: z.enum(["idle", "scanning", "checking", "completed", "failed"]),
+    done: z.number().int(),
+    total: z.number().int(),
+    error: z.string().nullable(),
+    scanned: z.boolean(),
+  }),
+  passages: z.array(PassageSchema),
+  open_flags: z.number().int(),
+  blocking_flags: z.number().int(),
+});
+export type PassagesView = z.infer<typeof PassagesViewSchema>;
+
+export type CreatePassageBody = {
+  first_paragraph_id: string;
+  last_paragraph_id: string;
+  kind: PassageKind;
+  rule?: string;
+};
+
+export type ResolvePassageBody =
+  | { action: "accept" | "restore" | "dismiss" }
+  | { action: "use_candidate"; candidate: number }
+  | { action: "edit"; paragraphs: { paragraph_id: string; text: string }[] };
 
 // ─── Errors ─────────────────────────────────────────────
 
@@ -987,6 +1072,63 @@ export const api = {
       TranslationEstimateSchema,
     );
   },
+
+  getPassages: async (id: string): Promise<PassagesView> =>
+    handleResponse(await fetch(`${API_URL}/books/${id}/passages`), PassagesViewSchema),
+
+  scanPassages: async (id: string): Promise<PassagesView> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/passages/scan`, { method: "POST" }),
+      PassagesViewSchema,
+    ),
+
+  /** Check every translated passage, or one passage again. */
+  checkPassages: async (id: string, passageId?: string): Promise<PassagesView> =>
+    handleResponse(
+      await fetch(
+        `${API_URL}/books/${id}/passages/check${passageId ? `?passage_id=${passageId}` : ""}`,
+        { method: "POST" },
+      ),
+      PassagesViewSchema,
+    ),
+
+  createPassage: async (id: string, body: CreatePassageBody): Promise<PassagesView> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/passages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      PassagesViewSchema,
+    ),
+
+  updatePassage: async (
+    id: string,
+    passageId: string,
+    body: { rule?: string; target_message?: string },
+  ): Promise<PassagesView> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/passages/${passageId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      PassagesViewSchema,
+    ),
+
+  resolvePassage: async (
+    id: string,
+    passageId: string,
+    body: ResolvePassageBody,
+  ): Promise<PassagesView> =>
+    handleResponse(
+      await fetch(`${API_URL}/books/${id}/passages/${passageId}/resolve`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }),
+      PassagesViewSchema,
+    ),
 
   startTranslation: async (id: string, body: StartTranslationBody): Promise<TranslationRun> =>
     handleResponse(

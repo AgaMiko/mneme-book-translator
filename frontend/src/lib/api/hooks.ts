@@ -10,6 +10,7 @@ import {
   api,
   type BookDetail,
   type BookSummary,
+  type CreatePassageBody,
   type DialogueLinesResponse,
   type GlossaryEntryPatchBody,
   type GlossaryExtractionEstimate,
@@ -23,6 +24,8 @@ import {
   type ManuscriptSpeakersResponse,
   type MarkableStage,
   type NarrationPovResponse,
+  type PassagesView,
+  type ResolvePassageBody,
   type ModelCatalog,
   type RunOptions,
   type StartTranslationBody,
@@ -53,6 +56,7 @@ export const bookKeys = {
   dialogueLines: (id: string, speakerId: string | null) =>
     [...bookKeys.all, "dialogue-lines", id, speakerId ?? "none"] as const,
   translation: (id: string) => [...bookKeys.all, "translation", id] as const,
+  passages: (id: string) => [...bookKeys.all, "passages", id] as const,
   translationTerms: (id: string) => [...bookKeys.all, "translation-terms", id] as const,
   // Under `translationTerms` so glossary edits that refresh one refresh both.
   manuscriptTerms: (id: string) => [...bookKeys.translationTerms(id), "with-pending"] as const,
@@ -631,3 +635,68 @@ export function useManuscriptTerms(
     staleTime: 30_000,
   });
 }
+
+// ─── Special passages (Step 6) ──────────────────────────
+
+const PASSAGES_POLL_INTERVAL_MS = 3000;
+// While a translation runs, only to notice the scan or check starting.
+const PASSAGES_IDLE_POLL_INTERVAL_MS = 15_000;
+
+/**
+ * Special passages and their flags. Polls while a scan or check runs, and
+ * while `translating`: the first scan runs beside the translation and the
+ * check starts when it ends.
+ */
+export function usePassages(
+  bookId: string,
+  translating = false,
+): UseQueryResult<PassagesView, Error> {
+  return useQuery({
+    queryKey: bookKeys.passages(bookId),
+    queryFn: () => api.getPassages(bookId),
+    refetchInterval: (query) => {
+      const status = query.state.data?.state.status;
+      const busy = status === "scanning" || status === "checking";
+      if (busy) return PASSAGES_POLL_INTERVAL_MS;
+      return translating ? PASSAGES_IDLE_POLL_INTERVAL_MS : false;
+    },
+  });
+}
+
+/** Every passage action answers with the whole view; the translation text may change too. */
+function usePassagesMutation<V>(
+  bookId: string,
+  mutationFn: (vars: V) => Promise<PassagesView>,
+): UseMutationResult<PassagesView, Error, V> {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn,
+    onSuccess: (view) => {
+      qc.setQueryData(bookKeys.passages(bookId), view);
+      void qc.invalidateQueries({ queryKey: bookKeys.translation(bookId) });
+    },
+  });
+}
+
+export const useScanPassages = (bookId: string) =>
+  usePassagesMutation<void>(bookId, () => api.scanPassages(bookId));
+
+export const useCheckPassages = (bookId: string) =>
+  usePassagesMutation<string | void>(bookId, (passageId) =>
+    api.checkPassages(bookId, passageId || undefined),
+  );
+
+export const useCreatePassage = (bookId: string) =>
+  usePassagesMutation<CreatePassageBody>(bookId, (body) => api.createPassage(bookId, body));
+
+export const useUpdatePassage = (bookId: string) =>
+  usePassagesMutation<{ passageId: string; rule?: string; target_message?: string }>(
+    bookId,
+    ({ passageId, ...body }) => api.updatePassage(bookId, passageId, body),
+  );
+
+export const useResolvePassage = (bookId: string) =>
+  usePassagesMutation<{ passageId: string; body: ResolvePassageBody }>(
+    bookId,
+    ({ passageId, body }) => api.resolvePassage(bookId, passageId, body),
+  );

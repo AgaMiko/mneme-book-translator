@@ -123,6 +123,13 @@ class Book(Base):
         JSONB, default_factory=dict, server_default="{}"
     )
 
+    # Step 6 scan and check of special passages: {"status": idle | scanning |
+    # checking | completed | failed, "done", "total", "error"}. See
+    # ``app.services.special_passages_service``.
+    passages_state: Mapped[dict[str, Any]] = mapped_column(
+        JSONB, default_factory=dict, server_default="{}"
+    )
+
     # Which published glossary downstream translation should use (immutable
     # ``FinalGlossary`` + ``FinalGlossaryEntry`` rows). Working drafts live in
     # ``GlossaryEntry`` for the relevant ``GlossaryExtractionRun``.

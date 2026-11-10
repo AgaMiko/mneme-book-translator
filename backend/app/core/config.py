@@ -102,6 +102,13 @@ class Settings(BaseSettings):
     # OpenAI service tier for translation calls: "flex" is half price and
     # slower; empty uses the standard tier.
     TRANSLATION_OPENAI_SERVICE_TIER: str | None = "flex"
+    # Special passages (Step 6): the scan that finds them, and the check and
+    # new translation after the book is translated. The new translation has
+    # to fit letters or rhyme, so it thinks at "high".
+    PASSAGES_MODEL: str = "gpt-6.1-sol"
+    PASSAGES_REWRITE_THINKING: str | None = "high"
+    # New translations tried per passage before it is left for the author.
+    PASSAGES_REWRITE_ATTEMPTS: int = 3
     # Optional: override per-million-token USD prices used in glossary cost estimates.
     GEMINI_INPUT_PRICE_USD_PER_MTOK: float | None = None
     GEMINI_OUTPUT_PRICE_USD_PER_MTOK: float | None = None

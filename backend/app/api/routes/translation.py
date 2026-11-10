@@ -8,7 +8,8 @@
 - ``POST /books/{id}/translation/stop`` — cooperative stop; fragments finish
   their current stage first.
 - ``GET  /books/{id}/translation/export?format=pdf|epub|docx&stage=…`` — the
-  translated book as a file.
+  translated book as a file. Refused while a special passage has no checked
+  translation, unless ``draft=true``.
 
 Runs execute as ``asyncio`` tasks, like voice extraction.
 """
@@ -40,7 +41,7 @@ from app.schemas.translation import (
     TranslationTermsResponse,
     TranslationViewResponse,
 )
-from app.services import translation_export, translation_service
+from app.services import special_passages_service, translation_export, translation_service
 from app.services.translation_estimate import estimate_translation
 from app.services.translation_service import TranslationConflictError
 
@@ -65,9 +66,18 @@ def _model_settings(settings: Settings, model: str | None) -> Settings:
         ) from exc
 
 
-def _schedule_run(run_id: UUID, settings: Settings, *, cost_limit: bool = True) -> None:
+def _schedule_run(
+    run_id: UUID, book_id: UUID, settings: Settings, *, cost_limit: bool = True
+) -> None:
+    translate = translation_service.run_translation(
+        run_id=run_id, settings=settings, cost_limit=cost_limit
+    )
+    # Special passages (Step 6): scanned once while the book is translated,
+    # then checked and corrected when the run ends.
     task = asyncio.create_task(
-        translation_service.run_translation(run_id=run_id, settings=settings, cost_limit=cost_limit)
+        special_passages_service.run_around_translation(
+            book_id=book_id, settings=settings, translate=translate
+        )
     )
     _RUNNING_TASKS.add(task)
 
@@ -196,7 +206,7 @@ async def start_translation(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except TranslationConflictError as exc:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
-    _schedule_run(run.id, settings)
+    _schedule_run(run.id, book_id, settings)
     log.info("translation_run_scheduled", book_id=str(book_id), run_id=str(run.id))
     return TranslationRunOut.model_validate(translation_service.run_json(run))
 
@@ -223,7 +233,7 @@ async def continue_translation(
     used = set((run.models or {}).values())
     if len(used) == 1 and next(iter(used)) in models.MODEL_IDS:
         settings = _model_settings(settings, next(iter(used)))
-    _schedule_run(run.id, settings, cost_limit=cost_limit)
+    _schedule_run(run.id, book_id, settings, cost_limit=cost_limit)
     log.info("translation_run_resumed", book_id=str(book_id), run_id=str(run.id))
     return TranslationRunOut.model_validate(translation_service.run_json(run))
 
@@ -254,6 +264,9 @@ async def export_translation(
     book_id: UUID,
     format: translation_export.ExportFormat = Query(default="pdf"),
     stage: translation_service.TranslationStageName = Query(default="polish"),
+    draft: bool = Query(
+        default=False, description="Export even when special passages still need a decision."
+    ),
     session: AsyncSession = Depends(get_session),
 ) -> Response:
     try:
@@ -265,9 +278,22 @@ async def export_translation(
             status_code=status.HTTP_409_CONFLICT,
             detail="Nothing is translated yet, so there is nothing to export.",
         )
+    blocking = await special_passages_service.blocking_flag_count(session, book_id=book_id)
+    if blocking and not draft:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"{blocking} special passage(s) break their rule and have no checked "
+                "translation. Decide on them in Review, or export a draft."
+            ),
+        )
     # Rendering is CPU-bound (PDF layout can take a while for a whole book).
     data = await run_in_threadpool(translation_export.render, book, format)
     filename = translation_export.export_filename(book, format)
+    if blocking:
+        # A draft says so in its name: a special passage still breaks its rule.
+        stem, dot, ext = filename.rpartition(".")
+        filename = f"{stem}_DRAFT{dot}{ext}"
     return Response(
         content=data,
         media_type=translation_export.MEDIA_TYPES[format],

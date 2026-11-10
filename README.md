@@ -37,6 +37,7 @@ This repo is a working Docker stack: upload a `.docx`, parse it into chapters an
 - Read the translation next to the Polish, paragraph by paragraph, with translator notes (possible source typos, ambiguities, wordplay, added words), style metrics per chapter, and automatic checks (leftover Polish letters, dialogue dashes, missing placeholders).
 - See glossary terms highlighted in both languages. Hovering a term shows its agreed English and a short note; clicking opens it in the glossary. A term is marked as a warning when the English paragraph does not use its agreed target.
 - See which chapters are translated (a tick), partly translated ("2/3") or not started. Finished chapters are skipped unless you choose to translate them again.
+- Find passages that follow a rule (verse and songs, letters whose first letters spell a message, wordplay the plot depends on), check their translation, translate them again when the English breaks the rule, and list each one in the Review tab for the author. See [docs/step6-special-passages.md](docs/step6-special-passages.md).
 - Export the translation as PDF (typeset in EB Garamond), EPUB or DOCX. Untranslated fragments are marked so gaps are visible.
 - Open each book on the pipeline stage it has reached.
 - Keep long-running extraction and translation state in Postgres so interrupted runs can be continued.
@@ -92,6 +93,7 @@ TRANSLATION_POLISH_MODEL=              # the Final stage
 TRANSLATION_THINKING_LINE_EDIT=high    # minimal | low | medium | high, per stage
 TRANSLATION_OPENAI_SERVICE_TIER=flex   # empty = standard tier
 TRANSLATION_CONCURRENCY=4
+PASSAGES_MODEL=gpt-6.1-sol             # special passages: scan, check, new translation
 LANGFUSE_PUBLIC_KEY=...
 LANGFUSE_SECRET_KEY=...
 LANGFUSE_HOST=https://cloud.langfuse.com

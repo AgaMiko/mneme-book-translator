@@ -50,7 +50,7 @@ export function StepFinish({
       aria-label="Finish this step"
       className="mt-8 flex flex-wrap items-center gap-3 rounded-lg border border-ink-800 bg-ink-900 px-4 py-3"
     >
-      <div className="min-w-0 flex-1 text-[13px] leading-relaxed">
+      <div className="min-w-0 flex-1 text-body">
         {finished ? (
           <p className="inline-flex items-center gap-1.5 text-success">
             <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -63,9 +63,9 @@ export function StepFinish({
               : cannotFinishReason}
           </p>
         )}
-        {pendingNote && <p className="mt-0.5 text-xs text-ink-400">{pendingNote}</p>}
+        {pendingNote && <p className="mt-0.5 text-small text-ink-400">{pendingNote}</p>}
         {setFinished.isError && (
-          <p className="mt-1 text-xs text-danger" role="alert">
+          <p className="mt-1 text-small text-danger" role="alert">
             {setFinished.error.message}
           </p>
         )}
@@ -99,6 +99,46 @@ export function StepFinish({
           <ArrowRight className="h-3.5 w-3.5" aria-hidden />
         </Button>
       )}
+    </section>
+  );
+}
+
+/**
+ * The end of a step with nothing to mark as finished (Check): where the
+ * review stands and the way on. It never blocks.
+ */
+export function StepNext({
+  done,
+  doneText,
+  todoText,
+  nextLabel,
+  onNext,
+}: {
+  done: boolean;
+  doneText: string;
+  todoText: string;
+  nextLabel: string;
+  onNext: () => void;
+}) {
+  return (
+    <section
+      aria-label="Next step"
+      className="mt-8 flex flex-wrap items-center gap-3 rounded-lg border border-ink-800 bg-ink-900 px-4 py-3"
+    >
+      <p className="min-w-0 flex-1 text-body">
+        {done ? (
+          <span className="inline-flex items-center gap-1.5 text-success">
+            <CheckCircle2 className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            {doneText}
+          </span>
+        ) : (
+          <span className="text-ink-200">{todoText}</span>
+        )}
+      </p>
+      <Button variant="accent" size="sm" onClick={onNext}>
+        Go to {nextLabel}
+        <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+      </Button>
     </section>
   );
 }

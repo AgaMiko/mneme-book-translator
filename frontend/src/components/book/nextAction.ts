@@ -86,7 +86,7 @@ function nextStep(book: BookDetail, counts: TabCounts): Step {
       tab: "review",
     };
   }
-  return { label: "Export", tab: "translation" };
+  return { label: "Export", tab: "export" };
 }
 
 function reminderSteps(book: BookDetail, counts: TabCounts): Step[] {

@@ -13,9 +13,13 @@ import {
 import { cn } from "@/lib/utils";
 
 import { BOOK_PANEL_CONTAINER, BOOK_PANEL_SURFACE } from "./layout";
+import { StepNext } from "./StepFinish";
+import { StepRunBar, type RunStatus } from "./StepRunBar";
+import type { BookTab } from "./tabs";
+import { LABEL, SECTION_HEADING } from "@/components/ui/typography";
 
 /**
- * Step 6: special passages and their flags.
+ * The Check step: special passages and their flags.
  *
  * A special passage follows a rule that normal translation breaks: verse
  * or a song (lines, rhyme), a hidden message (letters that spell
@@ -46,11 +50,16 @@ const STATUS: Record<Passage["status"], { label: string; tone: string }> = {
 };
 
 const INPUT =
-  "w-full rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 font-sans text-sm text-ink-100 " +
+  "w-full rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 font-sans text-body text-ink-100 " +
   "focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-60";
-const LABEL = "font-mono text-[10px] uppercase tracking-wider text-ink-500";
 
-export function PassagesView({ book }: { book: BookDetail }) {
+export function PassagesView({
+  book,
+  onSelectTab,
+}: {
+  book: BookDetail;
+  onSelectTab: (tab: BookTab) => void;
+}) {
   const passages = usePassages(book.id);
   const scan = useScanPassages(book.id);
   const check = useCheckPassages(book.id);
@@ -62,58 +71,99 @@ export function PassagesView({ book }: { book: BookDetail }) {
   const all = useMemo(() => view?.passages ?? [], [view]);
   const open = all.filter((p) => p.status !== "dismissed" && p.flag?.status !== "accepted");
   const shown = showAll ? all : open;
+  const listed = all.filter((p) => p.status !== "dismissed");
   const toCheck = all.filter((p) => p.translated && (p.status === "unchecked" || p.stale)).length;
+  const notTranslated = listed.filter((p) => !p.translated).length;
+  const blocking = view?.blocking_flags ?? 0;
   const error = scan.error ?? check.error;
+  const progress = state && state.total > 0 ? ` · ${state.done}/${state.total}` : "";
+
+  const barStatus: RunStatus = busy
+    ? "running"
+    : state?.status === "failed"
+      ? "failed"
+      : state?.scanned && toCheck === 0
+        ? "completed"
+        : "idle";
+
+  let summary: string;
+  if (state?.status === "scanning") summary = `Finding special passages${progress}`;
+  else if (state?.status === "checking") summary = `Checking translated passages${progress}`;
+  else if (state?.status === "failed") summary = "The last scan or check did not finish.";
+  else if (!state?.scanned)
+    summary = "Not scanned yet. The first scan starts by itself when you translate.";
+  else if (listed.length === 0) summary = "The scan found no special passages.";
+  else {
+    const parts = [`${listed.length} special passage${listed.length === 1 ? "" : "s"}`];
+    if (blocking > 0) parts.push(`${blocking} need${blocking === 1 ? "s" : ""} your decision`);
+    if (toCheck > 0) parts.push(`${toCheck} to check`);
+    if (notTranslated > 0) parts.push(`${notTranslated} not translated yet`);
+    summary = parts.join(" · ");
+  }
+
+  const action = busy ? null : !state?.scanned ? (
+    <Button
+      variant="accent"
+      size="sm"
+      disabled={scan.isPending}
+      title="Reads every chapter once"
+      onClick={() => scan.mutate()}
+    >
+      {scan.isPending ? "Starting…" : "Scan the manuscript"}
+    </Button>
+  ) : toCheck > 0 ? (
+    <Button
+      variant="accent"
+      size="sm"
+      disabled={check.isPending}
+      title="Checks translated passages that were not checked yet, or whose English changed"
+      onClick={() => check.mutate()}
+    >
+      {check.isPending ? "Starting…" : `Check ${toCheck} passage${toCheck === 1 ? "" : "s"}`}
+    </Button>
+  ) : null;
+
+  const problem = error?.message ?? state?.error ?? null;
+  const notice = problem ? (
+    <p className="text-body text-danger" role="alert">
+      {problem}
+    </p>
+  ) : null;
+
+  const settings = (
+    <div className="space-y-2">
+      <p className="text-small text-ink-400">
+        A special passage follows a rule that an ordinary translation breaks: a poem or song that
+        rhymes, a letter whose first letters spell a message, a pun the plot depends on. The scan
+        reads every chapter once; passages already listed are kept. The first scan starts by itself
+        when you translate, and the check runs when a translation finishes. A passage that breaks
+        its rule is translated again with the rule stated.
+      </p>
+      <Button
+        variant="ghost"
+        size="sm"
+        className="border border-ink-700"
+        disabled={busy || scan.isPending}
+        onClick={() => scan.mutate()}
+      >
+        {state?.scanned ? "Scan the manuscript again" : "Scan the manuscript"}
+      </Button>
+    </div>
+  );
 
   return (
     <div className={BOOK_PANEL_SURFACE}>
-      <div className={cn(BOOK_PANEL_CONTAINER, "py-10")}>
-        <h2 className="font-serif text-2xl text-ink-50">Review</h2>
-        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-300">
-          Some passages follow a rule that an ordinary translation breaks: a poem or song that
-          rhymes, a letter whose first letters spell a message, a pun the plot depends on. They are
-          found in the manuscript, checked once they are translated, and translated again when the
-          English breaks the rule. Each one is listed here so you can read what was done.
-        </p>
+      <div className={cn(BOOK_PANEL_CONTAINER, "py-8")}>
+        <StepRunBar
+          label="Passage check"
+          status={barStatus}
+          summary={summary}
+          action={action}
+          notice={notice}
+          settings={settings}
+        />
 
-        <div className="mt-6 flex flex-wrap items-center gap-2">
-          <Button
-            variant="accent"
-            size="sm"
-            disabled={busy || scan.isPending}
-            title="Reads every chapter once. Passages already listed are kept."
-            onClick={() => scan.mutate()}
-          >
-            {state?.scanned ? "Scan the manuscript again" : "Scan the manuscript"}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={busy || check.isPending || toCheck === 0}
-            title="Checks translated passages that were not checked yet, or whose English changed"
-            onClick={() => check.mutate()}
-          >
-            {toCheck > 0
-              ? `Check ${toCheck} translated passage${toCheck === 1 ? "" : "s"}`
-              : "Nothing to check"}
-          </Button>
-          {busy && state && (
-            <span className="text-[12.5px] text-ink-300" role="status">
-              {state.status === "scanning" ? "Reading chapters" : "Checking passages"}
-              {state.total > 0 ? ` · ${state.done}/${state.total}` : "…"}
-            </span>
-          )}
-        </div>
-        <p className="mt-2 text-xs leading-relaxed text-ink-400">
-          The first scan starts by itself when you translate, and the check runs when a translation
-          finishes.
-        </p>
-        {(error || state?.error) && (
-          <p className="mt-3 text-sm text-danger" role="alert">
-            {error?.message ?? state?.error}
-          </p>
-        )}
-
+        <h2 className={cn(SECTION_HEADING, "mt-8")}>Special passages</h2>
         <MarkPassage book={book} disabled={busy} />
 
         <div className="mt-8 flex items-center gap-3">
@@ -124,16 +174,16 @@ export function PassagesView({ book }: { book: BookDetail }) {
             <button
               type="button"
               onClick={() => setShowAll((v) => !v)}
-              className="rounded text-[12.5px] text-ink-300 underline-offset-2 hover:text-ink-100 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+              className="rounded text-small text-ink-300 underline-offset-2 hover:text-ink-100 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
             >
               {showAll ? "Show only those to review" : "Show all"}
             </button>
           )}
         </div>
 
-        {passages.isLoading && <p className="mt-6 text-sm text-ink-400">Loading…</p>}
+        {passages.isLoading && <p className="mt-6 text-body text-ink-400">Loading…</p>}
         {view && shown.length === 0 && (
-          <p className="mt-6 text-sm text-ink-400">
+          <p className="mt-6 text-body text-ink-400">
             {all.length === 0
               ? state?.scanned
                 ? "The scan found no special passages. If you know of one, mark it above."
@@ -147,6 +197,20 @@ export function PassagesView({ book }: { book: BookDetail }) {
             <PassageCard key={p.id} bookId={book.id} passage={p} busy={busy} />
           ))}
         </div>
+
+        {state?.scanned && !busy && (
+          <StepNext
+            done={open.length === 0}
+            doneText="Every special passage is reviewed."
+            todoText={
+              blocking > 0
+                ? `${blocking} passage${blocking === 1 ? " breaks its rule" : "s break their rule"} with no checked translation. Until you decide, an export is a draft.`
+                : `${open.length} passage${open.length === 1 ? "" : "s"} not reviewed yet. You can still export.`
+            }
+            nextLabel="Export"
+            onNext={() => onSelectTab("export")}
+          />
+        )}
       </div>
     </div>
   );
@@ -179,11 +243,11 @@ function PassageCard({
   return (
     <article className="rounded-lg border border-ink-700 bg-ink-800/50">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-1 px-5 pt-4">
-        <h3 className="text-[15px] font-medium text-ink-50">{KIND_LABEL[p.kind]}</h3>
-        <span className="text-[12.5px] text-ink-400">{p.chapter_label}</span>
-        <span
-          className={cn("ml-auto rounded-full border px-2.5 py-0.5 text-[11.5px]", status.tone)}
-        >
+        <h3 className="font-serif text-subheading font-semibold text-ink-50">
+          {KIND_LABEL[p.kind]}
+        </h3>
+        <span className="text-small text-ink-400">{p.chapter_label}</span>
+        <span className={cn("ml-auto rounded-full border px-2.5 py-0.5 text-label", status.tone)}>
           {status.label}
           {answered && p.status !== "dismissed" && p.status !== "author" ? " · accepted" : ""}
         </span>
@@ -192,27 +256,27 @@ function PassageCard({
       <div className="space-y-3 px-5 pb-5 pt-3">
         <div>
           <p className={LABEL}>Rule</p>
-          <p className="mt-1 text-sm leading-relaxed text-ink-100">
+          <p className="mt-1 text-body text-ink-100">
             {p.rule || "Not worked out yet. The first check does that."}
           </p>
           {(p.source_message || p.target_message) && (
-            <p className="mt-1 font-mono text-[12.5px] text-ink-200">
+            <p className="mt-1 font-mono text-small text-ink-200">
               {p.source_message ?? "?"} → {p.target_message ?? "?"}
             </p>
           )}
-          {p.origin === "author" && <p className="mt-1 text-xs text-ink-400">Marked by you.</p>}
+          {p.origin === "author" && <p className="mt-1 text-small text-ink-400">Marked by you.</p>}
         </div>
 
-        {p.flag && <p className="text-sm leading-relaxed text-ink-200">{p.flag.question}</p>}
+        {p.flag && <p className="text-body text-ink-200">{p.flag.question}</p>}
         {p.stale && (
-          <p className="text-sm text-warning">
+          <p className="text-body text-warning">
             The English changed after the last check. Check the passage again.
           </p>
         )}
         {p.problems.length > 0 && (
           <div>
             <p className={LABEL}>What the first translation got wrong</p>
-            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-sm text-ink-200">
+            <ul className="mt-1 list-disc space-y-0.5 pl-5 text-body text-ink-200">
               {p.problems.map((x) => (
                 <li key={x}>{x}</li>
               ))}
@@ -238,7 +302,7 @@ function PassageCard({
         )}
 
         {p.candidates.length > 0 && (
-          <details className="text-sm">
+          <details className="text-body">
             <summary className="cursor-pointer text-ink-300 hover:text-ink-100">
               {p.candidates.length} new translation{p.candidates.length === 1 ? "" : "s"} tried
             </summary>
@@ -254,9 +318,9 @@ function PassageCard({
                       {cp.text}
                     </p>
                   ))}
-                  {c.notes && <p className="mt-2 text-xs text-ink-400">{c.notes}</p>}
+                  {c.notes && <p className="mt-2 text-small text-ink-400">{c.notes}</p>}
                   {c.problems.map((x) => (
-                    <p key={x} className="mt-1 text-xs text-danger">
+                    <p key={x} className="mt-1 text-small text-danger">
                       {x}
                     </p>
                   ))}
@@ -318,7 +382,7 @@ function PassageCard({
         )}
 
         {error && (
-          <p className="text-sm text-danger" role="alert">
+          <p className="text-body text-danger" role="alert">
             {error.message}
           </p>
         )}
@@ -353,7 +417,7 @@ function PassageCard({
               </Button>
             </>
           ) : p.status === "dismissed" ? (
-            <p className="text-xs text-ink-400">
+            <p className="text-small text-ink-400">
               Translated like ordinary text. A new scan will not list it again.
             </p>
           ) : (
@@ -422,7 +486,7 @@ function PassageCard({
           )}
         </div>
         {!p.translated && (
-          <p className="text-xs text-ink-400">
+          <p className="text-small text-ink-400">
             Not translated yet. It is checked after translation.
           </p>
         )}
@@ -455,7 +519,7 @@ function Rows({
         <div
           key={r.paragraph_id}
           className={cn(
-            "mt-2 grid gap-x-5 gap-y-1 border-t border-ink-700/60 pt-2 text-sm leading-relaxed",
+            "mt-2 grid gap-x-5 gap-y-1 border-t border-ink-700/60 pt-2 text-body",
             showFirst ? "md:grid-cols-3" : "md:grid-cols-2",
           )}
         >
@@ -501,7 +565,7 @@ function MarkPassage({ book, disabled }: { book: BookDetail; disabled: boolean }
 
   return (
     <details className="mt-6 rounded-lg border border-ink-700 px-4 py-3">
-      <summary className="cursor-pointer text-sm text-ink-200 hover:text-ink-50">
+      <summary className="cursor-pointer text-body text-ink-200 hover:text-ink-50">
         Mark a passage yourself
       </summary>
       <div className="mt-3 grid gap-3 md:grid-cols-2">
@@ -578,7 +642,7 @@ function MarkPassage({ book, disabled }: { book: BookDetail; disabled: boolean }
         </label>
       </div>
       {create.error && (
-        <p className="mt-2 text-sm text-danger" role="alert">
+        <p className="mt-2 text-body text-danger" role="alert">
           {create.error.message}
         </p>
       )}

@@ -37,6 +37,7 @@ import {
   useWorkingGlossary,
 } from "@/lib/api/hooks";
 import { cn, formatNumber } from "@/lib/utils";
+import { LABEL, SECTION_HEADING } from "@/components/ui/typography";
 
 /**
  * Term-type presentation. Color is intentionally NOT part of the
@@ -287,10 +288,7 @@ export function GlossaryReviewPanel({
   return (
     <section id="glossary-review" aria-labelledby="glossary-review-heading" className="scroll-mt-6">
       <div className="mb-4">
-        <h2
-          id="glossary-review-heading"
-          className="font-serif text-2xl font-semibold tracking-tight text-ink-50"
-        >
+        <h2 id="glossary-review-heading" className={SECTION_HEADING}>
           Terms
         </h2>
       </div>
@@ -312,14 +310,14 @@ export function GlossaryReviewPanel({
                   aria-pressed={active}
                   onClick={() => setStatusFilter(f.id)}
                   className={cn(
-                    "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-[12.5px]",
+                    "inline-flex h-7 items-center gap-1.5 rounded-md px-2.5 text-small",
                     "transition-colors duration-150",
                     "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                     active ? "bg-ink-800 text-ink-50" : "text-ink-400 hover:text-ink-100",
                   )}
                 >
                   {f.label}
-                  <span className="font-mono text-[10px] tabular-nums opacity-70">
+                  <span className="font-mono text-label tabular-nums opacity-70">
                     {statusCounts[f.id]}
                   </span>
                 </button>
@@ -333,7 +331,7 @@ export function GlossaryReviewPanel({
               value={termType}
               onChange={(e) => setTermType(e.target.value)}
               className={cn(
-                "h-8 rounded-lg border border-ink-700 bg-ink-900 px-2 text-[12.5px] text-ink-100",
+                "h-8 rounded-lg border border-ink-700 bg-ink-900 px-2 text-small text-ink-100",
                 "focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent",
               )}
             >
@@ -359,7 +357,7 @@ export function GlossaryReviewPanel({
               placeholder="Search terms…"
               className={cn(
                 "h-8 w-full rounded-lg border border-ink-700 bg-ink-900 pl-8 pr-2.5",
-                "text-[12.5px] text-ink-100 placeholder:text-ink-600",
+                "text-small text-ink-100 placeholder:text-ink-600",
                 "focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent",
               )}
             />
@@ -368,26 +366,26 @@ export function GlossaryReviewPanel({
       )}
 
       {isLoading && (
-        <p className="text-sm text-ink-400" aria-busy="true">
+        <p className="text-body text-ink-400" aria-busy="true">
           Loading glossary…
         </p>
       )}
 
       {isError && (
-        <p className="text-sm text-danger" role="alert">
+        <p className="text-body text-danger" role="alert">
           {error instanceof Error ? error.message : String(error)}
         </p>
       )}
 
       {!isLoading && !isError && data && !data.run && (
-        <p className="max-w-prose text-sm leading-relaxed text-ink-400">
+        <p className="max-w-prose text-body text-ink-400">
           No extraction run exists for this book yet. When you start a run, terms will appear here
           as each pass finishes.
         </p>
       )}
 
       {!isLoading && !isError && data?.run && data.entries.length === 0 && (
-        <p className="max-w-prose text-sm leading-relaxed text-ink-400">
+        <p className="max-w-prose text-body text-ink-400">
           This run has no stored terms yet. If extraction is still running, check back in a moment.
         </p>
       )}
@@ -398,7 +396,7 @@ export function GlossaryReviewPanel({
         statusCounts.pending > 0 &&
         data?.run?.status !== "running" && (
           <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-ink-800 bg-ink-900 px-3 py-2.5">
-            <p className="min-w-0 flex-1 text-xs leading-relaxed text-ink-400">
+            <p className="min-w-0 flex-1 text-small text-ink-400">
               Let the model decide the pending terms: accept, remove or merge each one, judged
               against your earlier decisions. Every decision goes to Auto-decided for you to confirm
               or undo.
@@ -421,7 +419,7 @@ export function GlossaryReviewPanel({
             </Button>
             <ModelPicker choice={reviewModel} disabled={review.isPending} className="w-full" />
             {review.isError && (
-              <p className="w-full text-xs text-danger" role="alert">
+              <p className="w-full text-small text-danger" role="alert">
                 {review.error.message}
               </p>
             )}
@@ -430,7 +428,7 @@ export function GlossaryReviewPanel({
 
       {!isLoading && !isError && statusFilter === "auto" && statusCounts.auto > 0 && (
         <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-ink-800 bg-ink-900 px-3 py-2.5">
-          <p className="min-w-0 flex-1 text-xs leading-relaxed text-ink-400">
+          <p className="min-w-0 flex-1 text-small text-ink-400">
             These terms are forms of terms you already accepted or removed, so they got the same
             decision without asking. Confirm keeps the decision. Undo puts the term back in Pending.
           </p>
@@ -449,12 +447,12 @@ export function GlossaryReviewPanel({
             Confirm all {formatNumber(statusCounts.auto)}
           </Button>
           {review.data && (
-            <p className="w-full font-mono text-[11px] tabular-nums text-ink-500">
+            <p className="w-full font-mono text-label tabular-nums text-ink-500">
               The last review cost ${review.data.cost_usd.toFixed(2)}.
             </p>
           )}
           {confirmAll.isError && (
-            <p className="w-full text-xs text-danger" role="alert">
+            <p className="w-full text-small text-danger" role="alert">
               {confirmAll.error.message}
             </p>
           )}
@@ -463,7 +461,7 @@ export function GlossaryReviewPanel({
 
       {!isLoading && !isError && data && filtered.length > 0 && (
         <>
-          <p className="mb-3 font-mono text-xs text-ink-500">
+          <p className="mb-3 font-mono text-small text-ink-500">
             <span className="tabular-nums text-ink-200">{formatNumber(filtered.length)}</span>
             {filtered.length !== entriesInScope.length && (
               <>
@@ -495,7 +493,7 @@ export function GlossaryReviewPanel({
       )}
 
       {!isLoading && !isError && data && data.entries.length > 0 && filtered.length === 0 && (
-        <p className="text-sm text-ink-400">
+        <p className="text-body text-ink-400">
           {entriesInScope.length === 0
             ? statusFilter === "pending"
               ? "Nothing left to accept — every active term is already reviewed."
@@ -523,7 +521,7 @@ function TermTypeBadge({
     <span
       className={cn(
         "inline-flex items-center gap-1 rounded-lg border border-ink-700 bg-ink-900",
-        "px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-ink-300",
+        "px-1.5 py-0.5 font-mono text-label uppercase tracking-wider text-ink-300",
       )}
     >
       <Icon className="h-3 w-3 shrink-0 text-accent" aria-hidden />
@@ -546,7 +544,7 @@ function EntryStatusChip({ status }: { status: string }) {
   return (
     <span
       className={cn(
-        "rounded-full border px-2 py-0.5 font-mono text-[9px] font-medium uppercase tracking-wider",
+        "rounded-full border px-2 py-0.5 font-mono text-label font-medium uppercase tracking-wider",
         tone,
       )}
     >
@@ -571,20 +569,20 @@ function CollapsedTranslationPill({
           "bg-ink-950 px-2.5 py-1.5 shadow-sm",
         )}
       >
-        <span className="shrink-0 font-mono text-[10px] uppercase tracking-wide text-ink-500">
+        <span className="shrink-0 font-mono text-label uppercase tracking-wider text-ink-500">
           {labelSuggestion(tr.suggestion, translationSuggestionOptions)}
         </span>
         {target ? (
           <>
-            <span className="font-sans text-ink-600" aria-hidden>
+            <span className="font-sans text-body text-ink-600" aria-hidden>
               →
             </span>
-            <span className="min-w-0 truncate font-sans text-sm font-semibold tracking-tight text-accent">
+            <span className="min-w-0 truncate font-sans text-body font-semibold text-accent">
               {target}
             </span>
           </>
         ) : (
-          <span className="font-sans text-xs text-ink-500">No target set</span>
+          <span className="font-sans text-small text-ink-500">No target set</span>
         )}
       </div>
     </div>
@@ -744,7 +742,7 @@ function GlossaryEntryRow({
             </span>
             <div className="min-w-0 flex-1 pb-0.5">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span className="font-serif text-base font-semibold tracking-tight text-ink-50 sm:text-lg">
+                <span className="font-serif text-subheading font-semibold text-ink-50">
                   {entry.canonical_form}
                 </span>
                 <TermTypeBadge
@@ -754,18 +752,18 @@ function GlossaryEntryRow({
                 />
                 <EntryStatusChip status={entry.status} />
                 {auto ? (
-                  <span className="rounded-full border border-accent bg-accent-soft px-2 py-0.5 font-mono text-[9px] font-medium uppercase tracking-wider text-accent">
+                  <span className="rounded-full border border-accent bg-accent-soft px-2 py-0.5 font-mono text-label font-medium uppercase tracking-wider text-accent">
                     auto
                   </span>
                 ) : null}
                 {auto?.confidence === "low" ? (
-                  <span className="rounded-full border border-warning px-2 py-0.5 font-mono text-[9px] font-medium uppercase tracking-wider text-warning">
+                  <span className="rounded-full border border-warning px-2 py-0.5 font-mono text-label font-medium uppercase tracking-wider text-warning">
                     unsure
                   </span>
                 ) : null}
               </div>
               {auto ? (
-                <p className="mt-1.5 flex items-start gap-1.5 font-sans text-xs leading-snug text-accent">
+                <p className="mt-1.5 flex items-start gap-1.5 font-sans text-small text-accent">
                   <Wand2 className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
                   <span>
                     {auto.reason}
@@ -781,11 +779,11 @@ function GlossaryEntryRow({
                 tr={tr}
                 translationSuggestionOptions={translationSuggestionOptions}
               />
-              <p className="mt-1.5 line-clamp-1 font-sans text-xs leading-snug text-ink-400 md:line-clamp-2">
+              <p className="mt-1.5 line-clamp-1 font-sans text-small text-ink-400 md:line-clamp-2">
                 {entry.meaning}
               </p>
               {tr.alternative_targets.length > 0 ? (
-                <p className="mt-1 line-clamp-1 font-mono text-[10px] text-ink-500">
+                <p className="mt-1 line-clamp-1 font-mono text-label text-ink-500">
                   <span className="text-ink-600">Also: </span>
                   {tr.alternative_targets.join(" · ")}
                 </p>
@@ -889,7 +887,7 @@ function GlossaryEntryRow({
         </div>
         {reviewError && !expanded ? (
           <p
-            className="border-t border-ink-800 px-4 py-2 pl-11 pr-4 text-xs text-danger"
+            className="border-t border-ink-800 px-4 py-2 pl-11 pr-4 text-small text-danger"
             role="alert"
           >
             {reviewError}
@@ -897,16 +895,14 @@ function GlossaryEntryRow({
         ) : null}
         {expanded && (
           <div className="border-t border-ink-800 px-4 pb-4 pl-11 pr-4 pt-1">
-            <div className="space-y-3 text-sm leading-relaxed text-ink-200">
+            <div className="space-y-3 text-body text-ink-200">
               <div>
-                <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">Gloss</p>
-                <p className="mt-1 font-serif text-base">{entry.meaning}</p>
+                <p className={LABEL}>Gloss</p>
+                <p className="mt-1 font-serif text-reading">{entry.meaning}</p>
               </div>
               {tr.alternative_targets.length > 0 && (
                 <div>
-                  <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
-                    Other viable renderings
-                  </p>
+                  <p className={LABEL}>Other viable renderings</p>
                   <ul className="mt-2 list-inside list-disc space-y-1 font-sans text-ink-200">
                     {tr.alternative_targets.map((a) => (
                       <li key={a}>{a}</li>
@@ -916,14 +912,12 @@ function GlossaryEntryRow({
               )}
               {tr.rationale ? (
                 <div>
-                  <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
-                    Translation note
-                  </p>
+                  <p className={LABEL}>Translation note</p>
                   <p className="mt-1 font-sans text-ink-300">{tr.rationale}</p>
                 </div>
               ) : null}
               {dimmed ? (
-                <p className="rounded-lg border border-ink-800 bg-ink-900 px-3 py-2 text-xs leading-relaxed text-ink-400">
+                <p className="rounded-lg border border-ink-800 bg-ink-900 px-3 py-2 text-small text-ink-400">
                   {merged
                     ? `This term was merged into “${mergedInto?.canonical_form ?? "another term"}”. Its forms now count as that term. Undo puts it back in Pending.`
                     : "This term is rejected and is skipped during glossary extraction and when building a final glossary snapshot."}
@@ -932,11 +926,9 @@ function GlossaryEntryRow({
               {!dimmed ? (
                 <>
                   <div className="rounded-lg border border-ink-800 bg-ink-900 p-3">
-                    <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
-                      Translation for review
-                    </p>
+                    <p className={LABEL}>Translation for review</p>
                     <div className="mt-2 flex flex-col gap-3 sm:flex-row sm:items-end">
-                      <label className="block min-w-0 flex-1 font-sans text-xs text-ink-400">
+                      <label className="block min-w-0 flex-1 font-sans text-small text-ink-400">
                         <span className="mb-1 block text-ink-500">Target rendering</span>
                         <input
                           type="text"
@@ -944,7 +936,7 @@ function GlossaryEntryRow({
                           onChange={(e) => setDraftTarget(e.target.value)}
                           disabled={rowBusy !== null}
                           className={cn(
-                            "w-full rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 font-sans text-sm text-ink-100",
+                            "w-full rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 font-sans text-body text-ink-100",
                             "placeholder:text-ink-600",
                             "focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent",
                             "disabled:opacity-60",
@@ -952,7 +944,7 @@ function GlossaryEntryRow({
                           aria-label="Translation target"
                         />
                       </label>
-                      <label className="block shrink-0 font-sans text-xs text-ink-400 sm:w-44">
+                      <label className="block shrink-0 font-sans text-small text-ink-400 sm:w-44">
                         <span className="mb-1 block text-ink-500">Approach</span>
                         <select
                           value={draftSuggestion}
@@ -963,7 +955,7 @@ function GlossaryEntryRow({
                           }
                           disabled={rowBusy !== null}
                           className={cn(
-                            "w-full rounded-lg border border-ink-700 bg-ink-950 px-2 py-2 font-sans text-sm text-ink-100",
+                            "w-full rounded-lg border border-ink-700 bg-ink-950 px-2 py-2 font-sans text-body text-ink-100",
                             "focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent",
                             "disabled:opacity-60",
                           )}
@@ -1032,20 +1024,18 @@ function GlossaryEntryRow({
                     </div>
                   </div>
                   <div className="rounded-lg border border-ink-800 bg-ink-950 p-3">
-                    <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
-                      Merge
-                    </p>
-                    <p className="mt-1 max-w-prose text-xs leading-relaxed text-ink-500">
+                    <p className={LABEL}>Merge</p>
+                    <p className="mt-1 max-w-prose text-small text-ink-500">
                       Folds this heading into another row. Merging deletes this row and moves its
                       surface form and variants onto the term you keep.
                     </p>
                     <div className="mt-3 space-y-3">
                       {mergeTargets.length === 0 ? (
-                        <p className="text-xs text-ink-500">
+                        <p className="text-small text-ink-500">
                           No other active terms in this run to merge into.
                         </p>
                       ) : null}
-                      <label className="block font-sans text-xs text-ink-400">
+                      <label className="block font-sans text-small text-ink-400">
                         <span className="mb-1 block text-ink-500">Merge into</span>
                         <select
                           ref={mergeSelectRef}
@@ -1053,7 +1043,7 @@ function GlossaryEntryRow({
                           onChange={(e) => setMergeTargetId(e.target.value)}
                           disabled={rowBusy !== null || mergeTargets.length === 0}
                           className={cn(
-                            "w-full max-w-md rounded-lg border border-ink-700 bg-ink-950 px-2 py-2 font-sans text-sm text-ink-100",
+                            "w-full max-w-md rounded-lg border border-ink-700 bg-ink-950 px-2 py-2 font-sans text-body text-ink-100",
                             "focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent",
                             "disabled:opacity-60",
                           )}
@@ -1099,7 +1089,7 @@ function GlossaryEntryRow({
                     </div>
                   </div>
                   {reviewError ? (
-                    <p className="text-xs text-danger" role="alert">
+                    <p className="text-small text-danger" role="alert">
                       {reviewError}
                     </p>
                   ) : null}
@@ -1107,14 +1097,12 @@ function GlossaryEntryRow({
               ) : null}
               {entry.variants.length > 0 && (
                 <div>
-                  <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
-                    Variants in text
-                  </p>
+                  <p className={LABEL}>Variants in text</p>
                   <ul className="mt-2 flex flex-wrap gap-2">
                     {entry.variants.map((v) => (
                       <li
                         key={v}
-                        className="rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 font-mono text-xs text-ink-200"
+                        className="rounded-lg border border-ink-700 bg-ink-900 px-2 py-1 font-mono text-small text-ink-200"
                       >
                         {v}
                       </li>
@@ -1122,7 +1110,7 @@ function GlossaryEntryRow({
                   </ul>
                 </div>
               )}
-              <p className="font-mono text-[10px] text-ink-600">
+              <p className="font-mono text-label text-ink-600">
                 First seen window {entry.first_seen_window}
                 <span className="text-ink-700"> · </span>
                 Occurrences {entry.occurrence_count}
@@ -1142,7 +1130,7 @@ function ReviewCost({ bookId, model }: { bookId: string; model: string | undefin
   const { cost_usd: cost, pending } = estimate.data;
   return (
     <span
-      className="font-mono text-[11px] tabular-nums text-ink-400"
+      className="font-mono text-label tabular-nums text-ink-400"
       title={`${formatNumber(estimate.data.input_tokens)} input · ${formatNumber(estimate.data.output_tokens)} output tokens`}
     >
       ≈ <span className="text-accent">{cost < 0.01 ? "under $0.01" : `$${cost.toFixed(2)}`}</span>{" "}

@@ -19,6 +19,7 @@ import {
   GLOSSARY_EXTRACTION_WINDOW_WORDS,
 } from "@/constants/glossaryExtraction";
 import { cn, formatNumber } from "@/lib/utils";
+import { LABEL } from "@/components/ui/typography";
 
 function formatUsd(n: number): string {
   if (n > 0 && n < 0.01) return "under $0.01";
@@ -128,17 +129,17 @@ export function GlossaryExtractionWorkspace({
     <>
       <ModelPicker choice={model} disabled={running} className="mb-4" />
       {estimate.isLoading && (
-        <p className="text-sm text-ink-400" aria-busy="true">
+        <p className="text-body text-ink-400" aria-busy="true">
           Calculating estimate…
         </p>
       )}
       {estimate.isError && (
-        <p className="text-sm text-danger">
+        <p className="text-body text-danger">
           Could not load the estimate. Check the API and try again.
         </p>
       )}
       {estimate.data && estimate.data.window_count === 0 && (
-        <p className="text-sm text-ink-300">
+        <p className="text-body text-ink-300">
           This manuscript has no counted words, so glossary extraction would not run.
         </p>
       )}
@@ -156,7 +157,7 @@ export function GlossaryExtractionWorkspace({
             <EstimateCell label="Model" value={estimate.data.model} />
           </dl>
 
-          <p className="mt-3 text-xs leading-relaxed text-ink-500">
+          <p className="mt-3 text-small text-ink-500">
             Mneme reads the text in overlapping windows of ~
             {formatNumber(GLOSSARY_EXTRACTION_WINDOW_WORDS)} words (~
             {formatNumber(GLOSSARY_EXTRACTION_OVERLAP_WORDS)} overlap). The estimate is based on the
@@ -209,7 +210,7 @@ export function GlossaryExtractionWorkspace({
           {expandGlossary.isPending ? "Starting…" : "Expand glossary"}
         </Button>
       </div>
-      <p className="mt-2 text-xs leading-relaxed text-ink-500">
+      <p className="mt-2 text-small text-ink-500">
         <span className="text-ink-400">Expand glossary</span> reads the whole manuscript again and
         adds terms the glossary is missing, as proposals to review. Terms you accepted or removed
         stay as they are; it may only add spelling and case variants to them. Costs about the same
@@ -239,7 +240,7 @@ export function GlossaryExtractionWorkspace({
       <>
         {paused}
         {mutationError && (
-          <p className={cn("text-sm text-danger", paused && "mt-2")} role="alert">
+          <p className={cn("text-body text-danger", paused && "mt-2")} role="alert">
             {mutationError}
           </p>
         )}
@@ -273,17 +274,19 @@ function ImportGlossary({ book, disabled }: { book: BookDetail; disabled: boolea
 
   return (
     <div className="mt-5 border-t border-ink-700 pt-4">
-      <h3 className="text-[13px] font-medium text-ink-100">Import from another book</h3>
-      <p className="mt-1 text-xs leading-relaxed text-ink-500">
+      <h3 className="text-body font-medium text-ink-100">Import from another book</h3>
+      <p className="mt-1 text-small text-ink-500">
         Copies the terms you accepted or removed in another book. Unreviewed proposals are not
         copied. If a term is already accepted or removed here, this book&apos;s decision stays; if
         it is only a proposal here, the other book&apos;s decision replaces it. Then use Expand
         glossary to add the terms only this book has.
       </p>
 
-      {sources.isLoading && <p className="mt-2 text-xs text-ink-400">Looking for books…</p>}
+      {sources.isLoading && <p className="mt-2 text-small text-ink-400">Looking for books…</p>}
       {sources.data && sources.data.length === 0 && (
-        <p className="mt-2 text-xs text-ink-400">No other book has reviewed glossary terms yet.</p>
+        <p className="mt-2 text-small text-ink-400">
+          No other book has reviewed glossary terms yet.
+        </p>
       )}
       {sources.data && sources.data.length > 0 && (
         <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -293,7 +296,7 @@ function ImportGlossary({ book, disabled }: { book: BookDetail; disabled: boolea
               setSourceId(e.target.value);
               importGlossary.reset();
             }}
-            className="min-w-0 max-w-full flex-1 rounded-md border border-ink-700 bg-ink-900 px-2 py-1.5 text-[13px] text-ink-100"
+            className="min-w-0 max-w-full flex-1 rounded-md border border-ink-700 bg-ink-900 px-2 py-1.5 text-body text-ink-100"
             aria-label="Book to import from"
           >
             {sources.data.map((s) => (
@@ -315,13 +318,13 @@ function ImportGlossary({ book, disabled }: { book: BookDetail; disabled: boolea
       )}
 
       {importGlossary.data && (
-        <p className="mt-2 text-xs text-success" role="status">
+        <p className="mt-2 text-small text-success" role="status">
           Imported: {importGlossary.data.added} new, {importGlossary.data.updated} proposals
           replaced, {importGlossary.data.kept} already reviewed here and kept.
         </p>
       )}
       {importGlossary.isError && (
-        <p className="mt-2 text-xs text-danger" role="alert">
+        <p className="mt-2 text-small text-danger" role="alert">
           {errorDetail(importGlossary.error, "Could not import the glossary.", true)}
         </p>
       )}
@@ -342,17 +345,17 @@ function EstimateCell({
 }) {
   return (
     <div className="rounded-lg border border-ink-700 bg-ink-900 px-3 py-2">
-      <dt className="font-mono text-[10px] uppercase tracking-wider text-ink-500">{label}</dt>
+      <dt className={LABEL}>{label}</dt>
       <dd
         className={cn(
-          "mt-1 truncate font-mono text-[13px] tabular-nums",
+          "mt-1 truncate font-mono text-body tabular-nums",
           accent ? "text-accent" : "text-ink-100",
         )}
         title={value}
       >
         {value}
       </dd>
-      {detail && <p className="mt-0.5 font-mono text-[10px] text-ink-500">{detail}</p>}
+      {detail && <p className="mt-0.5 font-mono text-label text-ink-500">{detail}</p>}
     </div>
   );
 }

@@ -206,12 +206,10 @@ export function ManuscriptView({
         <article className={cn(BOOK_PANEL_CONTAINER, "py-12 lg:py-16")}>
           {book.language_style_note && (
             <div className="mb-12 border-l-2 border-ink-700 pl-4">
-              <p className="mb-2 font-mono text-[10px] uppercase tracking-wider text-ink-500">
+              <p className="mb-2 font-mono text-label uppercase tracking-wider text-ink-500">
                 Style note
               </p>
-              <p className="font-serif text-sm italic leading-relaxed text-ink-300">
-                {book.language_style_note}
-              </p>
+              <p className="font-serif text-body italic text-ink-300">{book.language_style_note}</p>
             </div>
           )}
           {book.chapters.map((chapter, idx) => {
@@ -224,8 +222,8 @@ export function ManuscriptView({
                 ref={(el) => (chapterRefs.current[id] = el)}
                 className="mb-16 scroll-mt-20"
               >
-                <h2 className="mb-6 font-serif text-2xl text-accent">{label}</h2>
-                <div className="chapter-body space-y-5 font-serif text-lg text-ink-100">
+                <h2 className="mb-6 font-serif text-heading text-accent">{label}</h2>
+                <div className="chapter-body space-y-5 font-serif text-reading text-ink-100">
                   {chapter.paragraphs.length === 0 ? (
                     <p className="italic text-ink-500">[empty chapter]</p>
                   ) : (
@@ -275,7 +273,7 @@ function LayerBar({
   return (
     <div className="sticky top-0 z-30 border-b border-ink-800 bg-ink-900/90 backdrop-blur-sm">
       <div className={cn(BOOK_PANEL_CONTAINER, "flex flex-wrap items-center gap-2 py-2")}>
-        <span className="mr-1 font-mono text-[10px] uppercase tracking-wider text-ink-500">
+        <span className="mr-1 font-mono text-label uppercase tracking-wider text-ink-500">
           Show
         </span>
         {(Object.keys(LAYER_LABELS) as Layer[]).map((layer) => {
@@ -290,7 +288,7 @@ function LayerBar({
               onClick={() => onToggle(layer)}
               title={empty ? "Nothing from this step yet" : undefined}
               className={cn(
-                "rounded-full border px-2.5 py-0.5 font-sans text-[12px] transition-colors",
+                "rounded-full border px-2.5 py-0.5 font-sans text-small transition-colors",
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                 on
                   ? "border-accent bg-accent-soft text-ink-50"
@@ -299,7 +297,7 @@ function LayerBar({
               )}
             >
               {LAYER_LABELS[layer]}
-              <span className="ml-1.5 font-mono text-[10px] text-ink-500">
+              <span className="ml-1.5 font-mono text-label text-ink-500">
                 {empty ? "—" : formatNumber(counts[layer])}
               </span>
             </button>
@@ -383,7 +381,7 @@ function ManuscriptParagraph({
         <HighlightedText text={text} spans={spans} />
       </p>
       {translated && (
-        <p className="mt-1.5 border-l border-ink-700 pl-3 font-sans text-[15px] leading-relaxed text-ink-400">
+        <p className="mt-1.5 border-l border-ink-700 pl-3 font-serif text-reading text-ink-400">
           <HighlightedText text={translated} spans={NO_SPANS} />
         </p>
       )}
@@ -401,7 +399,7 @@ const POV_NOTES: Record<NarrationScene["source"], string> = {
 function PovLabel({ scene, color }: { scene: NarrationScene; color: string | undefined }) {
   const flagged = scene.source === "assumed" || scene.source === "unknown";
   return (
-    <div className="mb-1.5 flex items-center gap-1.5 font-sans text-[11px] leading-none">
+    <div className="mb-1.5 flex items-center gap-1.5 font-sans text-label leading-none">
       <span
         aria-hidden
         className="h-2 w-2 rounded-full bg-ink-600"
@@ -422,7 +420,7 @@ function SpeakerCard({ line, color }: { line: ManuscriptSpeakerLine; color: stri
       className={cn(
         "pointer-events-none absolute -left-4 bottom-full z-10 mb-1 hidden items-center gap-1.5",
         "whitespace-nowrap rounded-md border border-ink-700 bg-ink-900 px-2 py-1",
-        "font-sans text-[12px] leading-none text-ink-200 shadow-md group-hover:flex",
+        "font-sans text-small leading-none text-ink-200 shadow-md group-hover:flex",
       )}
     >
       <span

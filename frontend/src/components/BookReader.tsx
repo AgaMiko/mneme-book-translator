@@ -2,6 +2,7 @@ import { useCallback, useMemo, useState } from "react";
 
 import { BookHeader } from "@/components/book/BookHeader";
 import { ChapterRail } from "@/components/book/ChapterRail";
+import { ExportView } from "@/components/book/ExportView";
 import { GlossaryView } from "@/components/book/GlossaryView";
 import { ManuscriptView } from "@/components/book/ManuscriptView";
 import { PassagesView } from "@/components/book/PassagesView";
@@ -96,6 +97,7 @@ export function BookReader({ bookId, onBack }: Props) {
       glossaryLoaded: glossary.data !== undefined,
       glossaryTotal: glossaryEntries.length,
       glossaryPending: pendingOf(glossaryEntries),
+      glossaryProposed: glossaryEntries.filter((e) => e.status === "proposed").length,
       voicesLoaded: voices.data !== undefined,
       voicesTotal: voiceEntries.length,
       voicesPending: pendingOf(voiceEntries),
@@ -157,7 +159,7 @@ export function BookReader({ bookId, onBack }: Props) {
 
   if (isError || !book) {
     return (
-      <div className="mx-auto max-w-prose px-6 py-12 text-sm text-danger">
+      <div className="mx-auto max-w-prose px-6 py-12 text-body text-danger">
         Couldn't load this manuscript.
       </div>
     );
@@ -194,7 +196,10 @@ export function BookReader({ bookId, onBack }: Props) {
             />
           )}
           {activeTab === "voices" && <VoiceView book={book} onSelectTab={setActiveTab} />}
-          {activeTab === "review" && <PassagesView book={book} />}
+          {activeTab === "review" && <PassagesView book={book} onSelectTab={setActiveTab} />}
+          {activeTab === "export" && (
+            <ExportView book={book} counts={counts} onSelectTab={setActiveTab} />
+          )}
           {activeTab === "translation" && (
             <TranslationView book={book} onOpenTerm={handleOpenTerm} onSelectTab={setActiveTab} />
           )}

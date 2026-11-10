@@ -85,7 +85,7 @@ export function OverflowMenu({ items, disabled = false, label = "More actions" }
                 role="menuitem"
                 disabled={item.disabled}
                 className={cn(
-                  "flex w-full items-center gap-2 px-3 py-2 text-left text-sm",
+                  "flex w-full items-center gap-2 px-3 py-2 text-left text-body",
                   item.danger
                     ? "text-danger hover:bg-danger-surface focus-visible:bg-danger-surface"
                     : "text-ink-100 hover:bg-ink-800 focus-visible:bg-ink-800",

@@ -53,9 +53,9 @@ export function StepRunBar({
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2 px-4 py-2.5">
         <StatusIcon status={status} />
         <div className="min-w-0 flex-1">
-          <p className="text-[13px] leading-snug text-ink-100">{summary}</p>
+          <p className="text-body text-ink-100">{summary}</p>
           {(meta || spent) && (
-            <p className="mt-0.5 font-mono text-[10.5px] tabular-nums text-ink-500">
+            <p className="mt-0.5 font-mono text-label tabular-nums text-ink-500">
               {meta}
               {meta && spent && <span className="text-ink-600"> · </span>}
               {spent}

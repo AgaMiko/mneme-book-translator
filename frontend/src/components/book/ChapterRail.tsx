@@ -1,5 +1,6 @@
 import type { BookDetail } from "@/lib/api/client";
 import { cn } from "@/lib/utils";
+import { LABEL } from "@/components/ui/typography";
 
 interface Props {
   book: BookDetail;
@@ -24,8 +25,8 @@ export function ChapterRail({ book, activeChapterId, onSelect }: Props) {
       aria-label="Chapters"
     >
       <div className="mb-2.5 flex items-center justify-between px-2.5">
-        <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">Chapters</p>
-        <span className="font-mono text-[10px] tabular-nums text-ink-400">
+        <p className={LABEL}>Chapters</p>
+        <span className="font-mono text-label tabular-nums text-ink-400">
           {book.chapters.length}
         </span>
       </div>
@@ -41,7 +42,7 @@ export function ChapterRail({ book, activeChapterId, onSelect }: Props) {
                 onClick={() => onSelect(id)}
                 aria-current={active ? "true" : undefined}
                 className={cn(
-                  "flex w-full items-baseline gap-2 rounded-lg px-2.5 py-2 text-left text-[12.5px]",
+                  "flex w-full items-baseline gap-2 rounded-lg px-2.5 py-2 text-left text-small",
                   "transition-colors duration-150",
                   "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                   active
@@ -51,7 +52,7 @@ export function ChapterRail({ book, activeChapterId, onSelect }: Props) {
               >
                 <span
                   className={cn(
-                    "shrink-0 font-mono text-[11px] tabular-nums",
+                    "shrink-0 font-mono text-label tabular-nums",
                     active ? "text-accent" : "text-ink-500",
                   )}
                 >

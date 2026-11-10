@@ -32,14 +32,14 @@ export function BookList({ selectedId, onSelect, onDeleted }: Props) {
   }
 
   if (isError) {
-    return <p className="text-xs text-danger">Couldn't load library — is the API running?</p>;
+    return <p className="text-small text-danger">Couldn't load library — is the API running?</p>;
   }
 
   if (!data || data.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-ink-700 px-4 py-8 text-center">
         <BookOpen className="mx-auto h-5 w-5 text-ink-400" aria-hidden />
-        <p className="mt-2 text-xs text-ink-300">No manuscripts yet. Upload one above.</p>
+        <p className="mt-2 text-small text-ink-300">No manuscripts yet. Upload one above.</p>
       </div>
     );
   }
@@ -70,14 +70,14 @@ export function BookList({ selectedId, onSelect, onDeleted }: Props) {
               >
                 <div
                   className={cn(
-                    "truncate font-serif text-[15px] font-semibold",
+                    "truncate font-serif text-subheading font-semibold",
                     isSelected ? "text-ink-50" : "text-ink-200",
                   )}
                 >
                   {book.title}
                 </div>
                 {book.author && (
-                  <div className="mt-[3px] truncate text-xs text-ink-400">{book.author}</div>
+                  <div className="mt-[3px] truncate text-small text-ink-400">{book.author}</div>
                 )}
                 <PipelineStatusLine book={book} />
               </button>
@@ -133,12 +133,12 @@ function PipelineStatusLine({ book }: { book: BookSummary }) {
   return (
     <div className="mt-[7px] flex items-center gap-[7px]">
       <span
-        className={cn("inline-flex items-center gap-[5px] font-mono text-[10px]", TEXT_TONE[tone])}
+        className={cn("inline-flex items-center gap-[5px] font-mono text-label", TEXT_TONE[tone])}
       >
         <span className={cn("h-[5px] w-[5px] shrink-0 rounded-full", DOT_TONE[tone])} aria-hidden />
         <span className="truncate">{label}</span>
       </span>
-      <span className="shrink-0 font-mono text-[10px] text-ink-600">
+      <span className="shrink-0 font-mono text-label text-ink-600">
         {compactWords(book.word_count)} · {formatRelativeDate(book.created_at)}
       </span>
     </div>

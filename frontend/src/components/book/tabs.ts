@@ -14,8 +14,10 @@ import { formatNumber } from "@/lib/utils";
  * `Voices` unlocks once the glossary is usable (canonical characters
  * exist). `Translation` unlocks once the voices are extracted too: the
  * translation prompts use both. A book with translated text keeps the tab
- * open so the result stays readable. `Review` lists the special passages
- * (verse, hidden messages, wordplay) and what was done about them.
+ * open so the result stays readable. `Check` (id `review`) lists the
+ * special passages (verse, hidden messages, wordplay) and what was done
+ * about them. `Export` says what the file will contain and downloads it;
+ * it opens once anything is translated.
  */
 
 /**
@@ -30,6 +32,8 @@ export interface TabCounts {
   glossaryLoaded: boolean;
   glossaryTotal: number;
   glossaryPending: number;
+  /** Plain proposals: left out of the voices and the translation. */
+  glossaryProposed: number;
   voicesLoaded: boolean;
   voicesTotal: number;
   voicesPending: number;
@@ -50,6 +54,7 @@ export const EMPTY_TAB_COUNTS: TabCounts = {
   glossaryLoaded: false,
   glossaryTotal: 0,
   glossaryPending: 0,
+  glossaryProposed: 0,
   voicesLoaded: false,
   voicesTotal: 0,
   voicesPending: 0,
@@ -112,7 +117,7 @@ export function translationComplete(
 }
 
 export interface BookTabDef {
-  id: "manuscript" | "glossary" | "voices" | "translation" | "review";
+  id: "manuscript" | "glossary" | "voices" | "translation" | "review" | "export";
   label: string;
   /** `view` sits apart from the numbered pipeline steps in the header. */
   kind: "view" | "step";
@@ -235,7 +240,7 @@ export const BOOK_TABS: readonly BookTabDef[] = [
     // Special passages (verse, hidden messages, wordplay): found in the
     // manuscript, checked and corrected after translation, then flagged.
     id: "review",
-    label: "Review",
+    label: "Check",
     kind: "step",
     disabled: false,
     state: (_b, counts) => {
@@ -253,6 +258,21 @@ export const BOOK_TABS: readonly BookTabDef[] = [
       const n = `${formatNumber(counts.passagesTotal)} passage${counts.passagesTotal === 1 ? "" : "s"}`;
       if (counts.passagesBlocking > 0) return `${n} · ${counts.passagesBlocking} need a decision`;
       return `${n} · ${counts.passagesOpen} to review`;
+    },
+  },
+  {
+    // The file: what it will contain, then the download. Nothing blocks it.
+    id: "export",
+    label: "Export",
+    kind: "step",
+    disabled: false,
+    // No tick: the app cannot know you downloaded the file. The caption says "ready".
+    state: (_b, counts) => (counts.translationDone === 0 ? "locked" : "idle"),
+    caption: (_b, counts) => {
+      if (counts.translationDone === 0) return "translate first";
+      if (counts.passagesBlocking > 0) return "draft only";
+      if (!translationComplete(counts)) return "partial book";
+      return "ready";
     },
   },
 ];

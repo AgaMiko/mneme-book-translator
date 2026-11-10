@@ -62,7 +62,7 @@ export function UploadDropzone({ onUploaded }: Props) {
         onDrop={onDrop}
         className={cn(
           "flex h-[38px] w-full cursor-pointer items-center justify-center gap-2 rounded-lg border",
-          "text-[13px] font-medium transition-colors duration-150 ease-out",
+          "text-body font-medium transition-colors duration-150 ease-out",
           "focus-within:outline-none focus-within:ring-2 focus-within:ring-accent",
           dragOver
             ? "border-accent bg-accent-soft text-accent"
@@ -98,12 +98,12 @@ export function UploadDropzone({ onUploaded }: Props) {
           </>
         )}
       </label>
-      <p className="mt-2 text-center text-xs text-ink-500">or drop a .docx here · max 50 MB</p>
+      <p className="mt-2 text-center text-small text-ink-500">or drop a .docx here · max 50 MB</p>
 
       {error && (
         <div
           role="alert"
-          className="mt-2 flex items-start gap-2 rounded-lg border border-danger-border bg-danger-surface px-3 py-2 text-xs text-danger"
+          className="mt-2 flex items-start gap-2 rounded-lg border border-danger-border bg-danger-surface px-3 py-2 text-small text-danger"
         >
           <AlertCircle className="mt-px h-3.5 w-3.5 shrink-0" aria-hidden />
           <span>{error}</span>

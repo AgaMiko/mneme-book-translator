@@ -51,6 +51,7 @@ import { StepFinish } from "./StepFinish";
 import { StepRunBar, type RunStatus } from "./StepRunBar";
 import { glossaryUsable, type BookTab } from "./tabs";
 import { cancelVoicesAfterSpeakers, requestVoicesAfterSpeakers } from "./voiceChain";
+import { LABEL, SECTION_HEADING } from "@/components/ui/typography";
 
 interface Props {
   book: BookDetail;
@@ -99,7 +100,7 @@ function ReviewProgressLine({
     <div className="mt-2.5 flex flex-wrap gap-2">
       <span
         className={cn(
-          "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono text-[11px] tabular-nums",
+          "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 font-mono text-label tabular-nums",
           awaiting > 0
             ? "border-accent bg-accent-soft text-accent"
             : "border-ink-700 bg-ink-900 text-ink-500",
@@ -107,11 +108,11 @@ function ReviewProgressLine({
       >
         {awaiting} pending
       </span>
-      <span className="inline-flex items-center gap-1 rounded-full border border-ink-700 bg-ink-900 px-2.5 py-0.5 font-mono text-[11px] tabular-nums text-ink-300">
+      <span className="inline-flex items-center gap-1 rounded-full border border-ink-700 bg-ink-900 px-2.5 py-0.5 font-mono text-label tabular-nums text-ink-300">
         {accepted} accepted
       </span>
       {rejected > 0 ? (
-        <span className="inline-flex items-center gap-1 rounded-full border border-ink-700 bg-ink-950 px-2.5 py-0.5 font-mono text-[11px] tabular-nums text-ink-500">
+        <span className="inline-flex items-center gap-1 rounded-full border border-ink-700 bg-ink-950 px-2.5 py-0.5 font-mono text-label tabular-nums text-ink-500">
           {rejected} rejected
         </span>
       ) : null}
@@ -131,19 +132,19 @@ function SpeakerLines({ bookId, speakerId }: { bookId: string; speakerId: string
   const lines = useDialogueLines(bookId, speakerId, true);
   if (lines.isLoading) {
     return (
-      <p className="px-2 py-1 text-xs text-ink-500" aria-busy="true">
+      <p className="px-2 py-1 text-small text-ink-500" aria-busy="true">
         Loading lines…
       </p>
     );
   }
   if (lines.isError || !lines.data) {
-    return <p className="px-2 py-1 text-xs text-danger">Could not load lines.</p>;
+    return <p className="px-2 py-1 text-small text-danger">Could not load lines.</p>;
   }
   return (
     <ol className="mt-1 space-y-1.5 border-l border-ink-700 pl-3">
       {lines.data.lines.map((line) => (
-        <li key={line.paragraph_id} className="text-xs leading-relaxed text-ink-300">
-          <span className="mr-1.5 font-mono text-[10px] text-ink-500">
+        <li key={line.paragraph_id} className="text-small text-ink-300">
+          <span className="mr-1.5 font-mono text-label text-ink-500">
             ch. {line.chapter_number}
             {line.addressee_name ? ` → ${line.addressee_name}` : ""}
             {line.kind === "thought" ? " · thought" : ""}
@@ -154,7 +155,7 @@ function SpeakerLines({ bookId, speakerId }: { bookId: string; speakerId: string
         </li>
       ))}
       {lines.data.truncated && (
-        <li className="text-xs text-ink-500">Only the first {lines.data.lines.length} shown.</li>
+        <li className="text-small text-ink-500">Only the first {lines.data.lines.length} shown.</li>
       )}
     </ol>
   );
@@ -183,8 +184,8 @@ function SpeakerRow({
         className="flex w-full items-start gap-2 text-left"
       >
         <span className="min-w-0 flex-1">
-          <span className="block text-sm font-medium text-ink-100">{label}</span>
-          <span className="block font-mono text-[11px] leading-relaxed text-ink-400">{detail}</span>
+          <span className="block text-body font-medium text-ink-100">{label}</span>
+          <span className="block font-mono text-label text-ink-400">{detail}</span>
         </span>
         <ChevronDown
           className={cn(
@@ -217,17 +218,17 @@ function SpeakerMapPanel({
 
   if (speakers.isLoading && !speakers.data) {
     return (
-      <p className="text-sm text-ink-400" aria-busy="true">
+      <p className="text-body text-ink-400" aria-busy="true">
         Loading speakers…
       </p>
     );
   }
   if (speakers.isError) {
-    return <p className="text-sm text-danger">Could not load speakers.</p>;
+    return <p className="text-body text-danger">Could not load speakers.</p>;
   }
   if (!speakers.data || speakers.data.lines_total === 0) {
     return (
-      <p className="text-sm text-ink-500">
+      <p className="text-body text-ink-500">
         {book.speakers_extraction_status === "running"
           ? `Waiting for the first part…${progress}`
           : "No lines attributed yet."}
@@ -240,7 +241,7 @@ function SpeakerMapPanel({
 
   return (
     <div>
-      <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
+      <p className={LABEL}>
         {entries.length} character{entries.length === 1 ? "" : "s"} · {lines_attributed} line
         {lines_attributed === 1 ? "" : "s"} attributed · {lines_unknown} with no speaker ·{" "}
         {lines_not_dialogue} not dialogue
@@ -370,23 +371,23 @@ function PassSettings({
   return (
     <section aria-label={title} className="space-y-3">
       <div>
-        <p className="text-[13px] font-medium text-ink-100">
+        <p className="text-body font-medium text-ink-100">
           {title}
           <span className="ml-2 font-normal text-ink-400">
             {passStatusLine(status, windowsCompleted, windowsTotal, unit)}
           </span>
         </p>
-        <p className="mt-0.5 text-xs leading-relaxed text-ink-500">{description}</p>
+        <p className="mt-0.5 text-small text-ink-500">{description}</p>
       </div>
 
       {lastError && !running && (
-        <p className="rounded-lg border border-danger-border bg-danger-surface px-3 py-2 text-xs text-danger">
+        <p className="rounded-lg border border-danger-border bg-danger-surface px-3 py-2 text-small text-danger">
           {lastError}
         </p>
       )}
 
       <ModelPicker choice={modelChoice} disabled={running} />
-      {estimateLoading && <p className="text-xs text-ink-400">Calculating estimate…</p>}
+      {estimateLoading && <p className="text-small text-ink-400">Calculating estimate…</p>}
       {pass && (
         <dl className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
           <EstimateCell
@@ -462,7 +463,7 @@ function PassSettings({
       </div>
 
       {mutationError && (
-        <p className="text-sm text-danger" role="alert">
+        <p className="text-body text-danger" role="alert">
           {mutationError}
         </p>
       )}
@@ -483,17 +484,17 @@ function EstimateCell({
 }) {
   return (
     <div className="rounded-lg border border-ink-700 bg-ink-900 px-3 py-2">
-      <dt className="font-mono text-[10px] uppercase tracking-wider text-ink-500">{label}</dt>
+      <dt className={LABEL}>{label}</dt>
       <dd
         className={cn(
-          "mt-1 truncate font-mono text-[13px] tabular-nums",
+          "mt-1 truncate font-mono text-body tabular-nums",
           accent ? "text-accent" : "text-ink-100",
         )}
         title={value}
       >
         {value}
       </dd>
-      {detail && <p className="mt-0.5 font-mono text-[10px] text-ink-500">{detail}</p>}
+      {detail && <p className="mt-0.5 font-mono text-label text-ink-500">{detail}</p>}
     </div>
   );
 }
@@ -509,8 +510,8 @@ function ProfileBlock({
 }) {
   return (
     <div className={className}>
-      <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">{label}</p>
-      <div className="mt-1.5 leading-relaxed text-ink-300">{children}</div>
+      <p className={LABEL}>{label}</p>
+      <div className="mt-1.5 text-ink-300">{children}</div>
     </div>
   );
 }
@@ -549,18 +550,18 @@ function PassageBlock({
 
   return (
     <div className="rounded-lg border border-ink-800 bg-ink-900 p-3">
-      <p className="font-mono text-[10px] uppercase tracking-wider text-accent">
+      <p className="font-mono text-label uppercase tracking-wider text-accent">
         Reference passage {pos} of {total}
         {passage.selection_rank > 0 ? ` · rank ${passage.selection_rank}` : ""} · {passage.status}
       </p>
-      <p className="mt-1 text-[10px] leading-relaxed text-ink-500">{passage.why_selected}</p>
+      <p className="mt-1 text-label text-ink-500">{passage.why_selected}</p>
       <ProfileBlock label={`Source (${book.source_language})`} className="mt-2">
         <p className="whitespace-pre-wrap border-l-2 border-ink-600 pl-3 text-ink-200">
           {passage.source_text}
         </p>
       </ProfileBlock>
       <ProfileBlock label={`Model translation (${book.target_language})`} className="mt-2">
-        <p className="whitespace-pre-wrap leading-relaxed text-ink-200">{prop || "—"}</p>
+        <p className="whitespace-pre-wrap text-ink-200">{prop || "—"}</p>
       </ProfileBlock>
       <ProfileBlock label={`Your translation (${book.target_language})`} className="mt-2">
         <textarea
@@ -569,7 +570,7 @@ function PassageBlock({
           disabled={patchPending}
           rows={4}
           className={cn(
-            "w-full rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 font-sans text-sm text-ink-100",
+            "w-full rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 font-sans text-body text-ink-100",
             "placeholder:text-ink-600 focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent",
             "disabled:opacity-60",
           )}
@@ -578,12 +579,10 @@ function PassageBlock({
       </ProfileBlock>
       {passage.translation_review && passage.translation_revised ? (
         <div className="mt-3 rounded-lg border border-warning-border bg-warning-surface p-3">
-          <p className="font-mono text-[10px] uppercase tracking-wider text-warning">Cast check</p>
-          <p className="mt-1 text-xs leading-relaxed text-ink-300">{passage.translation_review}</p>
+          <p className="font-mono text-label uppercase tracking-wider text-warning">Cast check</p>
+          <p className="mt-1 text-small text-ink-300">{passage.translation_review}</p>
           <ProfileBlock label="Suggested revision" className="mt-2">
-            <p className="whitespace-pre-wrap leading-relaxed text-ink-200">
-              {passage.translation_revised}
-            </p>
+            <p className="whitespace-pre-wrap text-ink-200">{passage.translation_revised}</p>
           </ProfileBlock>
           <Button
             variant="ghost"
@@ -602,7 +601,7 @@ function PassageBlock({
         </div>
       ) : null}
       {auth != null && auth !== "" && same && prop ? (
-        <p className="mt-2 font-mono text-[10px] text-ink-500">
+        <p className="mt-2 font-mono text-label text-ink-500">
           Saved translation matches model draft.
         </p>
       ) : null}
@@ -641,7 +640,7 @@ function StatusChip({ status }: { status: string }) {
   return (
     <span
       className={cn(
-        "rounded-full border px-2 py-0.5 font-mono text-[9px] font-medium uppercase tracking-wider",
+        "rounded-full border px-2 py-0.5 font-mono text-label font-medium uppercase tracking-wider",
         tone,
       )}
     >
@@ -665,7 +664,7 @@ function BriefBlock({
   useEffect(() => setDraft(saved), [v.id, saved]);
   if (!saved && !draft) {
     return (
-      <p className="mt-4 text-xs text-ink-500">
+      <p className="mt-4 text-small text-ink-500">
         No brief yet: translation uses the full strategy below until the cast pass runs.
       </p>
     );
@@ -678,7 +677,7 @@ function BriefBlock({
         disabled={patchPending}
         rows={Math.min(10, Math.max(4, draft.split("\n").length + 1))}
         className={cn(
-          "w-full rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 font-sans text-sm text-ink-100",
+          "w-full rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 font-sans text-body text-ink-100",
           "focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-60",
         )}
         aria-label={`Translation brief for ${v.canonical_name}`}
@@ -702,8 +701,8 @@ function EvidenceLines({ lines }: { lines: VoiceEvidenceLine[] }) {
   return (
     <ul className="mt-1 space-y-1 border-l border-ink-700 pl-3">
       {lines.map((line) => (
-        <li key={line.paragraph_id} className="text-xs leading-relaxed text-ink-400">
-          <span className="mr-1.5 font-mono text-[10px] text-ink-500">
+        <li key={line.paragraph_id} className="text-small text-ink-400">
+          <span className="mr-1.5 font-mono text-label text-ink-500">
             ch. {line.chapter_number}
           </span>
           {line.text}
@@ -747,18 +746,18 @@ function EvidenceBlock({
         <div className="mt-2 space-y-3 rounded-lg border border-ink-800 bg-ink-900 p-3">
           {features.map((f, i) => (
             <div key={`f${i}`}>
-              <p className="text-[13px] leading-snug text-ink-100">{f.feature}</p>
+              <p className="text-body text-ink-100">{f.feature}</p>
               <EvidenceLines lines={f.lines} />
             </div>
           ))}
           {shifts.length > 0 && (
-            <p className="pt-1 font-mono text-[10px] uppercase tracking-wider text-ink-500">
+            <p className="pt-1 font-mono text-label uppercase tracking-wider text-ink-500">
               Register shifts
             </p>
           )}
           {shifts.map((x, i) => (
             <div key={`s${i}`}>
-              <p className="text-[13px] leading-snug text-ink-100">
+              <p className="text-body text-ink-100">
                 <span className="text-ink-400">{x.situation}:</span> {x.change}
               </p>
               <EvidenceLines lines={x.lines} />
@@ -840,34 +839,36 @@ function VoiceProfileCard({
   return (
     <article
       className={cn(
-        "rounded-lg border bg-ink-800 p-4 text-sm text-ink-200",
+        "rounded-lg border bg-ink-800 p-4 text-body text-ink-200",
         v.needs_regeneration ? "border-warning-border" : "border-ink-800",
       )}
     >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <p className="font-serif text-base font-medium text-ink-50">{v.canonical_name}</p>
+            <p className="font-serif text-subheading font-semibold text-ink-50">
+              {v.canonical_name}
+            </p>
             <StatusChip status={v.status} />
             {v.needs_regeneration && (
-              <span className="rounded-full border border-warning-border bg-warning-surface px-2 py-0.5 font-mono text-[9px] font-medium uppercase tracking-wider text-warning">
+              <span className="rounded-full border border-warning-border bg-warning-surface px-2 py-0.5 font-mono text-label font-medium uppercase tracking-wider text-warning">
                 flagged
               </span>
             )}
             {v.low_evidence && (
               <span
-                className="rounded-full border border-ink-700 bg-ink-900 px-2 py-0.5 font-mono text-[9px] font-medium uppercase tracking-wider text-ink-400"
+                className="rounded-full border border-ink-700 bg-ink-900 px-2 py-0.5 font-mono text-label font-medium uppercase tracking-wider text-ink-400"
                 title="Fewer than three lines to build this profile from."
               >
                 low evidence
               </span>
             )}
           </div>
-          <p className="mt-1 font-mono text-[10px] uppercase tracking-wider text-ink-500">
+          <p className="mt-1 font-mono text-label uppercase tracking-wider text-ink-500">
             {metadataLine}
           </p>
           {showWindows && speakerWindows && speakerWindows.length > 0 ? (
-            <p className="mt-1.5 font-mono text-[10px] leading-relaxed text-accent">
+            <p className="mt-1.5 font-mono text-label text-accent">
               speaks in windows {formatWindowList(speakerWindows)}
             </p>
           ) : null}
@@ -965,7 +966,7 @@ function VoiceProfileCard({
                 </p>
               </ProfileBlock>
               <ProfileBlock label={`Translation — model (${book.target_language})`}>
-                <p className="whitespace-pre-wrap leading-relaxed text-ink-200">
+                <p className="whitespace-pre-wrap text-ink-200">
                   {v.reference_passage_translation_proposed}
                 </p>
               </ProfileBlock>
@@ -976,7 +977,7 @@ function VoiceProfileCard({
                   disabled={patchPending}
                   rows={4}
                   className={cn(
-                    "w-full rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 font-sans text-sm text-ink-100",
+                    "w-full rounded-lg border border-ink-700 bg-ink-950 px-3 py-2 font-sans text-body text-ink-100",
                     "focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent disabled:opacity-60",
                   )}
                 />
@@ -993,11 +994,11 @@ function VoiceProfileCard({
                 </div>
               </ProfileBlock>
               {v.reference_passage_translation_authoritative != null && sameTranslation ? (
-                <p className="font-mono text-[10px] text-ink-500">Same as model draft.</p>
+                <p className="font-mono text-label text-ink-500">Same as model draft.</p>
               ) : null}
             </div>
           ) : (
-            <p className="mt-3 rounded-lg border border-ink-800 bg-ink-900 px-3 py-2 text-xs text-ink-500">
+            <p className="mt-3 rounded-lg border border-ink-800 bg-ink-900 px-3 py-2 text-small text-ink-500">
               No selected reference passages yet.
             </p>
           )}
@@ -1033,9 +1034,9 @@ function SpeakersSection({
           className={cn("h-4 w-4 text-ink-400 transition-transform", !open && "-rotate-90")}
           aria-hidden
         />
-        <h3 className="font-serif text-lg text-ink-100">Who speaks</h3>
+        <h3 className={SECTION_HEADING}>Who speaks</h3>
         {data && data.lines_total > 0 && (
-          <span className="font-mono text-[11px] tabular-nums text-ink-500">
+          <span className="font-mono text-label tabular-nums text-ink-500">
             {formatNumber(data.entries.length)} characters · {formatNumber(data.lines_attributed)}{" "}
             lines
           </span>
@@ -1339,7 +1340,7 @@ export function VoiceView({ book, onSelectTab }: Props) {
       <>
         {paused}
         {barError && (
-          <p className={cn("text-sm text-danger", paused && "mt-2")} role="alert">
+          <p className={cn("text-body text-danger", paused && "mt-2")} role="alert">
             {barError}
           </p>
         )}
@@ -1437,7 +1438,7 @@ export function VoiceView({ book, onSelectTab }: Props) {
         <div className="mt-10 space-y-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h3 className="font-serif text-lg text-ink-100">Profiles</h3>
+              <h3 className={SECTION_HEADING}>Profiles</h3>
               {!voices.isLoading && voices.data && voices.data.entries.length > 0 ? (
                 <ReviewProgressLine
                   awaiting={reviewStats.awaiting}
@@ -1462,7 +1463,7 @@ export function VoiceView({ book, onSelectTab }: Props) {
                     aria-pressed={pendingOnly === opt.id}
                     onClick={() => setPendingOnly(opt.id)}
                     className={cn(
-                      "inline-flex h-7 items-center rounded-md px-2.5 text-[12.5px] transition-colors duration-150",
+                      "inline-flex h-7 items-center rounded-md px-2.5 text-small transition-colors duration-150",
                       "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
                       pendingOnly === opt.id
                         ? "bg-ink-800 text-ink-50"
@@ -1478,7 +1479,7 @@ export function VoiceView({ book, onSelectTab }: Props) {
 
           {flaggedProfileCount > 0 ? (
             <div className="flex flex-wrap items-center gap-3 rounded-lg border border-warning-border bg-warning-surface px-4 py-3">
-              <p className="text-sm text-ink-300">
+              <p className="text-body text-ink-300">
                 <span className="font-medium tabular-nums text-warning">{flaggedProfileCount}</span>{" "}
                 profile{flaggedProfileCount === 1 ? "" : "s"} flagged for regeneration.
               </p>
@@ -1507,7 +1508,7 @@ export function VoiceView({ book, onSelectTab }: Props) {
 
           {(voices.data?.entries.length ?? 0) > 0 ? (
             <div className="flex flex-wrap items-center gap-3 rounded-lg border border-ink-800 bg-ink-900 px-4 py-3">
-              <p className="text-sm text-ink-300">
+              <p className="text-body text-ink-300">
                 <span className="font-medium tabular-nums text-ink-100">{briefCount}</span> of{" "}
                 {voices.data?.entries.length} profiles have a translation brief
                 {flaggedPassageCount > 0 ? (
@@ -1545,7 +1546,7 @@ export function VoiceView({ book, onSelectTab }: Props) {
                 Retranslate passages
               </Button>
               {castPass.isError && (
-                <p className="text-xs text-danger">
+                <p className="text-small text-danger">
                   {errorDetail(castPass, "Could not start the cast pass.")}
                 </p>
               )}
@@ -1553,18 +1554,20 @@ export function VoiceView({ book, onSelectTab }: Props) {
           ) : null}
 
           {voices.isLoading && (
-            <p className="text-sm text-ink-400" aria-busy="true">
+            <p className="text-body text-ink-400" aria-busy="true">
               Loading…
             </p>
           )}
-          {voices.isError && <p className="text-sm text-danger">Could not load voice profiles.</p>}
+          {voices.isError && (
+            <p className="text-body text-danger">Could not load voice profiles.</p>
+          )}
           {voices.data && voices.data.entries.length === 0 && (
-            <p className="text-sm text-ink-400">
+            <p className="text-body text-ink-400">
               No profiles yet. Build the voices above to write them.
             </p>
           )}
           {voices.data && voices.data.entries.length > 0 && profilesInScope.length === 0 && (
-            <p className="text-sm text-ink-400">
+            <p className="text-body text-ink-400">
               No pending profiles — switch to “All” to see accepted entries.
             </p>
           )}

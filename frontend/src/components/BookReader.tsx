@@ -4,6 +4,7 @@ import { BookHeader } from "@/components/book/BookHeader";
 import { ChapterRail } from "@/components/book/ChapterRail";
 import { GlossaryView } from "@/components/book/GlossaryView";
 import { ManuscriptView } from "@/components/book/ManuscriptView";
+import { PassagesView } from "@/components/book/PassagesView";
 import {
   DEFAULT_BOOK_TAB,
   glossaryUsable,
@@ -13,7 +14,13 @@ import {
 import { TranslationView } from "@/components/book/TranslationView";
 import { VoiceView } from "@/components/book/VoiceView";
 import { useBookTab } from "@/hooks/useBookTab";
-import { useBook, useTranslation, useWorkingGlossary, useWorkingVoices } from "@/lib/api/hooks";
+import {
+  useBook,
+  usePassages,
+  useTranslation,
+  useWorkingGlossary,
+  useWorkingVoices,
+} from "@/lib/api/hooks";
 
 interface Props {
   bookId: string;
@@ -63,6 +70,8 @@ export function BookReader({ bookId, onBack }: Props) {
     refetchIntervalMs: book?.voice_extraction_status === "running" ? 1500 : false,
   });
 
+  const passages = usePassages(bookId, translationRun?.status === "running");
+
   const counts: TabCounts = useMemo(() => {
     const glossaryEntries = glossary.data?.entries ?? [];
     const voiceEntries = voices.data?.entries ?? [];
@@ -76,8 +85,12 @@ export function BookReader({ bookId, onBack }: Props) {
       translationStatus: translationRun?.status ?? null,
       translationDone: translationRun?.fragments_completed ?? 0,
       translationTotal: translationRun?.fragments_total ?? 0,
+      passagesStatus: passages.data?.state.status ?? "idle",
+      passagesTotal: (passages.data?.passages ?? []).filter((p) => p.status !== "dismissed").length,
+      passagesOpen: passages.data?.open_flags ?? 0,
+      passagesBlocking: passages.data?.blocking_flags ?? 0,
     };
-  }, [glossary.data?.entries, voices.data?.entries, translationRun]);
+  }, [glossary.data?.entries, voices.data?.entries, translationRun, passages.data]);
 
   /**
    * Picking a chapter from a working tab means "take me back to the text
@@ -156,6 +169,7 @@ export function BookReader({ bookId, onBack }: Props) {
             />
           )}
           {activeTab === "voices" && <VoiceView book={book} />}
+          {activeTab === "review" && <PassagesView book={book} />}
           {activeTab === "translation" && (
             <TranslationView book={book} onOpenTerm={handleOpenTerm} onSelectTab={setActiveTab} />
           )}

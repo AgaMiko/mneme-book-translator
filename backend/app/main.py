@@ -10,7 +10,12 @@ from app.api.router import api_router
 from app.core.config import get_settings
 from app.core.db import dispose_engine
 from app.core.logging import configure_logging, get_logger
-from app.services import speakers_service, translation_service, voice_service
+from app.services import (
+    speakers_service,
+    special_passages_service,
+    translation_service,
+    voice_service,
+)
 
 
 @asynccontextmanager
@@ -23,6 +28,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await voice_service.reconcile_stale_voice_runs_on_startup()
         await speakers_service.reconcile_stale_speakers_runs_on_startup()
         await translation_service.reconcile_stale_translation_runs_on_startup()
+        await special_passages_service.reconcile_stale_passage_runs_on_startup()
     try:
         yield
     finally:

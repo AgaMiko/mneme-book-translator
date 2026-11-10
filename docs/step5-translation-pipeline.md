@@ -1,6 +1,6 @@
 # Step 5 & Step 6 — fragment translation and author flag review
 
-Status: design written 2026-10-20. Built 2026-10-21: fragments, the translate chain (one-, two- and three-step modes), style metrics, rhythm and repetition checks, translator notes, polish declared edits, a cost estimate, the Translation tab, and PDF/EPUB/DOCX export (sections 2, 3, 4, 11 and part of 8). Not built yet: style sheet entity, glossary propagation and placeholder tokens, epithet claims, the flags table and Step 6 review actions, special passages.
+Status: design written 2026-10-20. Built 2026-10-21: fragments, the translate chain (one-, two- and three-step modes), style metrics, rhythm and repetition checks, translator notes, polish declared edits, a cost estimate, the Translation tab, and PDF/EPUB/DOCX export (sections 2, 3, 4, 11 and part of 8). Built 2026-11-10: special passages (verse, hidden messages, wordplay) with a flags table and a Review tab, described in [step6-special-passages.md](step6-special-passages.md). Not built yet: style sheet entity, glossary propagation and placeholder tokens, epithet claims, and moving translator notes into the flags table.
 
 **Change to section 3 after testing:** the default is now one step: Sol translates straight into the final text. See "Model and pipeline tests" at the end.
 

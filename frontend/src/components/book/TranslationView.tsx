@@ -31,6 +31,7 @@ import {
   useContinueTranslation,
   useStartTranslation,
   useStopTranslation,
+  usePassages,
   useTranslation,
   useTranslationEstimate,
   useTranslationTerms,
@@ -90,6 +91,10 @@ const EDIT_LABELS: Record<string, string> = {
  */
 export function TranslationView({ book, onOpenTerm, onSelectTab }: Props) {
   const translation = useTranslation(book.id);
+  const passages = usePassages(book.id);
+  // Unknown until the passages query answers; exports wait for it.
+  const blockingPassages = passages.data?.blocking_flags ?? 0;
+  const exportReady = passages.isSuccess || passages.isError;
   const terms = useTranslationTerms(book.id);
   const [stage, setStage] = useState<TranslationStage>("polish");
   const [selected, setSelected] = useState<string[]>([]);
@@ -165,20 +170,41 @@ export function TranslationView({ book, onOpenTerm, onSelectTab }: Props) {
                 >
                   Export English · {STAGES.find((s) => s.id === stage)?.label.toLowerCase()}
                 </p>
-                {(["pdf", "epub", "docx"] as const).map((fmt) => (
-                  <a
-                    key={fmt}
-                    href={translationExportUrl(book.id, fmt, stage)}
-                    download
-                    className={cn(
-                      "inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12.5px] font-medium",
-                      "text-ink-100 hover:bg-ink-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                    )}
+                {blockingPassages > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => onSelectTab("review")}
+                    className="mr-1 rounded text-[12px] text-warning underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                    title="These passages break their rule and have no checked translation. Until you decide on them in Review, an export is a draft and its file name says DRAFT."
                   >
-                    <Download className="h-3.5 w-3.5" aria-hidden />
-                    {fmt.toUpperCase()}
-                  </a>
-                ))}
+                    {blockingPassages} passage{blockingPassages === 1 ? "" : "s"} need a decision
+                  </button>
+                )}
+                {(["pdf", "epub", "docx"] as const).map((fmt) =>
+                  exportReady ? (
+                    <a
+                      key={fmt}
+                      href={translationExportUrl(book.id, fmt, stage, blockingPassages > 0)}
+                      download
+                      className={cn(
+                        "inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12.5px] font-medium",
+                        "text-ink-100 hover:bg-ink-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                      )}
+                    >
+                      <Download className="h-3.5 w-3.5" aria-hidden />
+                      {blockingPassages > 0 ? `Draft ${fmt.toUpperCase()}` : fmt.toUpperCase()}
+                    </a>
+                  ) : (
+                    <span
+                      key={fmt}
+                      aria-disabled="true"
+                      className="inline-flex h-8 items-center gap-1.5 px-3 text-[12.5px] font-medium text-ink-500"
+                    >
+                      <Download className="h-3.5 w-3.5" aria-hidden />
+                      {fmt.toUpperCase()}
+                    </span>
+                  ),
+                )}
               </div>
             </div>
           )}

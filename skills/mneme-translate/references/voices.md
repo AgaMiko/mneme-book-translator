@@ -4,9 +4,9 @@ A voice brief tells the translator how a character should come across in English
 
 ## 1. Collect each character's lines
 
-Run `mneme.py dialogue` (or `dialogue <chapter>`) to list the paragraphs that look like dialogue, with their ids. It finds paragraphs that start with a dash and paragraphs with quotation marks. Quoted paragraphs are only candidates: many are titles, quoted phrases or thoughts.
+Run `mneme.py dialogue --skeleton` (or `dialogue 1-4 --skeleton` for some chapters) to write `work/lines-draft.md`: one line per paragraph that looks like dialogue, in book order, such as `- [03:p041] ? → ? | – Nie teraz…`. It finds paragraphs that start with a dash and paragraphs with quotation marks. They are only candidates: many are titles, quoted phrases or thoughts. Plain `dialogue 3` prints the full paragraphs of a chapter when you need to read them.
 
-For each line decide: is it speech, a thought, or not dialogue; who says it (use the glossary's character names); and to whom. Read the narration around it for who is talking when there is no speech tag. Write the result to `work/lines.md`, one section per character, with the line ids, for example `[03:p041] to Kerry`. Lines you cannot attribute go under "Unknown". For a long book, use subagents per group of chapters.
+For each line, replace `? → ?` with the speaker and the listener (the glossary's English names), for example `Hania → Kerry`, or with `thought` or `not dialogue`. Read the narration around it (in `source/`) for who is talking when there is no speech tag. Lines you cannot attribute: `Unknown`. For a long book, use subagents per group of chapters, each on its own draft file, and join them. Then run `dialogue --group`: it writes `work/lines.md`, one section per speaker with the line ids, for example `[03:p041] to Kerry`.
 
 ## 2. Profile each character (from all of their lines at once)
 
@@ -58,6 +58,8 @@ Evidence: [02:p014] [05:p033] [09:p007]
 - **Evidence**: a few line ids, so the user can check the brief against the source.
 
 Leave out what applies to everyone (contractions in dialogue, natural idiom, no anachronisms).
+
+**Minor speakers.** A speaker with no glossary name but a voice worth keeping (two village men in dialect, a guard who speaks in clipped orders) can get a brief too: `voices/village-men.md`, with a line `Matches: karczma, chłop, gospodarz` under the heading, listing source words that appear in their scenes. `fragment` lists the brief for any fragment that contains one of those words. `fragment` always lists `voices/_cast.md`, so short guidance for one-scene speakers can also go there.
 
 ## 4. Test the briefs, then stop for review
 

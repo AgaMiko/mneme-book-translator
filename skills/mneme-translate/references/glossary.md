@@ -9,19 +9,21 @@ The glossary gives every name, place and invented word one agreed English form, 
 ```markdown
 # Glossary
 
-| Source | Forms seen | Type | English | Alternatives | Notes | Status |
-|---|---|---|---|---|---|---|
-| Hania | Hani, Hanię, Hanka | character_name | Hania | Hanna | Kerry's sister; Hanka is a fond short form. | proposed |
-| Szklane Wzgórze | Szklanym Wzgórzu | place_name | Glass Hill | Glasshill | Descriptive name: translate the image. | proposed |
+| Source | Forms seen | Type | English | Alternatives | Notes | Status | Match |
+|---|---|---|---|---|---|---|---|
+| Hania | Hani, Hanię, Hanka | character_name | Hania | Hanna | Kerry's sister; Hanka is a fond short form. | proposed | |
+| Szklane Wzgórze | Szklanym Wzgórzu | place_name | Glass Hill | Glasshill | Descriptive name: translate the image. | proposed | |
+| Dłonie | Dłoni, Dłońmi | lore_term | the Hands | | Imperial name for Weavers. The ordinary word dłoń (a hand) is NOT this term. | proposed | case |
 ```
 
 - **Source**: the canonical form, the one the book settles on.
-- **Forms seen**: other spellings, inflected forms, epithets and nicknames of the same thing, comma separated. The script matches these forms (and up to three extra letters at the end of forms of four letters or more) to find a term in a fragment.
+- **Forms seen**: other spellings, inflected forms, epithets and nicknames of the same thing, comma separated. Only names and forms of the term itself: not common nouns that refer to the character ("wuj", uncle, is not a form of Tyrel), because the check then expects the name wherever the word appears. The script matches each word of a form with case endings (a word of five letters or more may change its last letter and add up to four), so list irregular forms that change more than that (Polish "Pies" → "Psa").
 - **Type**: `character_name`, `place_name`, `organization`, `lore_term` (invented magic, technology, artefacts, named creatures and events, in-world religion), `cultural_term` (real-world customs, food or dress a reader may not know), `specialized_usage` (an ordinary word with a special in-world sense), `other`.
 - **English**: the one form the translation uses.
 - **Alternatives**: other good options, so the reviewer can choose.
 - **Notes**: what it is, in one sentence, and why this English form. Say when an ordinary word is NOT the glossary term (a literal object that shares a name with a lore term).
 - **Status**: `proposed`, then `accepted` or `rejected` after review. Rejected rows are ignored by the script.
+- **Match** (optional last column; leave it empty in most rows): `case` matches the forms only with the capitals as written, `exact` matches them without case endings, `case exact` does both. Use it for a term that is also an everyday word ("Dłonie", the Hands, a name for Weavers, against "dłoni", a hand), so the script does not list the term in every fragment and the check does not flag every hand.
 
 ## Starting from an existing glossary
 
@@ -54,6 +56,8 @@ Go through the proposed rows once more and decide each the way the author would.
 **Merge** only when two rows refer to the same person, place or thing: another name, an epithet, a short form, or the same term in another grammatical form. Similar meaning is not enough.
 
 Also remove forms that do not belong to the term (another character's nickname), and fix an English target that is clearly wrong.
+
+Also decide the English title of the book with the user if it is not set; it goes to `export --title`.
 
 Then show the user a short summary: how many terms by type, the rows you are least sure about (titles of in-world works, named abilities that read like descriptions, everyday words that might carry a special sense, merges of a name with an epithet), and the choices with strong alternatives. The user edits `glossary.md` directly or tells you what to change. When the user is happy, set the kept rows to `accepted` and run `mark glossary reviewed`.
 

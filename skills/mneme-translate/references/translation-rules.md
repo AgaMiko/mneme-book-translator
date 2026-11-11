@@ -29,7 +29,7 @@ The "voice profiles" mentioned below are the briefs in `voices/`. The "glossary"
 
 11. **Author placeholders** (xxxxxxx, [xxxx]) are copied exactly and reported as placeholder notes.
 
-12. **Source typos.** Translate an obvious typo as the word that was meant. If you had to guess what was meant, add a source_typo note. Do not report single-letter slips.
+12. **Source typos.** Translate an obvious typo as the word that was meant. If you had to guess what was meant, add a source_typo note. Do not report single-letter slips. A misspelt name ("Eianrd" for Einard) is written in its glossary form, with no note.
 
 13. **No modern idiom in narration** (no "light years", "on the same page", "reach out").
 
@@ -79,7 +79,7 @@ Return one paragraph for each source paragraph, with the same id, in the same or
 
 ## Translator notes
 
-The rules above ask for notes in some cases. Add each one as a line in `notes.md`, under a heading for the fragment:
+The rules above ask for notes in some cases. Add each one as a line in `notes/chapter-NN.md` (the fragment's chapter), under a heading for the fragment, in paragraph order. `check` joins these files into `notes.md` for the author:
 
 ```
 ## 03-2

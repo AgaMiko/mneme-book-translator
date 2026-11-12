@@ -1,4 +1,4 @@
-import type { BookDetail, MarkableStage } from "@/lib/api/client";
+import type { BookDetail } from "@/lib/api/client";
 import { formatNumber } from "@/lib/utils";
 
 /**
@@ -14,8 +14,10 @@ import { formatNumber } from "@/lib/utils";
  * `Voices` unlocks once the glossary is usable (canonical characters
  * exist). `Translation` unlocks once the voices are extracted too: the
  * translation prompts use both. A book with translated text keeps the tab
- * open so the result stays readable. `Review` lists the special passages
- * (verse, hidden messages, wordplay) and what was done about them.
+ * open so the result stays readable. `Check` (id `review`) lists the
+ * special passages (verse, hidden messages, wordplay) and what was done
+ * about them. `Export` says what the file will contain and downloads it;
+ * it opens once anything is translated.
  */
 
 /**
@@ -26,12 +28,20 @@ export type TabState = "done" | "active" | "idle" | "locked";
 
 /** Review counts the header needs for the captions. */
 export interface TabCounts {
+  /** False until the list has loaded: an unloaded list is not an empty one. */
+  glossaryLoaded: boolean;
   glossaryTotal: number;
   glossaryPending: number;
+  /** Plain proposals: left out of the voices and the translation. */
+  glossaryProposed: number;
+  voicesLoaded: boolean;
   voicesTotal: number;
   voicesPending: number;
+  /** Status of the latest run, which may cover only some chapters. */
   translationStatus: "running" | "completed" | "failed" | "cancelled" | null;
+  /** Fragments of the whole book with a final English version. */
   translationDone: number;
+  /** Fragments in the whole book; 0 before the first run splits it. */
   translationTotal: number;
   passagesStatus: "idle" | "scanning" | "checking" | "completed" | "failed";
   passagesTotal: number;
@@ -41,8 +51,11 @@ export interface TabCounts {
 }
 
 export const EMPTY_TAB_COUNTS: TabCounts = {
+  glossaryLoaded: false,
   glossaryTotal: 0,
   glossaryPending: 0,
+  glossaryProposed: 0,
+  voicesLoaded: false,
   voicesTotal: 0,
   voicesPending: 0,
   translationStatus: null,
@@ -80,16 +93,6 @@ export function voicesFinished(book: BookDetail): boolean {
   );
 }
 
-/** Whether the toggle has anything to offer: hidden while running and after a real finish. */
-export function showStageFinishedToggle(
-  book: BookDetail,
-  stage: MarkableStage,
-  running: boolean,
-  completed: boolean,
-): boolean {
-  return !running && (!completed || book.stages_marked_finished.includes(stage));
-}
-
 /** Steps that must finish before a translation can start (mirrors the backend check). */
 export function translationBlockers(book: BookDetail): ("glossary" | "voices")[] {
   const missing: ("glossary" | "voices")[] = [];
@@ -106,8 +109,15 @@ function translationLocked(book: BookDetail, counts: Pick<TabCounts, "translatio
   return translationBlockers(book).length > 0 && counts.translationDone === 0;
 }
 
+/** Every fragment of the book has a final English version. */
+export function translationComplete(
+  counts: Pick<TabCounts, "translationDone" | "translationTotal">,
+): boolean {
+  return counts.translationTotal > 0 && counts.translationDone >= counts.translationTotal;
+}
+
 export interface BookTabDef {
-  id: "manuscript" | "glossary" | "voices" | "translation" | "review";
+  id: "manuscript" | "glossary" | "voices" | "translation" | "review" | "export";
   label: string;
   /** `view` sits apart from the numbered pipeline steps in the header. */
   kind: "view" | "step";
@@ -153,6 +163,7 @@ export const BOOK_TABS: readonly BookTabDef[] = [
         return p ? `extracting · pass ${p}` : "extracting…";
       }
       if (b.glossary_extraction_status === "idle") return "not started";
+      if (!counts.glossaryLoaded) return "…";
       if (counts.glossaryTotal === 0) return "no terms yet";
       return `${formatNumber(counts.glossaryTotal)} terms · ${formatNumber(counts.glossaryPending)} pending`;
     },
@@ -186,6 +197,7 @@ export const BOOK_TABS: readonly BookTabDef[] = [
         );
         return p ? `pass 2 · call ${p}` : "pass 2 running…";
       }
+      if (!counts.voicesLoaded && b.voice_extraction_status !== "idle") return "…";
       if (counts.voicesTotal > 0) {
         return `${formatNumber(counts.voicesTotal)} profiles · ${formatNumber(counts.voicesPending)} pending`;
       }
@@ -201,21 +213,24 @@ export const BOOK_TABS: readonly BookTabDef[] = [
     state: (b, counts) => {
       if (translationLocked(b, counts)) return "locked";
       if (counts.translationStatus === "running") return "active";
-      if (counts.translationStatus === "completed") return "done";
+      // Done means the whole book, not the last run (which may be one chapter).
+      if (translationComplete(counts)) return "done";
       return "idle";
     },
     caption: (b, counts) => {
       if (translationLocked(b, counts)) return `${translationBlockers(b)[0]} first`;
+      // Progress over the whole book, whatever the last run covered.
       const p = windowProgress(counts.translationDone, counts.translationTotal);
       switch (counts.translationStatus) {
         case "running":
           return p ? `translating · ${p}` : "translating…";
-        case "completed":
-          return p ? `${p} fragments done` : "done";
         case "cancelled":
           return p ? `stopped · ${p}` : "stopped";
         case "failed":
           return p ? `errors · ${p}` : "failed";
+        case "completed":
+          if (translationComplete(counts)) return "whole book translated";
+          return p ? `${p} translated` : "partly translated";
         default:
           return "not started";
       }
@@ -225,7 +240,7 @@ export const BOOK_TABS: readonly BookTabDef[] = [
     // Special passages (verse, hidden messages, wordplay): found in the
     // manuscript, checked and corrected after translation, then flagged.
     id: "review",
-    label: "Review",
+    label: "Check",
     kind: "step",
     disabled: false,
     state: (_b, counts) => {
@@ -233,9 +248,7 @@ export const BOOK_TABS: readonly BookTabDef[] = [
         return "active";
       }
       if (counts.passagesStatus === "idle" && counts.passagesTotal === 0) return "idle";
-      return counts.passagesOpen === 0 && counts.translationStatus === "completed"
-        ? "done"
-        : "idle";
+      return counts.passagesOpen === 0 && translationComplete(counts) ? "done" : "idle";
     },
     caption: (_b, counts) => {
       if (counts.passagesStatus === "scanning") return "finding passages…";
@@ -245,6 +258,21 @@ export const BOOK_TABS: readonly BookTabDef[] = [
       const n = `${formatNumber(counts.passagesTotal)} passage${counts.passagesTotal === 1 ? "" : "s"}`;
       if (counts.passagesBlocking > 0) return `${n} · ${counts.passagesBlocking} need a decision`;
       return `${n} · ${counts.passagesOpen} to review`;
+    },
+  },
+  {
+    // The file: what it will contain, then the download. Nothing blocks it.
+    id: "export",
+    label: "Export",
+    kind: "step",
+    disabled: false,
+    // No tick: the app cannot know you downloaded the file. The caption says "ready".
+    state: (_b, counts) => (counts.translationDone === 0 ? "locked" : "idle"),
+    caption: (_b, counts) => {
+      if (counts.translationDone === 0) return "translate first";
+      if (counts.passagesBlocking > 0) return "draft only";
+      if (!translationComplete(counts)) return "partial book";
+      return "ready";
     },
   },
 ];

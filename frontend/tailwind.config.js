@@ -10,12 +10,36 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        // Three voices. Inter for UI chrome (per brand board); Lora for
-        // the literary reading surface and the wordmark; JetBrains Mono
-        // for technical metadata, paths, and code.
+        // Three voices, each with one job:
+        // - serif (Lora): the book's text and headings — the title,
+        //   section headings, chapter headings, names of terms and
+        //   characters, and every paragraph of prose.
+        // - sans (Inter, the default): everything you operate — buttons,
+        //   controls, explanations, status lines.
+        // - mono (JetBrains Mono): short labels in capitals, numbers,
+        //   model names and file names.
         sans: ["Inter", "system-ui", "sans-serif"],
         serif: ["Lora", "Georgia", "serif"],
         mono: ["JetBrains Mono", "ui-monospace", "monospace"],
+      },
+
+      // The type scale. Use these names, not pixel sizes, so the same
+      // role has the same size on every screen.
+      fontSize: {
+        // Labels in capitals, badges, numbers and other small print (mono).
+        label: ["11px", { lineHeight: "16px" }],
+        // Helper text, captions, secondary lines.
+        small: ["12px", { lineHeight: "18px" }],
+        // Default for controls and explanations.
+        body: ["13px", { lineHeight: "20px" }],
+        // Prose of the book, source and English (serif).
+        reading: ["16px", { lineHeight: "1.7" }],
+        // Names of terms, characters, passages and books (serif).
+        subheading: ["17px", { lineHeight: "24px" }],
+        // Section headings: Terms, Profiles, Chapters, Export (serif).
+        heading: ["22px", { lineHeight: "28px" }],
+        // The book's title (serif).
+        title: ["28px", { lineHeight: "34px" }],
       },
 
       // The palette is now driven by CSS variables defined in index.css.

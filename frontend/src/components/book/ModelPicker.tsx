@@ -21,14 +21,14 @@ export function ModelPicker({
   const recommended = options.find((o) => o.id === info.recommended);
   return (
     <div className={cn("min-w-0", className)}>
-      <label className="inline-flex flex-wrap items-center gap-2 text-xs text-ink-400">
+      <label className="inline-flex flex-wrap items-center gap-2 text-small text-ink-400">
         <span>{label}</span>
         <select
           value={model}
           disabled={disabled}
           onChange={(e) => choice.setModel(e.target.value)}
           className={cn(
-            "h-8 rounded-lg border border-ink-700 bg-ink-900 px-2 text-[12.5px] text-ink-100",
+            "h-8 rounded-lg border border-ink-700 bg-ink-900 px-2 text-small text-ink-100",
             "focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent",
             "disabled:opacity-60",
           )}
@@ -41,7 +41,7 @@ export function ModelPicker({
           ))}
         </select>
       </label>
-      <p className="mt-1 text-[11px] leading-snug text-ink-500">
+      <p className="mt-1 text-label text-ink-500">
         {model === info.recommended
           ? info.note
           : `Recommended: ${recommended?.label ?? info.recommended}. ${info.note}`}

@@ -3,6 +3,7 @@ import { UploadDropzone } from "@/components/UploadDropzone";
 import { BrandMark } from "@/components/ui/BrandMark";
 import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import { useBooks } from "@/lib/api/hooks";
+import { LABEL } from "@/components/ui/typography";
 
 interface Props {
   onSelect: (id: string) => void;
@@ -32,12 +33,12 @@ export function LibraryScreen({ onSelect }: Props) {
               {/* Greek sits beside the wordmark, not under it — one
                   line of brand rather than a stacked lockup. */}
               <div className="flex items-baseline gap-[7px]">
-                <h1 className="font-serif text-[19px] font-semibold leading-none text-ink-100">
+                <h1 className="font-serif text-subheading font-semibold leading-none text-ink-100">
                   Mneme
                 </h1>
-                <span className="font-serif text-xs italic text-ink-500">Μνήμη</span>
+                <span className="font-serif text-small italic text-ink-500">Μνήμη</span>
               </div>
-              <p className="mt-[5px] text-xs leading-none text-ink-400">
+              <p className="mt-[5px] text-small leading-none text-ink-400">
                 Translation that remembers.
               </p>
             </div>
@@ -49,13 +50,13 @@ export function LibraryScreen({ onSelect }: Props) {
             nothing else on the screen to look at. */}
         {isEmpty && (
           <div className="mt-12 max-w-prose">
-            <h2 className="font-serif text-2xl text-ink-50">We keep what matters.</h2>
-            <p className="mt-2 font-serif text-lg italic text-ink-300">
+            <h2 className="font-serif text-heading text-ink-50">We keep what matters.</h2>
+            <p className="mt-2 font-serif text-subheading italic text-ink-300">
               So your story stays whole.
             </p>
-            <p className="mt-5 text-sm leading-relaxed text-ink-400">
-              Drop a <span className="font-mono text-xs text-ink-200">.docx</span> below. Mneme will
-              read your book end to end, build a glossary you can review, and remember every
+            <p className="mt-5 text-body text-ink-400">
+              Drop a <span className="font-mono text-small text-ink-200">.docx</span> below. Mneme
+              will read your book end to end, build a glossary you can review, and remember every
               decision you make as translation proceeds.
             </p>
           </div>
@@ -67,9 +68,9 @@ export function LibraryScreen({ onSelect }: Props) {
 
         <div className="pb-8 pt-4">
           <div className="mb-2 flex items-center justify-between px-0.5">
-            <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">Library</p>
+            <p className={LABEL}>Library</p>
             {data && data.length > 0 && (
-              <span className="font-mono text-[10px] tabular-nums text-ink-600">{data.length}</span>
+              <span className="font-mono text-label tabular-nums text-ink-600">{data.length}</span>
             )}
           </div>
           <BookList selectedId={null} onSelect={onSelect} onDeleted={() => {}} />
@@ -77,8 +78,8 @@ export function LibraryScreen({ onSelect }: Props) {
       </div>
 
       <footer className="mx-auto flex w-full max-w-[760px] items-center justify-between border-t border-ink-800 px-6 py-3">
-        <p className="font-mono text-[10px] uppercase tracking-wider text-ink-600">mneme · v0.1</p>
-        <span className="font-mono text-[10px] uppercase tracking-wider text-ink-600">pl → en</span>
+        <p className="font-mono text-label uppercase tracking-wider text-ink-600">mneme · v0.1</p>
+        <span className="font-mono text-label uppercase tracking-wider text-ink-600">pl → en</span>
       </footer>
     </div>
   );

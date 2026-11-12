@@ -1,13 +1,12 @@
 import {
-  AlertCircle,
+  ArrowLeft,
+  ArrowRight,
   CheckCircle2,
-  Circle,
   Download,
   Loader2,
-  PauseCircle,
   TriangleAlert,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/Button";
 import { useStepModel } from "@/hooks/useStepModel";
@@ -21,17 +20,14 @@ import {
   type StyleMetrics,
   type TranslationEstimate,
   type TranslationFragment,
-  type TranslationRun,
   type TermSpan,
   type TranslationStage,
   type TranslatorNote,
-  translationExportUrl,
 } from "@/lib/api/client";
 import {
   useContinueTranslation,
   useStartTranslation,
   useStopTranslation,
-  usePassages,
   useTranslation,
   useTranslationEstimate,
   useTranslationTerms,
@@ -41,9 +37,11 @@ import { cn, formatNumber } from "@/lib/utils";
 import { CostGuardNotice } from "./CostGuardNotice";
 import { BOOK_PANEL_CONTAINER, BOOK_PANEL_SURFACE } from "./layout";
 import { ModelPicker } from "./ModelPicker";
+import { StepRunBar, type RunStatus } from "./StepRunBar";
 import { type BookTab, translationBlockers } from "./tabs";
 import { HighlightedText, MissingTerms, TermProvider } from "./TermHighlight";
 import { englishTerms, useTerms } from "./terms";
+import { LABEL, SECTION_HEADING } from "@/components/ui/typography";
 
 interface Props {
   book: BookDetail;
@@ -82,22 +80,24 @@ const EDIT_LABELS: Record<string, string> = {
 };
 
 /**
- * Step 5: translate fragments and read the result next to the source. By
- * default each fragment is translated in one step straight into the final
- * English; two- and three-step modes add a faithful draft and a separate
- * line edit. The run card shows the pipeline the next run will use and
- * starts, stops and continues runs; the stage switch shows whichever of the
- * draft, line-edited and final texts exist.
+ * The Translate step: the run in one line, a table of chapters with their
+ * state, and one chapter at a time to read next to the source.
+ *
+ * By default each fragment is translated in one step straight into the
+ * final English; two- and three-step modes add a faithful draft and a
+ * separate line edit. The model, the pipeline and the estimate are under
+ * the run bar's Settings. You pick chapters in the table to translate just
+ * those; the run bar's own button translates the rest of the book.
  */
 export function TranslationView({ book, onOpenTerm, onSelectTab }: Props) {
   const translation = useTranslation(book.id);
-  const passages = usePassages(book.id);
-  // Unknown until the passages query answers; exports wait for it.
-  const blockingPassages = passages.data?.blocking_flags ?? 0;
-  const exportReady = passages.isSuccess || passages.isError;
   const terms = useTranslationTerms(book.id);
   const [stage, setStage] = useState<TranslationStage>("polish");
   const [selected, setSelected] = useState<string[]>([]);
+  const [retranslate, setRetranslate] = useState(false);
+  const [readingId, setReadingId] = useState<string | null>(null);
+  const readingRef = useRef<HTMLDivElement>(null);
+  const run = translation.data?.run ?? null;
 
   const byChapter = useMemo(() => {
     const map = new Map<string, ChapterTranslation>();
@@ -116,10 +116,219 @@ export function TranslationView({ book, onOpenTerm, onSelectTab }: Props) {
     return STAGES.filter((s) => present.has(s.id));
   }, [translation.data?.chapters]);
 
-  const translatedChapters = book.chapters.filter((c) => {
-    const ch = byChapter.get(c.id);
-    return ch?.fragments.some((f) => Object.keys(f.stages).length > 0 || f.run_status);
-  });
+  const status = useMemo(() => {
+    const m = new Map<string, ChapterStatus>();
+    for (const c of book.chapters) m.set(c.id, chapterStatus(byChapter.get(c.id)));
+    return m;
+  }, [book.chapters, byChapter]);
+  const isDone = (id: string) => {
+    const st = status.get(id);
+    return !!st && st.total > 0 && st.finished === st.total;
+  };
+  const doneCount = book.chapters.filter((c) => isDone(c.id)).length;
+  const allDone = doneCount === book.chapters.length && doneCount > 0;
+  let bookFragments = 0;
+  let bookFinished = 0;
+  for (const st of status.values()) {
+    bookFragments += st.total;
+    bookFinished += st.finished;
+  }
+
+  // Chapters with any English to read.
+  const readable = book.chapters.filter((c) => (status.get(c.id)?.withText ?? 0) > 0);
+  const reading = readable.find((c) => c.id === readingId) ?? readable[0];
+
+  // The rest of the book unless chapters are picked. Without "translate
+  // again", a whole-book run skips finished chapters, so the estimate
+  // covers only the rest.
+  const restIds =
+    retranslate || doneCount === 0
+      ? null
+      : book.chapters.filter((c) => !isDone(c.id)).map((c) => c.id);
+  const translationModel = useStepModel("translation");
+  const restEstimate = useTranslationEstimate(book.id, restIds, translationModel.model);
+  const selectionEstimate = useTranslationEstimate(
+    book.id,
+    selected.length ? selected : restIds,
+    translationModel.model,
+  );
+  const start = useStartTranslation(book.id);
+  const resume = useContinueTranslation(book.id);
+  const stop = useStopTranslation(book.id);
+
+  const running = run?.status === "running";
+  const canContinue = run?.status === "failed" || run?.status === "cancelled";
+  const missing = translationBlockers(book);
+  const guard = book.cost_guard.translation;
+  const paused = run?.status === "cancelled" && !!guard?.paused_reason;
+
+  const error =
+    errorText(start.error, start.isError, "Could not start the translation.") ??
+    errorText(resume.error, resume.isError, "Could not continue the run.") ??
+    errorText(stop.error, stop.isError, "Could not stop the run.");
+
+  const startRun = (chapterIds: string[] | null) =>
+    start.mutate(
+      { chapter_ids: chapterIds, retranslate, model: translationModel.model },
+      { onSuccess: () => setSelected([]) },
+    );
+
+  const toggle = (id: string) =>
+    setSelected(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
+
+  const openChapter = (id: string) => {
+    setReadingId(id);
+    window.setTimeout(() => readingRef.current?.scrollIntoView({ block: "start" }), 0);
+  };
+
+  // ── Run bar ──
+  const barStatus: RunStatus = running
+    ? "running"
+    : run?.status === "cancelled" || run?.status === "failed"
+      ? run.status
+      : allDone
+        ? "completed"
+        : "idle";
+
+  const bookLine =
+    bookFragments > 0
+      ? `${formatNumber(bookFinished)} of ${formatNumber(bookFragments)} fragments translated`
+      : "Nothing translated yet";
+  let summaryText: string;
+  if (missing.length > 0) {
+    summaryText =
+      missing.length === 2
+        ? "Build the glossary and the voices first. The translation uses both."
+        : missing[0] === "glossary"
+          ? "Finish the glossary first. The translation uses its terms."
+          : "Build the voices first. The translation uses the voice profiles.";
+  } else if (running && run) {
+    summaryText = run.cancel_requested
+      ? "Stopping after the fragments in progress…"
+      : `Translating · this run ${run.fragments_completed}/${run.fragments_total} · ${bookLine.toLowerCase()}`;
+  } else if (allDone) {
+    summaryText = `Whole book translated · ${formatNumber(bookFragments)} fragments`;
+  } else if (run?.status === "cancelled") {
+    summaryText = `${bookLine} · the last run stopped`;
+  } else if (run?.status === "failed") {
+    summaryText = `${bookLine} · the last run had errors`;
+  } else if (bookFinished === 0) {
+    summaryText =
+      "Nothing translated yet. Pick a chapter below to try it first, or translate the whole book.";
+  } else {
+    summaryText = bookLine;
+  }
+
+  const meta = run
+    ? STAGES.filter((st) => run.models[st.id])
+        .map((st) => `${st.label.toLowerCase()}: ${run.models[st.id]}`)
+        .join(" · ")
+    : null;
+
+  const restCost = restEstimate.data ? ` · ~$${restEstimate.data.cost_usd.toFixed(2)}` : "";
+  const action =
+    missing.length > 0 ? (
+      <Button variant="ghost" size="sm" onClick={() => onSelectTab(missing[0])}>
+        {missing[0] === "glossary" ? "Go to Glossary" : "Go to Voices"}
+      </Button>
+    ) : running ? (
+      <Button
+        variant="danger"
+        size="sm"
+        disabled={stop.isPending || run?.cancel_requested}
+        title="Fragments finish their current stage, then stop"
+        onClick={() => stop.mutate()}
+      >
+        {run?.cancel_requested ? "Stopping…" : "Stop"}
+      </Button>
+    ) : canContinue && !paused ? (
+      <Button
+        variant="accent"
+        size="sm"
+        disabled={resume.isPending}
+        title="Retry the failed and unfinished fragments of the last run"
+        onClick={() => resume.mutate()}
+      >
+        {resume.isPending ? "Continuing…" : "Continue"}
+      </Button>
+    ) : !allDone && !paused ? (
+      <Button variant="accent" size="sm" disabled={start.isPending} onClick={() => startRun(null)}>
+        {start.isPending
+          ? "Starting…"
+          : doneCount > 0 || bookFinished > 0
+            ? `Translate the rest${restCost}`
+            : `Translate the book${restCost}`}
+      </Button>
+    ) : null;
+
+  const pausedNotice = paused ? (
+    <CostGuardNotice
+      state={guard}
+      paused
+      showSpent={false}
+      busy={resume.isPending}
+      onContinue={() => resume.mutate()}
+      onContinueWithoutLimit={() => resume.mutate({ costLimit: false })}
+    />
+  ) : null;
+  const runError = run?.error_message && !running ? run.error_message : null;
+  const notice =
+    pausedNotice || error || runError ? (
+      <div className="space-y-2">
+        {pausedNotice}
+        {error && (
+          <p className="text-body text-danger" role="alert">
+            {error}
+          </p>
+        )}
+        {runError && <p className="text-body text-danger">{runError}</p>}
+      </div>
+    ) : null;
+
+  const settings = (
+    <>
+      <ModelPicker choice={translationModel} disabled={running} />
+      {restEstimate.data && <Pipeline estimate={restEstimate.data} />}
+      {restEstimate.data && (
+        <p className="mt-2 text-small text-ink-400">
+          {retranslate || doneCount === 0 ? "The whole book" : "The rest of the book"}: about{" "}
+          {formatNumber(restEstimate.data.fragment_count)} fragment
+          {restEstimate.data.fragment_count === 1 ? "" : "s"} ·{" "}
+          {formatNumber(restEstimate.data.word_count)} words · {restEstimate.data.stages.length}{" "}
+          call{restEstimate.data.stages.length === 1 ? "" : "s"} per fragment · ~
+          {formatNumber(restEstimate.data.total_tokens)} tokens ·{" "}
+          <span className="text-accent">≈ ${restEstimate.data.cost_usd.toFixed(2)}</span>. A rough
+          estimate; thinking tokens vary by model.
+        </p>
+      )}
+      <label className="mt-4 flex items-center gap-2 text-small text-ink-300">
+        <input
+          type="checkbox"
+          checked={retranslate}
+          onChange={(e) => {
+            setRetranslate(e.target.checked);
+            // Finished chapters can only stay picked while translating again.
+            if (!e.target.checked) setSelected(selected.filter((id) => !isDone(id)));
+          }}
+          className="accent-[var(--color-accent)]"
+        />
+        Translate again, including fragments that already have a final English version
+      </label>
+      {retranslate && (
+        <div className="mt-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            className="border border-ink-700"
+            disabled={running || start.isPending || missing.length > 0}
+            onClick={() => startRun(null)}
+          >
+            Translate the whole book again
+          </Button>
+        </div>
+      )}
+    </>
+  );
 
   return (
     <TermProvider
@@ -129,101 +338,121 @@ export function TranslationView({ book, onOpenTerm, onSelectTab }: Props) {
     >
       <div className={BOOK_PANEL_SURFACE}>
         <div className={cn(BOOK_PANEL_CONTAINER, "py-8")}>
-          <RunCard
-            book={book}
-            run={translation.data?.run ?? null}
-            selected={selected}
-            onSelectedChange={setSelected}
-            byChapter={byChapter}
-            onSelectTab={onSelectTab}
+          <StepRunBar
+            label="Translation run"
+            status={barStatus}
+            summary={summaryText}
+            meta={meta}
+            cost={guard}
+            action={action}
+            notice={notice}
+            settings={settings}
           />
 
           {translation.isError && (
-            <p className="mt-6 text-sm text-danger">Could not load the translation.</p>
+            <p className="mt-6 text-body text-danger">Could not load the translation.</p>
           )}
 
-          {translatedChapters.length > 0 && (
-            <div className="mt-8 flex flex-wrap items-center gap-3">
-              <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">Show</p>
-              <div className="inline-flex rounded-lg border border-ink-700 bg-ink-900 p-0.5">
-                {visibleStages.map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    title={s.hint}
-                    onClick={() => setStage(s.id)}
-                    aria-pressed={stage === s.id}
-                    className={cn(
-                      "rounded-md px-3 py-1 text-[12.5px] transition-colors",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                      stage === s.id ? "bg-ink-700 text-ink-50" : "text-ink-400 hover:text-ink-100",
-                    )}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-              <div className="ml-auto flex items-center gap-1">
-                <p
-                  className="mr-1 font-mono text-[10px] uppercase tracking-wider text-ink-500"
-                  title="Downloads the translated chapters at the stage shown. Missing fragments fall back to an earlier stage, or are marked as not translated."
-                >
-                  Export English · {STAGES.find((s) => s.id === stage)?.label.toLowerCase()}
-                </p>
-                {blockingPassages > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => onSelectTab("review")}
-                    className="mr-1 rounded text-[12px] text-warning underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
-                    title="These passages break their rule and have no checked translation. Until you decide on them in Review, an export is a draft and its file name says DRAFT."
-                  >
-                    {blockingPassages} passage{blockingPassages === 1 ? "" : "s"} need a decision
-                  </button>
+          <ChapterTable
+            book={book}
+            status={status}
+            selected={selected}
+            retranslate={retranslate}
+            readingId={reading?.id ?? null}
+            isDone={isDone}
+            onToggle={toggle}
+            onRead={openChapter}
+          />
+
+          {selected.length > 0 && (
+            <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-accent bg-accent-soft px-4 py-2.5">
+              <p className="min-w-0 flex-1 text-body text-ink-100">
+                {selected.length} chapter{selected.length === 1 ? "" : "s"} picked
+                {selectionEstimate.data && (
+                  <span className="text-ink-400">
+                    {" "}
+                    · {formatNumber(selectionEstimate.data.fragment_count)} fragment
+                    {selectionEstimate.data.fragment_count === 1 ? "" : "s"} · ~$
+                    {selectionEstimate.data.cost_usd.toFixed(2)}
+                  </span>
                 )}
-                {(["pdf", "epub", "docx"] as const).map((fmt) =>
-                  exportReady ? (
-                    <a
-                      key={fmt}
-                      href={translationExportUrl(book.id, fmt, stage, blockingPassages > 0)}
-                      download
-                      className={cn(
-                        "inline-flex h-8 items-center gap-1.5 rounded-lg px-3 text-[12.5px] font-medium",
-                        "text-ink-100 hover:bg-ink-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
-                      )}
-                    >
-                      <Download className="h-3.5 w-3.5" aria-hidden />
-                      {blockingPassages > 0 ? `Draft ${fmt.toUpperCase()}` : fmt.toUpperCase()}
-                    </a>
-                  ) : (
-                    <span
-                      key={fmt}
-                      aria-disabled="true"
-                      className="inline-flex h-8 items-center gap-1.5 px-3 text-[12.5px] font-medium text-ink-500"
-                    >
-                      <Download className="h-3.5 w-3.5" aria-hidden />
-                      {fmt.toUpperCase()}
-                    </span>
-                  ),
-                )}
-              </div>
+              </p>
+              <Button variant="ghost" size="sm" onClick={() => setSelected([])}>
+                Clear
+              </Button>
+              <Button
+                variant="accent"
+                size="sm"
+                disabled={running || start.isPending || missing.length > 0}
+                title={running ? "Wait for the current run to finish" : undefined}
+                onClick={() => startRun(selected)}
+              >
+                {start.isPending
+                  ? "Starting…"
+                  : `Translate ${selected.length} chapter${selected.length === 1 ? "" : "s"}`}
+              </Button>
             </div>
           )}
 
-          {translatedChapters.map((chapter) => (
-            <ChapterBlock
-              key={chapter.id}
-              label={`Chapter ${book.chapters.indexOf(chapter) + 1}`}
-              sourceTitle={chapter.title}
-              paragraphs={chapter.paragraphs}
-              translation={byChapter.get(chapter.id)!}
-              stage={stage}
-            />
-          ))}
+          <div ref={readingRef} className="scroll-mt-4">
+            {reading && (
+              <div className="mt-10 flex flex-wrap items-center gap-3">
+                <p className={LABEL}>Show</p>
+                <div className="inline-flex rounded-lg border border-ink-700 bg-ink-900 p-0.5">
+                  {visibleStages.map((s) => (
+                    <button
+                      key={s.id}
+                      type="button"
+                      title={s.hint}
+                      onClick={() => setStage(s.id)}
+                      aria-pressed={stage === s.id}
+                      className={cn(
+                        "rounded-md px-3 py-1 text-small transition-colors",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                        stage === s.id
+                          ? "bg-ink-700 text-ink-50"
+                          : "text-ink-400 hover:text-ink-100",
+                      )}
+                    >
+                      {s.label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onSelectTab("export")}
+                  className="ml-auto inline-flex items-center gap-1.5 rounded px-2 py-1 text-small text-accent hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                >
+                  <Download className="h-3.5 w-3.5" aria-hidden />
+                  Export
+                </button>
+              </div>
+            )}
 
-          {translation.data && translatedChapters.length === 0 && (
-            <p className="mt-10 text-center text-sm text-ink-400">
-              Nothing translated yet. Pick a chapter above to try the pipeline on a small piece
-              first.
+            {reading && (
+              <>
+                <ChapterBlock
+                  key={reading.id}
+                  label={`Chapter ${book.chapters.indexOf(reading) + 1}`}
+                  sourceTitle={reading.title}
+                  paragraphs={reading.paragraphs}
+                  translation={byChapter.get(reading.id)!}
+                  stage={stage}
+                />
+                <ChapterPager
+                  chapters={readable}
+                  current={reading.id}
+                  number={(id) => book.chapters.findIndex((c) => c.id === id) + 1}
+                  onOpen={openChapter}
+                />
+              </>
+            )}
+          </div>
+
+          {translation.data && readable.length === 0 && missing.length === 0 && (
+            <p className="mt-10 text-center text-body text-ink-400">
+              Nothing translated yet. Pick a chapter in the table to try the translation on a small
+              piece first.
             </p>
           )}
         </div>
@@ -235,281 +464,194 @@ export function TranslationView({ book, onOpenTerm, onSelectTab }: Props) {
 const NO_TERMS: GlossaryTerm[] = [];
 const NO_SPANS: Record<string, TermSpan[]> = {};
 
-// ─── Run card ───────────────────────────────────────────
+// ─── Chapter table ──────────────────────────────────────
 
-function RunCard({
+interface ChapterStatus {
+  /** Fragments in the chapter; 0 before the first run splits the book. */
+  total: number;
+  /** Fragments with a final English version. */
+  finished: number;
+  /** Fragments with English at any stage. */
+  withText: number;
+  running: boolean;
+  failed: number;
+  /** Translator notes on the final English. */
+  notes: number;
+}
+
+function chapterStatus(ch: ChapterTranslation | undefined): ChapterStatus {
+  const frags = ch?.fragments ?? [];
+  return {
+    total: frags.length,
+    finished: frags.filter((f) => f.stages.polish).length,
+    withText: frags.filter((f) => Object.keys(f.stages).length > 0).length,
+    running: frags.some(
+      (f) => f.run_status?.status === "running" || f.run_status?.status === "pending",
+    ),
+    failed: frags.filter((f) => f.run_status?.status === "failed").length,
+    notes: frags.reduce((n, f) => n + (f.stages.polish?.notes.length ?? 0), 0),
+  };
+}
+
+function ChapterTable({
   book,
-  run,
+  status,
   selected,
-  onSelectedChange,
-  byChapter,
-  onSelectTab,
+  retranslate,
+  readingId,
+  isDone,
+  onToggle,
+  onRead,
 }: {
   book: BookDetail;
-  run: TranslationRun | null;
+  status: Map<string, ChapterStatus>;
   selected: string[];
-  onSelectedChange: (ids: string[]) => void;
-  byChapter: Map<string, ChapterTranslation>;
-  onSelectTab: (tab: BookTab) => void;
+  retranslate: boolean;
+  readingId: string | null;
+  isDone: (id: string) => boolean;
+  onToggle: (id: string) => void;
+  onRead: (id: string) => void;
 }) {
-  const [retranslate, setRetranslate] = useState(false);
-
-  // Per chapter: fragments, and how many have a final English version.
-  const status = useMemo(() => {
-    const m = new Map<string, { total: number; finished: number }>();
-    for (const c of book.chapters) {
-      const frags = byChapter.get(c.id)?.fragments ?? [];
-      m.set(c.id, {
-        total: frags.length,
-        finished: frags.filter((f) => f.stages.polish).length,
-      });
-    }
-    return m;
-  }, [book.chapters, byChapter]);
-  const isDone = (id: string) => {
-    const st = status.get(id);
-    return !!st && st.total > 0 && st.finished === st.total;
-  };
-  const doneCount = book.chapters.filter((c) => isDone(c.id)).length;
-  const allDone = doneCount === book.chapters.length && doneCount > 0;
-
-  // Without "Translate again", a whole-book run skips finished chapters,
-  // so the estimate covers only the rest.
-  const estimateIds = selected.length
-    ? selected
-    : retranslate || doneCount === 0
-      ? null
-      : book.chapters.filter((c) => !isDone(c.id)).map((c) => c.id);
-  const translationModel = useStepModel("translation");
-  const estimate = useTranslationEstimate(book.id, estimateIds, translationModel.model);
-  const start = useStartTranslation(book.id);
-  const resume = useContinueTranslation(book.id);
-  const stop = useStopTranslation(book.id);
-
-  const running = run?.status === "running";
-  const canContinue = run?.status === "failed" || run?.status === "cancelled";
-  const missing = translationBlockers(book);
-
-  const error =
-    errorText(start.error, start.isError, "Could not start the translation.") ??
-    errorText(resume.error, resume.isError, "Could not continue the run.") ??
-    errorText(stop.error, stop.isError, "Could not stop the run.");
-
-  const done = run ? run.fragments_completed : 0;
-  const total = run ? run.fragments_total : 0;
-  const pct = total > 0 ? Math.round((100 * done) / total) : 0;
-
-  const toggle = (id: string) =>
-    onSelectedChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id]);
-
   return (
-    <section className="rounded-lg border border-ink-800 bg-ink-800" aria-label="Translation run">
-      <div className="flex flex-wrap items-center gap-3 px-4 py-3">
-        <RunIcon status={run?.status ?? null} />
-        <div className="min-w-0 flex-1">
-          <p className="text-[13px] leading-snug text-ink-100">{summary(run)}</p>
-          {run && (
-            <p className="mt-0.5 font-mono text-[10px] text-ink-500">
-              {STAGES.filter((st) => run.models[st.id])
-                .map((st) => `${st.label.toLowerCase()}: ${run.models[st.id]}`)
-                .join(" · ")}
-            </p>
-          )}
-        </div>
+    <section className="mt-8" aria-labelledby="chapters-heading">
+      <div className="mb-3 flex items-baseline justify-between gap-3">
+        <h2 id="chapters-heading" className={SECTION_HEADING}>
+          Chapters
+        </h2>
+        <p className="text-small text-ink-500">Tick chapters to translate just those.</p>
       </div>
-
-      {run && total > 0 && (
-        <div className="px-4 pb-3">
-          <div className="h-1.5 overflow-hidden rounded-full bg-ink-900">
-            <div
-              className="h-full rounded-full bg-accent transition-[width] duration-500"
-              style={{ width: `${pct}%` }}
-            />
-          </div>
-          <p className="mt-1 font-mono text-[10px] tabular-nums text-ink-500">
-            {done}/{total} fragments
-            {run.fragments_failed > 0 && (
-              <span className="text-danger"> · {run.fragments_failed} failed</span>
-            )}
-          </p>
-        </div>
-      )}
-
-      <CostGuardNotice
-        state={book.cost_guard.translation}
-        paused={run?.status === "cancelled"}
-        busy={resume.isPending}
-        onContinue={() => resume.mutate()}
-        onContinueWithoutLimit={() => resume.mutate({ costLimit: false })}
-        className="px-4 pb-3"
-      />
-
-      <div className="border-t border-ink-700 px-4 py-4">
-        {missing.length > 0 && (
-          <div className="mb-3 flex flex-wrap items-center gap-3 text-sm text-warning">
-            <p className="min-w-0 flex-1">
-              {missing.length === 2
-                ? "Build the glossary and extract the voices before translating."
-                : missing[0] === "glossary"
-                  ? "Finish the glossary before translating."
-                  : "Extract the voices before translating."}{" "}
-              The translation uses the glossary terms and the voice profiles.
-            </p>
-            <Button variant="ghost" size="sm" onClick={() => onSelectTab(missing[0])}>
-              {missing[0] === "glossary" ? "Go to glossary" : "Go to voices"}
-            </Button>
-          </div>
-        )}
-
-        <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
-          Chapters to translate
-        </p>
-        <div className="mt-2 max-h-48 overflow-y-auto rounded-lg border border-ink-700 bg-ink-900 p-2">
-          <label className="flex items-center gap-2 rounded px-2 py-1 text-[12.5px] text-ink-200">
-            <input
-              type="checkbox"
-              checked={selected.length === 0}
-              onChange={() => onSelectedChange([])}
-              className="accent-[var(--color-accent)]"
-            />
-            {doneCount > 0 && !retranslate ? "Whole book (untranslated parts)" : "Whole book"}
-          </label>
+      <div className="max-h-[26rem] overflow-y-auto rounded-lg border border-ink-800 bg-ink-900">
+        <ul className="divide-y divide-ink-800">
           {book.chapters.map((c, idx) => {
-            const st = status.get(c.id) ?? { total: 0, finished: 0 };
+            const st = status.get(c.id) ?? chapterStatus(undefined);
             const done = isDone(c.id);
             const locked = done && !retranslate;
+            const isReading = c.id === readingId;
             return (
-              <label
+              <li
                 key={c.id}
-                title={
-                  locked
-                    ? "Already translated. Tick “Translate again” to include it in a run."
-                    : undefined
-                }
                 className={cn(
-                  "flex items-center gap-2 rounded px-2 py-1 text-[12.5px] text-ink-300",
-                  locked ? "cursor-not-allowed opacity-50" : "hover:bg-ink-800",
+                  "flex items-center gap-3 px-3 py-2 text-body",
+                  isReading && "bg-ink-800",
                 )}
               >
                 <input
                   type="checkbox"
                   checked={selected.includes(c.id)}
                   disabled={locked}
-                  onChange={() => toggle(c.id)}
-                  className="accent-[var(--color-accent)]"
+                  onChange={() => onToggle(c.id)}
+                  aria-label={`Pick chapter ${idx + 1}`}
+                  title={
+                    locked
+                      ? "Already translated. Tick “Translate again” under Settings to include it."
+                      : undefined
+                  }
+                  className="accent-[var(--color-accent)] disabled:opacity-40"
                 />
-                <span className="font-mono text-[11px] tabular-nums text-ink-500">
+                <span className="w-6 shrink-0 font-mono text-label tabular-nums text-ink-500">
                   {String(idx + 1).padStart(2, "0")}
                 </span>
-                <span className="min-w-0 flex-1 truncate">{c.title ?? `Chapter ${idx + 1}`}</span>
-                {done ? (
-                  <span className="inline-flex items-center gap-1 font-mono text-[10px] text-success">
-                    <CheckCircle2 className="h-3 w-3" aria-hidden />
-                    translated
-                  </span>
-                ) : st.finished > 0 ? (
-                  <span
-                    className="font-mono text-[10px] tabular-nums text-ink-400"
-                    title="Fragments with a final English version"
-                  >
-                    {st.finished}/{st.total}
-                  </span>
-                ) : null}
-              </label>
+                <span className="min-w-0 flex-1 truncate text-ink-200" title={c.title ?? undefined}>
+                  {c.title ?? `Chapter ${idx + 1}`}
+                </span>
+                <ChapterState st={st} done={done} />
+                <span className="w-14 shrink-0 text-right">
+                  {st.withText > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => onRead(c.id)}
+                      aria-current={isReading || undefined}
+                      className={cn(
+                        "rounded px-1.5 py-0.5 text-small focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent",
+                        isReading ? "text-ink-50" : "text-accent hover:underline",
+                      )}
+                    >
+                      {isReading ? "Reading" : "Read"}
+                    </button>
+                  )}
+                </span>
+              </li>
             );
           })}
-        </div>
-
-        <ModelPicker choice={translationModel} disabled={running} className="mt-4" />
-
-        {estimate.data && <Pipeline estimate={estimate.data} />}
-
-        {estimate.data && (
-          <p className="mt-2 text-xs leading-relaxed text-ink-400">
-            About {formatNumber(estimate.data.fragment_count)} fragment
-            {estimate.data.fragment_count === 1 ? "" : "s"} ·{" "}
-            {formatNumber(estimate.data.word_count)} words · {estimate.data.stages.length} call
-            {estimate.data.stages.length === 1 ? "" : "s"} per fragment · ~
-            {formatNumber(estimate.data.total_tokens)} tokens ·{" "}
-            <span className="text-accent">≈ ${estimate.data.cost_usd.toFixed(2)}</span>. A rough
-            estimate; thinking tokens vary by model.
-          </p>
-        )}
-
-        <label className="mt-3 flex items-center gap-2 text-[12.5px] text-ink-300">
-          <input
-            type="checkbox"
-            checked={retranslate}
-            onChange={(e) => {
-              setRetranslate(e.target.checked);
-              // Finished chapters can only stay selected while translating again.
-              if (!e.target.checked) onSelectedChange(selected.filter((id) => !isDone(id)));
-            }}
-            className="accent-[var(--color-accent)]"
-          />
-          Translate again, including fragments that already have a final English version
-        </label>
-
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <Button
-            variant="accent"
-            size="sm"
-            disabled={
-              running ||
-              start.isPending ||
-              missing.length > 0 ||
-              (allDone && !retranslate && !selected.length)
-            }
-            onClick={() =>
-              start.mutate({
-                chapter_ids: selected.length ? selected : null,
-                retranslate,
-                model: translationModel.model,
-              })
-            }
-          >
-            {start.isPending
-              ? "Starting…"
-              : selected.length
-                ? `Translate ${selected.length} chapter${selected.length === 1 ? "" : "s"}`
-                : allDone && !retranslate
-                  ? "Everything is translated"
-                  : doneCount > 0 && !retranslate
-                    ? "Translate the rest of the book"
-                    : "Translate whole book"}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            disabled={!canContinue || resume.isPending || missing.length > 0}
-            title={
-              canContinue ? "Retry failed and unfinished fragments" : "Only after a stop or failure"
-            }
-            onClick={() => resume.mutate()}
-          >
-            {resume.isPending ? "Continuing…" : "Continue"}
-          </Button>
-          <Button
-            variant="danger"
-            size="sm"
-            disabled={!running || stop.isPending || run?.cancel_requested}
-            title="Fragments finish their current stage, then stop"
-            onClick={() => stop.mutate()}
-          >
-            {run?.cancel_requested ? "Stopping…" : "Stop"}
-          </Button>
-        </div>
-
-        {error && (
-          <p className="mt-3 text-sm text-danger" role="alert">
-            {error}
-          </p>
-        )}
-        {run?.error_message && !running && (
-          <p className="mt-3 text-sm text-danger">{run.error_message}</p>
-        )}
+        </ul>
       </div>
     </section>
+  );
+}
+
+function ChapterState({ st, done }: { st: ChapterStatus; done: boolean }) {
+  const cls = "w-44 shrink-0 whitespace-nowrap font-mono text-label tabular-nums";
+  const notes = st.notes > 0 ? ` · ${st.notes} note${st.notes === 1 ? "" : "s"}` : "";
+  if (st.running) {
+    return (
+      <span className={cn(cls, "inline-flex items-center gap-1 text-accent")}>
+        <Loader2 className="h-3 w-3 animate-spin" aria-hidden />
+        translating
+      </span>
+    );
+  }
+  if (done) {
+    return (
+      <span className={cn(cls, "inline-flex items-center gap-1 text-success")}>
+        <CheckCircle2 className="h-3 w-3" aria-hidden />
+        translated{notes}
+      </span>
+    );
+  }
+  if (st.failed > 0) {
+    return (
+      <span className={cn(cls, "text-danger")}>
+        {st.finished}/{st.total} · {st.failed} failed
+      </span>
+    );
+  }
+  if (st.finished > 0) {
+    return (
+      <span className={cn(cls, "text-warning")} title="Fragments with a final English version">
+        {st.finished}/{st.total}
+        {notes}
+      </span>
+    );
+  }
+  return <span className={cn(cls, "text-ink-500")}>not started</span>;
+}
+
+/** Previous and next chapter that have English, under the one you read. */
+function ChapterPager({
+  chapters,
+  current,
+  number,
+  onOpen,
+}: {
+  chapters: BookDetail["chapters"];
+  current: string;
+  number: (id: string) => number;
+  onOpen: (id: string) => void;
+}) {
+  const i = chapters.findIndex((c) => c.id === current);
+  const prev = i > 0 ? chapters[i - 1] : null;
+  const next = i >= 0 && i < chapters.length - 1 ? chapters[i + 1] : null;
+  if (!prev && !next) return null;
+  return (
+    <nav
+      aria-label="Other translated chapters"
+      className="mt-10 flex items-center justify-between border-t border-ink-800 pt-4"
+    >
+      {prev ? (
+        <Button variant="ghost" size="sm" onClick={() => onOpen(prev.id)}>
+          <ArrowLeft className="h-3.5 w-3.5" aria-hidden />
+          Chapter {number(prev.id)}
+        </Button>
+      ) : (
+        <span />
+      )}
+      {next && (
+        <Button variant="ghost" size="sm" onClick={() => onOpen(next.id)}>
+          Chapter {number(next.id)}
+          <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+        </Button>
+      )}
+    </nav>
   );
 }
 
@@ -517,14 +659,14 @@ function RunCard({
 function Pipeline({ estimate }: { estimate: TranslationEstimate }) {
   const label = (id: TranslationStage) => STAGES.find((s) => s.id === id)?.label ?? id;
   return (
-    <p className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[12px] text-ink-300">
-      <span className="font-mono text-[10px] uppercase tracking-wider text-ink-500">Next run</span>
+    <p className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-small text-ink-300">
+      <span className={LABEL}>Next run</span>
       {estimate.stages.map((s, i) => (
         <span key={s.stage} className="inline-flex items-center gap-1.5">
           {i > 0 && <span className="text-ink-600">→</span>}
           <span>
             {label(s.stored_as)}{" "}
-            <span className="font-mono text-[11px] text-ink-100">{s.model}</span>
+            <span className="font-mono text-label text-ink-100">{s.model}</span>
             {s.thinking && <span className="text-ink-500"> ({s.thinking} thinking)</span>}
           </span>
         </span>
@@ -534,35 +676,6 @@ function Pipeline({ estimate }: { estimate: TranslationEstimate }) {
       )}
     </p>
   );
-}
-
-function summary(run: TranslationRun | null): string {
-  if (!run) return "No translation yet. The next run's steps and models are shown below.";
-  const progress = `${run.fragments_completed}/${run.fragments_total} fragments`;
-  switch (run.status) {
-    case "running":
-      return run.cancel_requested
-        ? `Stopping after the current stages · ${progress}.`
-        : `Translating · ${progress} done.`;
-    case "completed":
-      return `Translation finished · ${progress}.`;
-    case "cancelled":
-      return `Stopped · ${progress}. Continue to translate the rest.`;
-    case "failed":
-      return `Run ended with errors · ${progress}.`;
-  }
-}
-
-function RunIcon({ status }: { status: TranslationRun["status"] | null }) {
-  const cls = "h-4 w-4 shrink-0";
-  if (status === "running")
-    return <Loader2 className={cn(cls, "animate-spin text-accent")} aria-hidden />;
-  if (status === "completed")
-    return <CheckCircle2 className={cn(cls, "text-success")} aria-hidden />;
-  if (status === "failed") return <AlertCircle className={cn(cls, "text-danger")} aria-hidden />;
-  if (status === "cancelled")
-    return <PauseCircle className={cn(cls, "text-warning")} aria-hidden />;
-  return <Circle className={cn(cls, "text-ink-500")} aria-hidden />;
 }
 
 function errorText(error: Error | null, isError: boolean, fallback: string): string | null {
@@ -611,15 +724,15 @@ function ChapterBlock({
   return (
     <section className="mt-10">
       <div className="flex flex-wrap items-baseline justify-between gap-3 border-b border-ink-800 pb-2">
-        <h2 className="font-serif text-2xl text-accent">{label}</h2>
+        <h2 className="font-serif text-heading text-accent">{label}</h2>
         {metrics && <MetricsRow metrics={metrics} termWarnings={termWarnings} />}
       </div>
       {sourceTitle && (
         <div className="mt-4 grid gap-x-8 gap-y-1 md:grid-cols-2">
-          <p className="whitespace-pre-line font-serif text-[14px] italic leading-relaxed text-ink-400">
+          <p className="whitespace-pre-line font-serif text-body italic text-ink-400">
             {sourceTitle}
           </p>
-          <p className="whitespace-pre-line font-serif text-[14px] italic leading-relaxed text-ink-100">
+          <p className="whitespace-pre-line font-serif text-body italic text-ink-100">
             <HighlightedText text={translatedTitle ?? ""} spans={NO_SPAN_LIST} />
           </p>
         </div>
@@ -662,7 +775,7 @@ function MetricsRow({ metrics, termWarnings }: { metrics: StyleMetrics; termWarn
     { label: "Term warnings", value: String(termWarnings), over: termWarnings > 0 },
   ];
   return (
-    <dl className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-[10.5px]">
+    <dl className="flex flex-wrap gap-x-4 gap-y-1 font-mono text-label">
       {items.map((i) => (
         <div key={i.label} className="flex gap-1.5" title="Target: see the final-edit brief">
           <dt className="text-ink-500">{i.label}</dt>
@@ -697,11 +810,11 @@ function ParagraphPair({
   const warnIds = useMemo(() => new Set(missing.map((t) => t.id)), [missing]);
   return (
     <>
-      <p className="font-serif text-[15px] leading-relaxed text-ink-400">
+      <p className="font-serif text-reading text-ink-400">
         <HighlightedText text={source} spans={sourceSpans} warnIds={warnIds} />
       </p>
       <div>
-        <p className="whitespace-pre-line font-serif text-[15px] leading-relaxed text-ink-100">
+        <p className="whitespace-pre-line font-serif text-reading text-ink-100">
           <HighlightedText text={english} spans={spans} />
         </p>
         <MissingTerms missing={missing} />
@@ -734,8 +847,8 @@ function FragmentBlock({
             ? "Waiting"
             : "Not translated at this stage yet";
     return (
-      <div className="mt-4 rounded-lg border border-dashed border-ink-700 px-4 py-3 text-[12.5px] text-ink-400">
-        <span className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
+      <div className="mt-4 rounded-lg border border-dashed border-ink-700 px-4 py-3 text-small text-ink-400">
+        <span className={LABEL}>
           Fragment {fragment.position + 1} · {formatNumber(fragment.word_count)} words
         </span>
         <p className={cn("mt-1", rs?.status === "failed" && "text-danger")}>
@@ -762,7 +875,7 @@ function FragmentBlock({
 
   return (
     <div className="mt-6">
-      <p className="mb-2 font-mono text-[10px] uppercase tracking-wider text-ink-500">
+      <p className="mb-2 font-mono text-label uppercase tracking-wider text-ink-500">
         Fragment {fragment.position + 1}
         {output.model && <span className="normal-case tracking-normal"> · {output.model}</span>}
       </p>
@@ -802,9 +915,9 @@ function Annotations({
       {notes?.map((n, i) => (
         <li
           key={`n${i}`}
-          className="rounded-md border-l-2 border-accent bg-ink-900 px-3 py-1.5 text-[12px] leading-snug text-ink-300"
+          className="rounded-md border-l-2 border-accent bg-ink-900 px-3 py-1.5 text-small text-ink-300"
         >
-          <span className="font-mono text-[10px] uppercase tracking-wider text-accent">
+          <span className="font-mono text-label uppercase tracking-wider text-accent">
             {NOTE_LABELS[n.kind] ?? n.kind}
           </span>{" "}
           {n.note}
@@ -813,9 +926,9 @@ function Annotations({
       {edits?.map((e, i) => (
         <li
           key={`e${i}`}
-          className="rounded-md border-l-2 border-warning bg-ink-900 px-3 py-1.5 text-[12px] leading-snug text-ink-300"
+          className="rounded-md border-l-2 border-warning bg-ink-900 px-3 py-1.5 text-small text-ink-300"
         >
-          <span className="font-mono text-[10px] uppercase tracking-wider text-warning">
+          <span className="font-mono text-label uppercase tracking-wider text-warning">
             {EDIT_LABELS[e.kind] ?? e.kind}
           </span>{" "}
           <span className="text-ink-500 line-through">{e.before}</span> → {e.after}
@@ -825,7 +938,7 @@ function Annotations({
       {qa?.map((q, i) => (
         <li
           key={`q${i}`}
-          className="flex items-start gap-1.5 rounded-md bg-danger-surface px-3 py-1.5 text-[12px] leading-snug text-danger"
+          className="flex items-start gap-1.5 rounded-md bg-danger-surface px-3 py-1.5 text-small text-danger"
         >
           <TriangleAlert className="mt-0.5 h-3 w-3 shrink-0" aria-hidden />
           {q.detail}

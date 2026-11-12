@@ -14,23 +14,25 @@ import {
   useWorkingGlossary,
 } from "@/lib/api/hooks";
 import type { BookDetail } from "@/lib/api/client";
-import { cn } from "@/lib/utils";
+import { cn, formatNumber } from "@/lib/utils";
 
 import { BOOK_PANEL_CONTAINER, BOOK_PANEL_SURFACE } from "./layout";
+import { StepFinish } from "./StepFinish";
+import type { BookTab } from "./tabs";
 
 interface Props {
   book: BookDetail;
   /** A glossary entry to open and scroll to (from the Translation tab). */
   focusEntryId?: string | null;
   onFocusHandled?: () => void;
+  onSelectTab: (tab: BookTab) => void;
 }
 
 /**
- * The working surface. The run card sits at the top of the scroll area
- * and the terms follow immediately below it — no sticky bar, no jump
- * links, because there is nothing between them to jump over.
+ * The glossary step: the run in one line, the terms to review, and at the
+ * end of the list the way on to Voices.
  */
-export function GlossaryView({ book, focusEntryId = null, onFocusHandled }: Props) {
+export function GlossaryView({ book, focusEntryId = null, onFocusHandled, onSelectTab }: Props) {
   const queryClient = useQueryClient();
   const glossaryModel = useStepModel("glossary");
   const estimate = useGlossaryExtractionEstimate(book.id, true, glossaryModel.model);
@@ -47,6 +49,10 @@ export function GlossaryView({ book, focusEntryId = null, onFocusHandled }: Prop
     enabled: true,
     refetchIntervalMs: book.glossary_extraction_status === "running" ? 2000 : false,
   });
+
+  // Proposals are left out of the voices and the translation until accepted.
+  const proposed = (working.data?.entries ?? []).filter((e) => e.status === "proposed").length;
+  const status = book.glossary_extraction_status;
 
   const prevStatus = useRef<string | null>(null);
   useEffect(() => {
@@ -81,6 +87,23 @@ export function GlossaryView({ book, focusEntryId = null, onFocusHandled }: Prop
             pollWhileRunning={book.glossary_extraction_status === "running"}
           />
         </div>
+
+        {/* Only with a run: finishing an empty glossary would unlock voices with no characters. */}
+        <StepFinish
+          book={book}
+          stage="glossary"
+          running={status === "running"}
+          completed={status === "completed"}
+          canFinish={Boolean(working.data?.run)}
+          cannotFinishReason="Build or import a glossary first."
+          pendingNote={
+            proposed > 0
+              ? `${formatNumber(proposed)} proposed term${proposed === 1 ? " is" : "s are"} not accepted yet. The voices and the translation use accepted terms only.`
+              : null
+          }
+          nextLabel="Voices"
+          onNext={() => onSelectTab("voices")}
+        />
       </div>
     </div>
   );

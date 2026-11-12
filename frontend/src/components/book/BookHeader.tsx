@@ -6,9 +6,10 @@ import { ThemeToggle } from "@/components/ui/ThemeToggle";
 import type { BookDetail } from "@/lib/api/client";
 import { cn, formatNumber } from "@/lib/utils";
 
-import { computeNextAction } from "./nextAction";
+import { computeNextActions } from "./nextAction";
 import type { BookTab, TabCounts, TabState } from "./tabs";
 import { BOOK_TABS } from "./tabs";
+import { LABEL } from "@/components/ui/typography";
 
 interface Props {
   book: BookDetail;
@@ -32,7 +33,12 @@ interface Props {
  */
 export function BookHeader({ book, activeTab, onSelectTab, onBack, counts }: Props) {
   const language = (book.manuscript_language ?? book.source_language).toUpperCase();
-  const nextAction = computeNextAction(book, activeTab, onSelectTab);
+  const { primary: nextAction, reminders } = computeNextActions(
+    book,
+    counts,
+    activeTab,
+    onSelectTab,
+  );
   const failures = collectFailures(book);
 
   return (
@@ -45,7 +51,7 @@ export function BookHeader({ book, activeTab, onSelectTab, onBack, counts }: Pro
             Library
           </Button>
           <div className="flex items-center gap-3">
-            <p className="font-mono text-[10px] uppercase tracking-wider text-ink-500">
+            <p className={LABEL}>
               {book.source_language} → {book.target_language}
             </p>
             <ThemeToggle />
@@ -56,37 +62,60 @@ export function BookHeader({ book, activeTab, onSelectTab, onBack, counts }: Pro
             line under the title — four facts, one row, no stack. */}
         <div className="mt-4 flex flex-wrap items-start justify-between gap-7">
           <div className="min-w-0">
-            <h1 className="font-serif text-[27px] font-semibold leading-tight text-ink-50">
-              {book.title}
-            </h1>
-            <p className="mt-1.5 flex flex-wrap items-center gap-2.5 text-[13px] text-ink-400">
+            <h1 className="font-serif text-title font-semibold text-ink-50">{book.title}</h1>
+            <p className="mt-1.5 flex flex-wrap items-center gap-2.5 text-body text-ink-400">
               {book.author && (
                 <>
-                  <span className="font-serif text-sm italic text-ink-200">{book.author}</span>
+                  <span className="font-serif text-body italic text-ink-200">{book.author}</span>
                   <span className="text-ink-700" aria-hidden>
                     ·
                   </span>
                 </>
               )}
-              <span className="font-mono text-[11px] tracking-wide">
+              <span className="font-mono text-label">
                 {language} · {formatNumber(book.word_count)} words
               </span>
               <span className="text-ink-700" aria-hidden>
                 ·
               </span>
-              <span className="font-mono text-[11px] text-ink-500">{book.original_filename}</span>
+              <span className="font-mono text-label text-ink-500">{book.original_filename}</span>
             </p>
           </div>
-          {nextAction && (
-            <Button
-              variant="primary"
-              size="md"
-              className="shrink-0 font-semibold"
-              onClick={nextAction.onClick}
-            >
-              {nextAction.label}
-              <ArrowRight className="h-3.5 w-3.5" aria-hidden />
-            </Button>
+          {(nextAction || reminders.length > 0) && (
+            <div className="flex shrink-0 flex-col items-end gap-1.5">
+              {nextAction && (
+                <Button
+                  variant="primary"
+                  size="md"
+                  className="font-semibold"
+                  onClick={nextAction.onClick}
+                >
+                  {nextAction.label}
+                  <ArrowRight className="h-3.5 w-3.5" aria-hidden />
+                </Button>
+              )}
+              {/* Review work left behind. It does not block the next step. */}
+              {reminders.length > 0 && (
+                <p className="flex flex-wrap justify-end gap-x-2 text-small text-ink-400">
+                  {reminders.map((r, i) => (
+                    <Fragment key={r.label}>
+                      {i > 0 && (
+                        <span className="text-ink-700" aria-hidden>
+                          ·
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={r.onClick}
+                        className="rounded underline-offset-2 hover:text-ink-100 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+                      >
+                        {r.label}
+                      </button>
+                    </Fragment>
+                  ))}
+                </p>
+              )}
+            </div>
           )}
         </div>
 
@@ -96,7 +125,7 @@ export function BookHeader({ book, activeTab, onSelectTab, onBack, counts }: Pro
             role="alert"
             className={cn(
               "mt-3 flex items-start gap-2 rounded-lg border border-danger-border bg-danger-surface",
-              "px-3 py-2 text-xs leading-relaxed text-danger",
+              "px-3 py-2 text-small text-danger",
             )}
           >
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" aria-hidden />
@@ -146,7 +175,7 @@ export function BookHeader({ book, activeTab, onSelectTab, onBack, counts }: Pro
                     )}
                     <span
                       className={cn(
-                        "font-sans text-[13px] font-medium",
+                        "font-sans text-body font-medium",
                         active ? "text-ink-50" : tabDisabled ? "text-ink-500" : "text-ink-200",
                       )}
                     >
@@ -155,7 +184,7 @@ export function BookHeader({ book, activeTab, onSelectTab, onBack, counts }: Pro
                   </span>
                   {/* Indented past the badge so the caption hangs under the
                     label rather than under the step marker. */}
-                  <span className="mt-1 block truncate pl-[26px] font-mono text-[10px] tracking-wide text-ink-500">
+                  <span className="mt-1 block truncate pl-[26px] font-mono text-label text-ink-500">
                     {t.caption(book, counts)}
                   </span>
                 </button>
@@ -187,7 +216,7 @@ function ViewBadge() {
  */
 function TabBadge({ state, index }: { state: TabState; index: number }) {
   const base =
-    "flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border font-mono text-[9px] tabular-nums";
+    "flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border font-mono text-label tabular-nums";
 
   if (state === "done") {
     return (

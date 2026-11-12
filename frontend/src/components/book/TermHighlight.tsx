@@ -135,7 +135,7 @@ function TermMark({
           role="tooltip"
           className={cn(
             "absolute bottom-full left-0 z-20 mb-1.5 block w-72 rounded-lg border border-ink-700",
-            "bg-ink-900 px-3 py-2 text-left font-sans text-[12px] leading-snug text-ink-200 shadow-lg",
+            "bg-ink-900 px-3 py-2 text-left font-sans text-small text-ink-200 shadow-lg",
           )}
         >
           <span className="block">
@@ -143,7 +143,7 @@ function TermMark({
             <span className="text-ink-500"> → </span>
             <span className="font-medium text-accent">{term.target}</span>
           </span>
-          <span className="mt-0.5 block font-mono text-[10px] uppercase tracking-wider text-ink-500">
+          <span className="mt-0.5 block font-mono text-label uppercase tracking-wider text-ink-500">
             {TYPE_LABELS[term.term_type] ?? term.term_type}
             {pending && " · not reviewed yet"}
           </span>
@@ -153,7 +153,7 @@ function TermMark({
               The English paragraph does not use “{term.target}”.
             </span>
           )}
-          <span className="mt-1 block text-[11px] text-ink-500">Click to open in the glossary</span>
+          <span className="mt-1 block text-label text-ink-500">Click to open in the glossary</span>
         </span>
       )}
     </span>
@@ -165,7 +165,7 @@ export function MissingTerms({ missing }: { missing: GlossaryTerm[] }) {
   const ctx = useTerms();
   if (missing.length === 0) return null;
   return (
-    <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12px] text-warning">
+    <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-small text-warning">
       <TriangleAlert className="h-3 w-3 shrink-0" aria-hidden />
       <span>Agreed term not used:</span>
       {missing.map((t) => (

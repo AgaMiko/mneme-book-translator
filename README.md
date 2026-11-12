@@ -10,6 +10,20 @@ This repo is a working Docker stack: upload a `.docx`, parse it into chapters an
 
 ![The Mneme pipeline: upload, metadata, glossary, speakers, voices, translate, export. Each step writes to the book's memory in Postgres.](docs/images/pipeline.svg)
 
+## Two ways to use Mneme
+
+You can run Mneme as the app in this repo, or use it as a Claude Code skill. Both follow the same workflow and the same translation rules, so pick the one that suits how you want to pay and work.
+
+|  | The app | The Claude Code skill |
+| --- | --- | --- |
+| Who translates | Gemini and OpenAI models, called by the app | Claude, inside Claude Code |
+| How you pay | your own API keys, per use (about $11–14 for a 100,000-word novel) | your Claude subscription (Pro or Max), or an Anthropic API key if Claude Code is set up with one |
+| What you need | Docker and a `.env` with API keys | Claude Code and Python 3.10 or later |
+| Where you review | in the browser: glossary, voices, the translation next to the source | in plain files: `glossary.md`, `voices/`, `translation/` |
+| Export | PDF, EPUB, DOCX | Markdown; DOCX and EPUB when pandoc is installed |
+
+To use the app, see [Quickstart](#quickstart). To use the skill, see [Translate with Claude Code](#translate-with-claude-code).
+
 ## Stack
 
 | Layer       | Choice                                          |
@@ -73,7 +87,7 @@ Uploads use Polish unless the API call sets `source_language`.
 
 ## Translate with Claude Code
 
-You can also translate a book with Claude Code alone, without running the app. Claude Code does the translation itself, so you need no API keys, Docker or database. The [`mneme-translate`](skills/mneme-translate/SKILL.md) skill follows the same workflow and the same prompt rules as the app:
+You can also translate a book with Claude Code alone, without running the app. Claude Code does the translation itself, so you need no Docker or database, and no API keys of your own: it runs on your Claude plan (or on an Anthropic API key, if that is how you sign in to Claude Code). The [`mneme-translate`](skills/mneme-translate/SKILL.md) skill follows the same workflow and the same prompt rules as the app:
 
 1. split the manuscript (`.docx`, `.md` or `.txt`) into chapters and fragments of about 1,200 words;
 2. build a glossary of names, places and invented words, with one agreed English form each, then **stop for your review**;
@@ -81,7 +95,7 @@ You can also translate a book with Claude Code alone, without running the app. C
 4. find special passages (verse, letters that hide a message, plot wordplay);
 5. translate fragment by fragment, with the glossary, the briefs of the characters in the scene and the neighbouring text;
 6. check the result (leftover source-language letters, dialogue punctuation, glossary use, style numbers, special passages);
-7. export to Markdown, and to DOCX and EPUB when [pandoc](https://pandoc.org) is installed.
+7. export the whole book or chosen chapters to Markdown, and to DOCX and EPUB when [pandoc](https://pandoc.org) is installed.
 
 Everything is kept in plain files in a folder you choose (`glossary.md`, `voices/`, `translation/chapter-NN.md`, `mneme.json` for progress), so you can stop at any point, edit any file, and continue later.
 

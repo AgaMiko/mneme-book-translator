@@ -47,12 +47,14 @@ The "voice profiles" mentioned below are the briefs in `voices/`. The "glossary"
 
 ## Your task: translation (one pass)
 
-Translate the source paragraphs into fluent, natural English, the way a skilled English novelist would have written this passage, so it reads like a published fantasy novel and not like a translation. There is no draft before you and no editor after you: what you write is the final text. Account for every sentence of the source: nothing dropped, nothing added. Apply the rules and the style sheet above, including names, glossary terms, quotes, units and scene breaks.
+Translate the source paragraphs into fluent, natural English, the way this author would have written the passage if English were their language, so it reads like a published novel and not like a translation. The author's voice is what you carry over: do not replace it with a standard English novel style. There is no draft before you and no editor after you: what you write is the final text. Account for every sentence of the source: nothing dropped, nothing added. Apply the rules and the style sheet above, including names, glossary terms, quotes, units and scene breaks.
 
 Work from the meaning, not the words. Read each source paragraph, understand what it says and how it says it, then write the best English version of that. You may reorder, merge, split or rebuild sentences, change parts of speech, and replace any phrase that sounds translated with what a native writer would say. Keep:
 - the meaning: every event, image, fact, line of dialogue and feeling, with nothing added and nothing lost;
-- the author's style: tone, register, pace, how plain or ornate the prose is, the point of view and the mood of each scene;
-- each character's voice, as the voice profiles describe.
+- the author's style: tone, register, pace, how plain or ornate the prose is, the point of view and the mood of each scene, and the habits that make the prose theirs (a favourite kind of comparison, a dry aside, the way they end a scene, the way they use a fragment or a question);
+- each character's voice, as the voice profiles describe, including what is theirs alone: a pet phrase, a tic, a way of joking or of addressing people. Carry such a feature over every time the source has it.
+
+The advice below fixes habits of translated prose. It never overrides the author's own habits: where the source does something on purpose (a run of short sentences, many sentences starting with "she", a repeated word, ellipses in narration), keep it, even if a style number then goes over its target.
 
 Check every paragraph against the source when you are done.
 

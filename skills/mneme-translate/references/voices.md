@@ -53,7 +53,7 @@ In their voice (style only, don't reuse phrases):
 Evidence: [02:p014] [05:p033] [09:p007]
 ```
 
-- **Voice** (one or two sentences, then one or two tips): who this person sounds like (social position, education, profession, age, region), how plain or elevated the vocabulary is, how formal they are, the two or three source markers that carry the voice and what they become in English, what must not be lost, and how they differ from the nearest voice in their cast group.
+- **Voice** (one or two sentences, then one or two tips): who this person sounds like (social position, education, profession, age, region), how plain or elevated the vocabulary is, how formal they are, the two or three source markers that carry the voice and what they become in English, what must not be lost, and how they differ from the nearest voice in their cast group. Then name what belongs to this character alone and not to their type (a pet phrase, a tic, a way of joking, swearing or addressing people), with how it goes into English. A brief that would fit any other speaker of the same class or profession is not finished.
 - **In their voice**: two or three sentences as this character would say them in English. Carry over what runs through their lines, at the same frequency (dense where they are dense). Something they could say in the book's world, but not a quote or paraphrase of their real lines, and no new plot facts. One sentence is enough for a character with very few lines.
 - **Evidence**: a few line ids, so the user can check the brief against the source.
 
@@ -63,6 +63,6 @@ Leave out what applies to everyone (contractions in dialogue, natural idiom, no 
 
 ## 4. Test the briefs, then stop for review
 
-Translate one short exchange per main character with its brief, following `translation-rules.md`. Read the results as a cast. Fix a brief when its passage is **flattened** (an educated speaker made casual, a plain speaker made literary, a rural voice made standard, an address form dropped), **sounds like another character**, or goes against the brief in another way. Never count it as a fault that the translation stays close to what the source says.
+Translate one short exchange per main character with its brief, following `translation-rules.md`. Read the results as a cast. Fix a brief when its passage is **flattened** (an educated speaker made casual, a plain speaker made literary, a rural voice made standard, an address form dropped, a pet phrase or tic lost), **sounds like another character**, or goes against the brief in another way. Never count it as a fault that the translation stays close to what the source says.
 
 Keep each test short: 3–6 lines per main character, from a scene where they speak. Put the test passages in `voices/_samples.md` (source, then English) so the user can judge the briefs by their effect. Then stop: ask the user to read `voices/` and `voices/_samples.md` and edit or approve. When they approve, run `mark voices reviewed`. A brief the user edited is their decision: keep it faithful to their changes. The approved English in `_samples.md` is a translation of real lines: when you reach those paragraphs in step 5, reuse it or improve it. This differs from the "In their voice" sample inside a brief, whose phrases are never copied.

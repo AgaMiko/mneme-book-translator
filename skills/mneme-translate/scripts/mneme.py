@@ -33,7 +33,7 @@ Commands (run in the book folder, or pass --dir):
                                 terms and voice files that apply to it.
     save <id> <file>            Check a translated fragment (same ids, same
                                 order) and merge it into translation/chapter-NN.md.
-    letters <chapter> <first> <last> [--translation]
+    letters <chapter> <first> <last> [--translation] [--from WORDS] [--to WORDS]
                                 First letters of sentences, lines, paragraphs
                                 and words of a passage, for hidden messages.
     check [chapters]            Write check-report.md: missing paragraphs,
@@ -59,6 +59,7 @@ import shutil
 import subprocess
 import sys
 import unicodedata
+from datetime import date
 from pathlib import Path
 
 # ─── Numbers and language facts copied from the app ─────────────────────
@@ -88,12 +89,14 @@ DASHES_MAX_PER_1K = 6.0
 STOCK_PHRASES = (
     r"the weight of", r"\ba beat\b", r"ghost of a smile", r"a flicker of",
     r"couldn't help but", r"something shifted", r"didn't know (?:she|he) was holding",
-    r"let out a breath (?:she|he)", r"a wave of(?! (?:her |his |their |the |a )?hand)", r"for a heartbeat", r"\bsuddenly\b",
+    r"let out a breath (?:she|he)", r"a wave of(?! (?:her |his |their |the |a )?hand)", r"for a heartbeat", r"(?:^|(?<=\n)|(?<=[.!?…\"”] ))[*_]?suddenly\b",
 )
+STOCK_LABEL = {STOCK_PHRASES[-1]: "Suddenly (opening a sentence)"}
 PLACEHOLDER = re.compile(r"x{4,}|\[x+\]")
 
 SCENE_BREAK = re.compile(r"^\*\*\*(?: |$)")
 STAR_SPLIT = re.compile(r"(?:^|\s+)(?<!\*)\*{3}(?!\*)(?:\s+|$)")  # "***" standing alone in a paragraph
+MD_ESCAPE = re.compile(r"\\([!.\-()\[\]#+>~'\"`=|{}])")  # \! \. and the like; \* and \_ are kept
 ID_LINE = re.compile(r"^\[([A-Za-z0-9_-]+)\]\s*$")
 DIALOGUE_START = re.compile(r"^\s*[–—-]\s")
 # A sentence ends at . ! ? or …, maybe followed by closing quotes or italic marks.
@@ -329,6 +332,7 @@ def cmd_prepare(root: Path, a: argparse.Namespace) -> None:
         if brk := scene_break(text):
             current["paras"].append(brk)
             continue
+        text = MD_ESCAPE.sub(r"\1", text)
         parts = STAR_SPLIT.split(text)
         for i, part in enumerate(parts):
             if part.strip():
@@ -369,7 +373,7 @@ def cmd_prepare(root: Path, a: argparse.Namespace) -> None:
         "fragments": fragments,
     }
     save_state(root, state)
-    for d in ("translation", "voices", "work"):
+    for d in ("translation", "voices", "work", "notes"):
         (root / d).mkdir(exist_ok=True)
     total = sum(c["words"] for c in state_chapters)
     print(f"Split '{state['title']}': {len(state_chapters)} chapters, {total} words, "
@@ -435,6 +439,8 @@ def cmd_status(root: Path, a: argparse.Namespace) -> None:
         print(f"  {ch['n']:>3}  {mark:>5}  {ch['words']:>6} words  {ch.get('label') or plain(ch['title'])[:60]}")
     nxt = next((f for f in st["fragments"] if not fragment_done(root, f, cache)), None)
     print(f"Next fragment: {nxt['id']}" if nxt else "All fragments translated.")
+    if lc := st.get("last_check"):
+        print(f"Last check: chapters {', '.join(map(str, lc['chapters']))} on {lc['date']}.")
 
 
 def cmd_mark(root: Path, a: argparse.Namespace) -> None:
@@ -503,12 +509,34 @@ def term_regex(row: dict) -> re.Pattern[str]:
     return re.compile(rf"(?<!{LETTER})(?:{'|'.join(alts)})(?!{LETTER})", flags)
 
 
+SENTENCE_START = re.compile(r"(?:^|[.!?…:]\s+|[–—-]\s+)[*_(]*$")
+
+
+def row_matches(row: dict, text: str) -> bool:
+    """Whether a glossary row's term is in the text. A row with Match 'case' skips
+    a capitalised form that opens a sentence or a line ("Dłonie miała zimne"), since
+    the capital there says nothing about the term."""
+    rx = term_regex(row)
+    if "case" not in row.get("match", "").lower():
+        return bool(rx.search(text))
+    for m in rx.finditer(text):
+        line_start = text.rfind("\n", 0, m.start()) + 1
+        if not SENTENCE_START.search(text[line_start:m.start()]):
+            return True
+    return False
+
+
 def terms_in(text: str, glossary: list[dict]) -> list[dict]:
-    return [r for r in glossary if term_regex(r).search(text)]
+    return [r for r in glossary if row_matches(r, text)]
 
 
 def target_of(row: dict) -> str:
     return row.get("english") or row.get("target") or ""
+
+
+def english_forms(row: dict) -> list[str]:
+    """The English column may list several forms: 'weave/wove/woven'. The first is the main one."""
+    return [f.strip() for f in target_of(row).split("/") if f.strip()]
 
 
 def english_regex(row: dict) -> re.Pattern[str]:
@@ -516,9 +544,12 @@ def english_regex(row: dict) -> re.Pattern[str]:
     leading 'the', each word with English endings (Plainband/Plainbands,
     weave/weaving), or a listed form that is itself written in the translation
     (a short form the rules keep, such as 'Jen' for Jenna)."""
-    target = re.sub(r"^the\s+", "", target_of(row).strip(), flags=re.IGNORECASE)
+    case = "case" in row.get("match", "").lower()
     alts = []
-    if target:
+    for form in english_forms(row):
+        # With Match 'case', keep 'the' and its capital out of the comparison but the
+        # term's own capitals in it ('the Hands' must not be 'hands').
+        target = re.sub(r"^the\s+", "", form, flags=re.IGNORECASE)
         words = []
         for w in target.split():
             stem = re.sub(r"(?:ers|er|es|s|ing|ed|e|y)$", "", w, flags=re.IGNORECASE) if len(w) > 4 else w
@@ -526,9 +557,12 @@ def english_regex(row: dict) -> re.Pattern[str]:
         alts.append(r"\s+".join(words))
     # A short form the rules keep as it is ('Jen' for Jenna): a listed form that the
     # English form starts with.
+    main = re.sub(r"^the\s+", "", (english_forms(row) or [""])[0], flags=re.IGNORECASE)
     alts += [re.escape(f) for f in term_forms(row)
-             if f[:1].isupper() and target.lower().startswith(f.lower()) and f.lower() != target.lower()]
-    return re.compile(rf"(?<!{LETTER})(?:{'|'.join(alts)})", re.IGNORECASE)
+             if f[:1].isupper() and main.lower().startswith(f.lower()) and f.lower() != main.lower()]
+    if not alts:
+        return re.compile(r"(?!)")
+    return re.compile(rf"(?<!{LETTER})(?:{'|'.join(alts)})", 0 if case else re.IGNORECASE)
 
 
 def cmd_terms(root: Path, a: argparse.Namespace) -> None:
@@ -544,6 +578,15 @@ def cmd_terms(root: Path, a: argparse.Namespace) -> None:
 LINE_ENTRY = re.compile(r"^- \[(\d+):(\w+)\]\s*(.*?)\s*(?:→\s*(.*?))?\s*\|")
 
 
+QUOTED = re.compile(r"[„“\"«»]([^„“”\"«»\n]+)[”\"“»«]")
+
+
+def looks_like_dialogue(text: str) -> bool:
+    """A paragraph that opens with a dialogue dash, or quotes more than three words
+    (a quoted single word or title, such as „klasyk", is not speech)."""
+    return bool(DIALOGUE_START.match(text)) or any(len(q.split()) > 3 for q in QUOTED.findall(text))
+
+
 def cmd_dialogue(root: Path, a: argparse.Namespace) -> None:
     st = load_state(root)
     if a.group:
@@ -552,7 +595,7 @@ def cmd_dialogue(root: Path, a: argparse.Namespace) -> None:
     out = []
     for n in chapters:
         lines = [(pid, t) for pid, t in read_paragraphs(chapter_file(root, n))
-                 if pid != "title" and (DIALOGUE_START.match(t) or QUOTES.search(t))]
+                 if pid != "title" and looks_like_dialogue(t)]
         if not lines:
             continue
         out.append(f"## Chapter {n}\n")
@@ -571,7 +614,8 @@ def cmd_dialogue(root: Path, a: argparse.Namespace) -> None:
         sys.exit(f"{path.relative_to(root)} already exists; delete it first to start again.")
     head = ["# Dialogue lines (draft)", "",
             "<!-- Replace '? → ?' with 'Speaker → Listener' (glossary English names), 'thought',",
-            "     or 'not dialogue'. Unknown speaker: 'Unknown'. Then run 'dialogue --group'. -->", ""]
+            "     or 'not dialogue'. An unnamed speaker gets a short role ('Inn man 1', 'Older guard');",
+            "     'Unknown' only when even the role is unclear. Then run 'dialogue --group'. -->", ""]
     path.parent.mkdir(exist_ok=True)
     path.write_text("\n".join(head + out), encoding="utf-8")
     print(f"Wrote {path.relative_to(root)} ({sum(1 for x in out if x.startswith('- ['))} candidate lines).")
@@ -584,6 +628,7 @@ def group_lines(root: Path) -> None:
         sys.exit("No work/lines-draft.md. Run 'dialogue <chapters> --skeleton' first.")
     by: dict[str, list[str]] = {}
     open_lines = 0
+    sources: dict[int, dict[str, str]] = {}
     for line in draft.read_text(encoding="utf-8").splitlines():
         m = LINE_ENTRY.match(line)
         if not m:
@@ -595,7 +640,12 @@ def group_lines(root: Path) -> None:
             continue
         if who.lower() in ("not dialogue", "-", "—"):
             continue
-        entry = f"[{ch}:{pid}]" + (f" to {to}" if to and to != "?" else "")
+        n = int(ch)
+        if n not in sources:
+            sources[n] = dict(read_paragraphs(chapter_file(root, n)))
+        said = plain(sources[n].get(pid, ""))
+        said = said if len(said) <= 200 else said[:200].rsplit(" ", 1)[0] + " …"
+        entry = f"[{ch}:{pid}]" + (f" to {to}" if to and to != "?" else "") + (f": {said}" if said else "")
         by.setdefault(who, []).append(entry)
     order = sorted(by, key=lambda k: (k in ("Unknown", "thought"), -len(by[k])))
     parts = ["# Attributed lines", "", "<!-- Built by 'dialogue --group' from work/lines-draft.md. -->", ""]
@@ -702,6 +752,11 @@ def cmd_save(root: Path, a: argparse.Namespace) -> None:
     print(f"Saved {f['id']} ({len(new)} paragraphs) to translation/chapter-{n:02d}.md.")
     for p in problems:
         print(f"  check: {p}")
+    m = style_metrics("\n".join(t for _, t in new))
+    print(f"  style: She/He openers {m['she_he_pct']}% (target ≤ {SHE_HE_MAX_PCT}%); ellipses per 1k in "
+          f"narration {m['ellipses_narration_per_1k']} (target ≤ {ELLIPSES_MAX_PER_1K}), in dialogue "
+          f"{m['ellipses_dialogue_per_1k']}; em dashes per 1k {m['dashes_per_1k']} (target ≤ {DASHES_MAX_PER_1K})"
+          + (f"; check these phrases: {', '.join(m['stock'])}" if m["stock"] else ""))
 
 
 # ─── checks ─────────────────────────────────────────────────────────────
@@ -719,6 +774,8 @@ def hard_checks(st: dict, tgt: list[tuple[str, str]], src: list[tuple[str, str]]
             problems.append(f"[{pid}] starts with a dialogue dash; use quotes")
         if re.search(r"\\[!.\-*_]", text):
             problems.append(f"[{pid}] markdown escape backslash")
+        if re.search(r"(?<!\.)\.\.\.(?!\.)", text):
+            problems.append(f"[{pid}] three full stops; write the ellipsis as …")
         s_ph = PLACEHOLDER.findall(src_map.get(pid, ""))
         if len(PLACEHOLDER.findall(text)) < len(s_ph):
             problems.append(f"[{pid}] author placeholder missing ({', '.join(s_ph)})")
@@ -735,6 +792,20 @@ def glossary_drift(glossary: list[dict], src: dict[str, str], tgt: list[tuple[st
     return out
 
 
+SHE_HE = re.compile(r"^[*_\s]*(She|He)\b")
+
+
+def she_he_runs(tgt: list[tuple[str, str]], top: int = 5) -> list[str]:
+    """Paragraphs with the most She/He sentence openers (two or more), for revision."""
+    counts = []
+    for pid, text in tgt:
+        narration = DIALOGUE_SPANS.sub(" ", text)
+        k = sum(bool(SHE_HE.match(s)) for s in SENTENCE_END.split(narration) if s.strip())
+        if k >= 2:
+            counts.append((k, pid))
+    return [f"{pid} ({k})" for k, pid in sorted(counts, key=lambda x: (-x[0], x[1]))[:top]]
+
+
 DIALOGUE_SPANS = re.compile(r'"[^"\n]*"|\u201c[^\u201d\n]*\u201d')
 
 
@@ -746,7 +817,7 @@ def style_metrics(text: str) -> dict:
     narration = DIALOGUE_SPANS.sub(" ", text)
     dialogue = " ".join(DIALOGUE_SPANS.findall(text))
     sentences = [s for s in SENTENCE_END.split(narration) if s.strip()]
-    she_he = sum(bool(re.match(r"^[*_\s]*(She|He)\b", s)) for s in sentences)
+    she_he = sum(bool(SHE_HE.match(s)) for s in sentences)
     words = max(len(text.split()), 1)
     stock = {p: len(re.findall(p, text, re.IGNORECASE)) for p in STOCK_PHRASES}
     per_1k = lambda k: round(1000 * k / words, 1)  # noqa: E731
@@ -757,7 +828,7 @@ def style_metrics(text: str) -> dict:
         "ellipses_narration_per_1k": per_1k(ellipses(narration)),
         "ellipses_dialogue_per_1k": per_1k(ellipses(dialogue)),
         "dashes_per_1k": per_1k(text.count("—")),
-        "stock": {re.sub(r"\\b|\(\?!.*\)", "", k): v for k, v in stock.items() if v},
+        "stock": {STOCK_LABEL.get(k, re.sub(r"\\b|\(\?!.*\)", "", k)): v for k, v in stock.items() if v},
     }
 
 
@@ -821,6 +892,7 @@ def cmd_check(root: Path, a: argparse.Namespace) -> None:
         src_text = "\n".join(t for _, t in src)
         src_ell = round(1000 * ellipses(src_text) / max(len(src_text.split()), 1), 1)
         total += len(problems) + len(drift)
+        runs = she_he_runs(tgt)
         lines.append(f"## Chapter {n}\n")
         if missing:
             lines.append(f"Untranslated paragraphs: {' '.join(missing)}\n")
@@ -831,16 +903,21 @@ def cmd_check(root: Path, a: argparse.Namespace) -> None:
                         or "- none") + "\n")
         lines.append(
             f"Style: {m['words']} words; She/He openers {flag(m['she_he_pct'], SHE_HE_MAX_PCT, '%')}; "
-            f"ellipses per 1k {flag(m['ellipses_per_1k'], ELLIPSES_MAX_PER_1K)} "
-            f"(narration {m['ellipses_narration_per_1k']}, dialogue {m['ellipses_dialogue_per_1k']}; "
-            f"source {src_ell}); "
+            f"ellipses per 1k in narration {flag(m['ellipses_narration_per_1k'], ELLIPSES_MAX_PER_1K)}, "
+            f"in dialogue {m['ellipses_dialogue_per_1k']} (whole source {src_ell}); "
             f"em dashes per 1k {flag(m['dashes_per_1k'], DASHES_MAX_PER_1K)}"
             + (f"; check these phrases: {', '.join(f'{k} ×{v}' for k, v in m['stock'].items())}" if m["stock"] else "")
             + "\n")
+        if runs and m["she_he_pct"] > SHE_HE_MAX_PCT - 3:
+            lines.append(f"Most She/He openers: {', '.join(runs)}\n")
     if untranslated:
         lines.append(f"Not translated yet: {len(untranslated)} chapter{'s' if len(untranslated) > 1 else ''} "
                      f"({', '.join(map(str, untranslated))}).\n")
     (root / "check-report.md").write_text("\n".join(lines), encoding="utf-8")
+    checked = [n for n in chapters if n not in untranslated]
+    if checked:
+        st["last_check"] = {"chapters": checked, "date": date.today().isoformat()}
+        save_state(root, st)
     notes = merge_notes(root, st)
     print(f"Wrote check-report.md ({total} problems and glossary terms to look at)."
           + (f" Merged {notes} notes into notes.md." if notes else ""))
@@ -856,6 +933,18 @@ def cmd_letters(root: Path, a: argparse.Namespace) -> None:
     if a.first not in ids or a.last not in ids:
         sys.exit("First or last id not found in that chapter.")
     block = paras[ids.index(a.first):ids.index(a.last) + 1]
+    if a.start_at:
+        pid, t = block[0]
+        k = t.find(a.start_at)
+        if k < 0:
+            sys.exit(f"'{a.start_at}' not found in [{pid}].")
+        block[0] = (pid, t[k:])
+    if a.end_at:
+        pid, t = block[-1]
+        k = t.find(a.end_at)
+        if k < 0:
+            sys.exit(f"'{a.end_at}' not found in [{pid}].")
+        block[-1] = (pid, t[:k + len(a.end_at)])
     text = "\n".join(t for _, t in block)
     first = lambda items: "".join(w[0] for w in items if w)  # noqa: E731
     letter = lambda s: next((c for c in s if c.isalpha()), "")  # noqa: E731
@@ -878,7 +967,7 @@ def to_md(text: str) -> str:
     lines = text.strip().split("\n")
     if lines[0].strip() == "***":  # a scene break, maybe with a POV name under it
         rest = "  \n".join(lines[1:]).strip()
-        return "\\* \\* \\*" + (f"\n\n{rest}" if rest else "")
+        return "* * *" + (f"\n\n{rest}" if rest else "")
     return "  \n".join(lines)
 
 
@@ -972,6 +1061,8 @@ def main() -> None:
     s = sub.add_parser("save"); s.add_argument("id"); s.add_argument("file")
     s = sub.add_parser("letters"); s.add_argument("chapter", type=int); s.add_argument("first")
     s.add_argument("last"); s.add_argument("--translation", action="store_true")
+    s.add_argument("--from", dest="start_at", help="start inside the first paragraph at these words")
+    s.add_argument("--to", dest="end_at", help="end inside the last paragraph after these words")
     s = sub.add_parser("check"); s.add_argument("chapter", nargs="?", help="3, 1-4 or 1,3,5-6")
     s = sub.add_parser("export"); s.add_argument("--draft", action="store_true")
     s.add_argument("--chapters", help="export only these chapters: 3, 1-4 or 1,3,5-6")

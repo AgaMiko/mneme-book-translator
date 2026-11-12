@@ -6,7 +6,7 @@ A voice brief tells the translator how a character should come across in English
 
 Run `mneme.py dialogue --skeleton` (or `dialogue 1-4 --skeleton` for some chapters) to write `work/lines-draft.md`: one line per paragraph that looks like dialogue, in book order, such as `- [03:p041] ? → ? | – Nie teraz…`. It finds paragraphs that start with a dash and paragraphs with quotation marks. They are only candidates: many are titles, quoted phrases or thoughts. Plain `dialogue 3` prints the full paragraphs of a chapter when you need to read them.
 
-For each line, replace `? → ?` with the speaker and the listener (the glossary's English names), for example `Hania → Kerry`, or with `thought` or `not dialogue`. Read the narration around it (in `source/`) for who is talking when there is no speech tag. Lines you cannot attribute: `Unknown`. For a long book, use subagents per group of chapters, each on its own draft file, and join them. Then run `dialogue --group`: it writes `work/lines.md`, one section per speaker with the line ids, for example `[03:p041] to Kerry`.
+For each line, replace `? → ?` with the speaker and the listener (the glossary's English names), for example `Hania → Kerry`, or with `thought` or `not dialogue`. Read the narration around it (in `source/`) for who is talking when there is no speech tag. A speaker with no name gets a short role that stays the same across their lines (`Inn man 1`, `Older guard`, `Red-haired adept`), so their lines can get a brief of their own; use `Unknown` only when even the role is unclear. For a long book, use subagents per group of chapters, each on its own draft file, and join them. Then run `dialogue --group`: it writes `work/lines.md`, one section per speaker, each line with its id, listener and text, for example `[03:p041] to Kerry: – Nie teraz…`.
 
 ## 2. Profile each character (from all of their lines at once)
 
@@ -21,7 +21,7 @@ Look for:
 - address forms (formal or familiar pronouns, titles, diminutives), and how others address them;
 - changes of register with particular people or situations.
 
-Describe speech from speech lines. Use thoughts only to note where the inner voice differs in a way the translator should keep.
+Describe speech from speech lines. Use thoughts only to note where the inner voice differs in a way the translator should keep. Exception: a point-of-view character who rarely speaks. Their chapters are carried by free indirect thought, so describe the inner voice too (rhythm, vocabulary, what they notice), and say which lines are thought.
 
 For each feature, decide the move:
 - **MIRROR**: carry it over directly (non-standard grammar, tics, signature phrases, stutters, fragments, repetition, switching language). The form may change (case errors in the source become article or preposition errors in English), but the brokenness carries over. Keep foreign phrases as they are, unglossed unless the original glosses them.
@@ -36,7 +36,7 @@ First write `voices/_cast.md`: group the characters whose English voices could c
 
 Then write one file per speaking character: `voices/<english-name>.md`, where the file name is the character's English glossary form in lower case with hyphens (`Old Marta` → `voices/old-marta.md`). The script uses this name to list the briefs a fragment needs.
 
-Before writing, read the character's lines word by word again and count how many lines carry each marker. What runs through most lines *is* the voice: the brief must say so plainly and the sample must show it. Keep apart what is occasional (eye-dialect in one scene) and what runs through most lines (dialect words and grammar).
+Before writing, read the character's lines word by word again and count how many lines carry each marker. What runs through most lines *is* the voice: the brief must say so plainly, with the count ("bare orders in 10 of 13 lines"), and the sample must show it. Do not describe a feature with "only", "always" or "nothing else" unless the count shows it. Keep apart what is occasional (eye-dialect in one scene) and what runs through most lines (dialect words and grammar).
 
 Format, about 100 words, in English:
 
@@ -65,4 +65,4 @@ Leave out what applies to everyone (contractions in dialogue, natural idiom, no 
 
 Translate one short exchange per main character with its brief, following `translation-rules.md`. Read the results as a cast. Fix a brief when its passage is **flattened** (an educated speaker made casual, a plain speaker made literary, a rural voice made standard, an address form dropped), **sounds like another character**, or goes against the brief in another way. Never count it as a fault that the translation stays close to what the source says.
 
-Put the test passages in `voices/_samples.md` (source, then English) so the user can judge the briefs by their effect. Then stop: ask the user to read `voices/` and `voices/_samples.md` and edit or approve. When they approve, run `mark voices reviewed`. A brief the user edited is their decision: keep it faithful to their changes.
+Keep each test short: 3–6 lines per main character, from a scene where they speak. Put the test passages in `voices/_samples.md` (source, then English) so the user can judge the briefs by their effect. Then stop: ask the user to read `voices/` and `voices/_samples.md` and edit or approve. When they approve, run `mark voices reviewed`. A brief the user edited is their decision: keep it faithful to their changes. The approved English in `_samples.md` is a translation of real lines: when you reach those paragraphs in step 5, reuse it or improve it. This differs from the "In their voice" sample inside a brief, whose phrases are never copied.

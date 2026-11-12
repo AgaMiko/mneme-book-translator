@@ -20,7 +20,7 @@ Most chapters have none.
 
 ## 2. State the rule
 
-For each candidate, run `mneme.py letters <chapter> <first-id> <last-id>`. It prints the first letters of the passage's sentences, lines, paragraphs, words and marked words. Read them as words in the source language, and read what the chapter says about the passage (a character who decodes it, a stated message). A letter string that spells nothing is the normal case: do not read a message into it. Drop candidates with no rule.
+For each candidate, run `mneme.py letters <chapter> <first-id> <last-id>`. For a passage that starts or ends inside a paragraph (a quoted note in a longer paragraph), add `--from "<its first words>"` and `--to "<its last words>"`. It prints the first letters of the passage's sentences, lines, paragraphs, words and marked words. Read them as words in the source language, and read what the chapter says about the passage (a character who decodes it, a stated message). A letter string that spells nothing is the normal case: do not read a message into it. Drop candidates with no rule.
 
 For each kept passage, write in `passages.md`:
 
@@ -38,6 +38,16 @@ Status: todo
 - hidden_message: the unit, the message in the source, the same message in English, and which part carries it. If the rule is not "first letters of units", describe it exactly, with the steps to read it.
 - wordplay: the two meanings or forms, and what depends on them.
 - **Dependent paragraphs**: paragraphs of the same chapter that quote the passage, explain its rule, give worked examples of it, or state what it hides. They must stay consistent with the translation.
+
+If no candidate is kept, `passages.md` still lists what was checked, one line each, so a later session does not scan again:
+
+```markdown
+# Special passages
+
+Scanned chapters 1–2. Nothing kept.
+- 01: title (verse): two-line prayer epigraph, no rhyme or metre to keep.
+- 02: p126 (document): execution order; letters spell nothing.
+```
 
 ## 3. Check (after the passage's fragment is translated)
 

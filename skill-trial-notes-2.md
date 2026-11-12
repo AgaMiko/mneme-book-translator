@@ -4,6 +4,16 @@ Second run of the skill after the fixes in d017462. Book folder: `~/Downloads/Za
 
 Each point: what happened, then the fix.
 
+**Status:** all 31 are addressed in `mneme.py`, `SKILL.md` and `references/`. Things to know:
+- 3, 16, 24: a `case` row now skips a form that opens a sentence or a line, and the check wants its English with capitals. "– Dłonie! – krzyknął" (an exclamation that opens the line) is skipped too, so a term used that way will be missed.
+- 6, 25: the English column takes `/` forms (`weave/wove/woven`). The run2 glossary still has plain `weave`, so its p105 warning stays until that row is changed.
+- 9: the skeleton now takes a quoted paragraph only when a quote has more than three words: 106 candidates for chapters 1–2 instead of 115.
+- 19: `save` prints the fragment's style numbers and flags `...`; the rules ask for `…`.
+- 26: the ellipsis target and warning are on narration; dialogue is shown with the source rate.
+- 28: the report lists the paragraphs with the most She/He openers when a chapter is near or over the target.
+- 29: `check` records the chapters it checked, and `status` shows them.
+- 31: scene breaks export as `* * *`.
+
 ## Split
 
 1. **The split worked first time.** Front matter, the `[title]` block with one part per line, the `### **\*\*\***` scene breaks: all correct, no re-split needed. No fix; recorded so the earlier fixes count as checked.

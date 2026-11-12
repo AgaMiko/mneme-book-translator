@@ -19,11 +19,11 @@ The glossary gives every name, place and invented word one agreed English form, 
 - **Source**: the canonical form, the one the book settles on.
 - **Forms seen**: other spellings, inflected forms, epithets and nicknames of the same thing, comma separated. Only names and forms of the term itself: not common nouns that refer to the character ("wuj", uncle, is not a form of Tyrel), because the check then expects the name wherever the word appears. The script matches each word of a form with case endings (a word of five letters or more may change its last letter and add up to four), so list irregular forms that change more than that (Polish "Pies" → "Psa").
 - **Type**: `character_name`, `place_name`, `organization`, `lore_term` (invented magic, technology, artefacts, named creatures and events, in-world religion), `cultural_term` (real-world customs, food or dress a reader may not know), `specialized_usage` (an ordinary word with a special in-world sense), `other`.
-- **English**: the one form the translation uses.
+- **English**: the one form the translation uses: the bare name or word, without a title or "House" ("Viathel", not "House Viathel"; put the title in Notes), so the check finds it in "the Viathels' seat". For a verb or another word whose English changes form irregularly, list the forms with `/`: `weave/wove/woven`. The first is the main form; the check accepts any of them.
 - **Alternatives**: other good options, so the reviewer can choose.
 - **Notes**: what it is, in one sentence, and why this English form. Say when an ordinary word is NOT the glossary term (a literal object that shares a name with a lore term).
 - **Status**: `proposed`, then `accepted` or `rejected` after review. Rejected rows are ignored by the script.
-- **Match** (optional last column; leave it empty in most rows): `case` matches the forms only with the capitals as written, `exact` matches them without case endings, `case exact` does both. Use it for a term that is also an everyday word ("Dłonie", the Hands, a name for Weavers, against "dłoni", a hand), so the script does not list the term in every fragment and the check does not flag every hand.
+- **Match** (optional last column; leave it empty in most rows): `case` matches the forms only with the capitals as written, `exact` matches them without case endings, `case exact` does both. Use it for a term that is also an everyday word ("Dłonie", the Hands, a name for Weavers, against "dłoni", a hand), so the script does not list the term in every fragment and the check does not flag every hand. With `case`, a capitalised form that opens a sentence or a line is skipped, since the capital says nothing there, and the check wants the English with its capitals too ("the Hands", not "hands").
 
 ## Starting from an existing glossary
 
@@ -31,7 +31,7 @@ If the user has a reviewed glossary from another book (the next book in a series
 
 ## Building it
 
-Read the manuscript chapter by chapter (`source/chapter-NN.md`). After each chapter, update `glossary.md` with what that chapter adds: new terms, new forms of existing terms, merges, and corrections. Keep a short private notepad in `work/glossary-notes.md` for things to watch (a spelling to confirm, a name whose role is not clear yet). For a long book, read several chapters in parallel with subagents and merge their rows; check the merged table for duplicates.
+Read the manuscript chapter by chapter (`source/chapter-NN.md`), whole chapters and not shortened previews: a name cut off by a preview ("Ela" from "Elantria") becomes a false form. After each chapter, update `glossary.md` with what that chapter adds: new terms, new forms of existing terms, merges, and corrections. Keep a short private notepad in `work/glossary-notes.md` for things to watch (a spelling to confirm, a name whose role is not clear yet). For a long book, read several chapters in parallel with subagents and merge their rows; check the merged table for duplicates.
 
 What to find: every surface form an English-only reader needs a stable decision on. Proper names, invented or world-specific vocabulary, culturally loaded labels, and ordinary words used in a special in-world sense. Skip generic description and words used in their everyday meaning.
 
@@ -57,7 +57,7 @@ Go through the proposed rows once more and decide each the way the author would.
 
 Also remove forms that do not belong to the term (another character's nickname), and fix an English target that is clearly wrong.
 
-Also decide the English title of the book with the user if it is not set; it goes to `export --title`.
+Also decide the English title of the book with the user if it is not set; it goes to `export --title`. The book's own title needs no glossary row when the title is set there.
 
 Then show the user a short summary: how many terms by type, the rows you are least sure about (titles of in-world works, named abilities that read like descriptions, everyday words that might carry a special sense, merges of a name with an epithet), and the choices with strong alternatives. The user edits `glossary.md` directly or tells you what to change. When the user is happy, set the kept rows to `accepted` and run `mark glossary reviewed`.
 

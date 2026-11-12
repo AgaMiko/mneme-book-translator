@@ -42,7 +42,7 @@ Paragraph files use one format: a line `[p012]` (or `[title]` for the chapter he
 
 ## Starting or continuing
 
-If the folder has `mneme.json`, run `status` and continue from the first step that is not done. Tell the user where you are in one or two lines. Otherwise start with step 1. Follow the steps in order, and record each one with `mark <step> <state>`.
+If the folder has `mneme.json`, run `status` and continue from the first step that is not done. Tell the user where you are in one or two lines. Otherwise ask the user once whether a reviewed glossary or an earlier translation of this book (or of an earlier book in the series) exists; if so, use it as [references/glossary.md](references/glossary.md) "Starting from an existing glossary" describes. Then start with step 1. Follow the steps in order, and record each one with `mark <step> <state>`.
 
 ## Steps
 
@@ -58,6 +58,8 @@ Check the split before going on. Look at `status` and at `source/chapter-01.md` 
 - chapter 1 is the book's real first chapter, and the number of chapters is right;
 - each chapter starts with a `[title]` block holding its heading, one part per line (POV name, chapter line, epigraph lines, attribution);
 - each scene break is a single `***` paragraph (or `*** Name`), with no leftover `#`, `\` or `**` marks.
+
+This list is about headings and scene breaks. `prepare` removes markdown escapes such as `\!` from paragraph text; a `\*` left in a paragraph is fine, since the translation drops it and `check` flags any that stay.
 
 If something is wrong, make a `.md` copy of the manuscript and fix it there: each chapter heading on its own `## ` line, front matter removed, scene breaks written as `***`. Then run `prepare` on the copy with `--force`. `--force` refuses once `translation/` has files, because the paragraph ids may change; split before you write the glossary, the voices or any notes, since they cite paragraph ids.
 
@@ -80,7 +82,7 @@ Read [references/translation-rules.md](references/translation-rules.md) once per
 1. `fragment <id>` prints the fragment: its source paragraphs, the end of the previous text (source and current English), the start of the next one, the glossary terms it found, and the voice briefs to read.
 2. Read the voice briefs it lists, and any brief of a character who speaks or is named in the fragment that the script missed. Use the glossary's English forms exactly, also for terms the script did not list.
 3. Translate in one pass, straight into the final English, following the rules. Write the result to `work/<id>.md` as the same `[id]` blocks, in the same order, one block per source block.
-4. `save <id> work/<id>.md`. It refuses a fragment whose ids do not match, and prints problems it finds (leftover source letters, dialogue dashes, missing placeholders). Fix those and save again.
+4. `save <id> work/<id>.md` (the path is relative to the book folder). It refuses a fragment whose ids do not match, and prints problems it finds (leftover source letters, dialogue dashes, missing placeholders, `...` written as three full stops) and the fragment's style numbers. Fix the problems and save again; if the style numbers are well over the targets, revise those sentences now rather than at the check.
 5. Add any translator notes to `notes/chapter-NN.md` under a `## <id>` heading for the fragment (format in the rules file).
 
 Work through the book without stopping, unless the user asked for a part only ("translate chapters 1–3"). Every few chapters, give the user a one-line progress update. If the context grows long, finish the current fragment, save, and continue: all state is in files, so nothing is lost.
@@ -92,18 +94,18 @@ For a long book you may translate chapters in parallel with subagents. Give each
 
 The first fragment of each chapter then has no English for the previous chapter's end; that is acceptable. Run `check` yourself when the subagents are done.
 
-Run `mark translation done` when `status` shows every fragment translated.
+Run `mark translation done` when `status` shows every fragment translated. For a run of some chapters only, leave the step as it is: `status` shows which chapters are translated, and `check` records which chapters it last checked.
 
 ### 6. Check
 
 1. `check` (or `check 1-3` for some chapters) writes `check-report.md`: untranslated paragraphs, leftover source-language letters, dialogue dashes, markdown escapes, missing placeholders, glossary terms whose agreed English is missing (grouped per term), and style numbers per chapter (She/He sentence openers, ellipses and em dashes per 1,000 words, phrases to check) against the app's targets. It also builds `notes.md` from `notes/`.
-2. Fix real problems in `translation/chapter-NN.md`. A glossary warning can be a false alarm (a pronoun, another name for the same person, an everyday word that shares a form with a term): read the paragraph before changing it. A term that gives false alarms in every chapter needs a better glossary row (see the Match column in the glossary rules). For a chapter over the style targets, revise the sentences the targets name, as the rules file describes. Ellipses are shown for narration and dialogue apart, with the source's rate: trim them in narration; a book whose source is full of faltering speech can stay above the target in dialogue.
+2. Fix real problems in `translation/chapter-NN.md`. A glossary warning can be a false alarm (a pronoun, another name for the same person, an everyday word that shares a form with a term): read the paragraph before changing it. A term that gives false alarms in every chapter needs a better glossary row (see the Match column in the glossary rules). For a chapter over the style targets, revise the sentences the targets name, as the rules file describes. The report lists the paragraphs with the most She/He openers: revise those runs first, rather than single sentences anywhere, and keep to the rules file's advice against a new pattern (the same name or participle opening sentence after sentence). The ellipsis target applies to narration; dialogue is shown with the source's rate for comparison, and may stay higher where the source's speakers falter.
 3. Check the special passages: steps 3 and 4 of [references/special-passages.md](references/special-passages.md).
-4. Run `check` again, then `mark check done`. Report to the user: the problems fixed, what is left, the passages that were corrected or failed, and the notes in `notes.md` that need the author.
+4. Run `check` again, then `mark check done` (for a partial run, leave it; `status` shows the last check). Report to the user: the problems fixed, what is left, the passages that were corrected or failed, and the notes in `notes.md` that need the author.
 
 ### 7. Export
 
-`export` writes `export/<english-title>.md`, plus `.docx` and `.epub` when `pandoc` is installed. Each chapter's heading is "Chapter N", with the POV name and epigraph under it. `--title "<English title>"` sets the title if `prepare` did not. It refuses while paragraphs are untranslated; `export --draft` marks the gaps and adds `_DRAFT` to the file name. For a part of the book, `export --draft --chapters 1-3`. Do not export a final version while a special passage has status `failed`, unless the user says so. Run `mark export done` and tell the user where the files are.
+`export` writes `export/<english-title>.md`, plus `.docx` and `.epub` when `pandoc` is installed (on a Mac: `brew install pandoc`). Each chapter's heading is "Chapter N", with the POV name and epigraph under it. `--title "<English title>"` sets the title if `prepare` did not. It refuses while paragraphs are untranslated; `export --draft` marks the gaps and adds `_DRAFT` to the file name. For a part of the book, `export --draft --chapters 1-3`. Do not export a final version while a special passage has status `failed`, unless the user says so. Run `mark export done` and tell the user where the files are.
 
 ## Rules for working with the user
 

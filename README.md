@@ -210,7 +210,7 @@ just gen-client      # regenerate TS API types from OpenAPI
 - [x] Step 3 — Author glossary review UI and acceptance flow
 - [x] Step 4 — Speaker identification and character voice profile extraction
 - [~] Step 5 — Fragment translation with context windows, accepted glossary, and voice memory. Built: one-step translation by default (two- and three-step modes optional), Gemini and OpenAI models, Flex pricing and prompt caching, style metrics, translator notes, glossary term highlighting with drift warnings, chapter status, and PDF/EPUB/DOCX export. Still to do: updating translated text when a glossary term changes, and a style sheet you can edit in the app; see [docs/step5-translation-pipeline.md](docs/step5-translation-pipeline.md).
-- [ ] Step 6 — Problematic-fragment detection and author flag review
+- [~] Step 6 — Problematic-fragment detection and author flag review. Built: special passages (verse, hidden messages, plot wordplay) are found, checked against their rule, translated again when the English breaks it, and listed in the Review tab. Still to do: moving translator notes (typos, ambiguities, added words) into the same review list; see [docs/step6-special-passages.md](docs/step6-special-passages.md).
 
 ## License
 

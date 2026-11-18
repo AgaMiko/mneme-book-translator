@@ -16,6 +16,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
+
 from alembic import op
 
 if TYPE_CHECKING:
@@ -37,9 +38,7 @@ def upgrade() -> None:
         "reference_passage_translation_authoritative",
         "dialogue_volume_observed",
     ):
-        op.execute(
-            sa.text("ALTER TABLE character_voices DROP COLUMN IF EXISTS " + col)
-        )
+        op.execute(sa.text("ALTER TABLE character_voices DROP COLUMN IF EXISTS " + col))
 
     op.create_table(
         "voice_passage_candidates",
@@ -107,9 +106,7 @@ def upgrade() -> None:
             ondelete="CASCADE",
         ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "voice_id", "selection_rank", name="uq_voice_selected_passage_rank"
-        ),
+        sa.UniqueConstraint("voice_id", "selection_rank", name="uq_voice_selected_passage_rank"),
     )
     op.create_index(
         "ix_voice_selected_passages_voice_id",

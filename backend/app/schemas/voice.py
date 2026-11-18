@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime  # noqa: TC003 - pydantic needs it at runtime
 from typing import Self
-from uuid import UUID
+from uuid import UUID  # noqa: TC003 - pydantic needs it at runtime
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 

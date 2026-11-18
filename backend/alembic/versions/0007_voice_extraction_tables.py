@@ -11,8 +11,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -50,8 +51,18 @@ def upgrade() -> None:
         sa.Column("glossary_entry_id", sa.UUID(), nullable=False),
         sa.Column("book_id", sa.UUID(), nullable=False),
         sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(["book_id"], ["books.id"], ondelete="CASCADE"),
         sa.ForeignKeyConstraint(["glossary_entry_id"], ["glossary_entries.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
@@ -68,7 +79,12 @@ def upgrade() -> None:
         sa.Column("status", sa.String(length=16), server_default="proposed", nullable=False),
         sa.Column("voice_id", sa.UUID(), nullable=False),
         sa.Column("id", sa.UUID(), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(["voice_id"], ["character_voices.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
     )
@@ -84,7 +100,12 @@ def upgrade() -> None:
             server_default="[]",
         ),
         sa.Column("last_window_number", sa.Integer(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.text("now()"), nullable=False),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.text("now()"),
+            nullable=False,
+        ),
         sa.ForeignKeyConstraint(["book_id"], ["books.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("book_id"),
     )

@@ -15,7 +15,7 @@ its `chapters` list and never have to touch FKs by hand.
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime  # noqa: TC003 - SQLAlchemy resolves Mapped[] at runtime
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 

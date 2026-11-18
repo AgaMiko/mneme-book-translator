@@ -18,6 +18,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
+
 from alembic import op
 
 if TYPE_CHECKING:
@@ -66,16 +67,10 @@ def upgrade() -> None:
         )
 
     op.execute(
-        sa.text(
-            "ALTER TABLE character_voices "
-            "ALTER COLUMN source_voice_observation SET NOT NULL"
-        )
+        sa.text("ALTER TABLE character_voices ALTER COLUMN source_voice_observation SET NOT NULL")
     )
     op.execute(
-        sa.text(
-            "ALTER TABLE character_voices "
-            "ALTER COLUMN target_voice_strategy SET NOT NULL"
-        )
+        sa.text("ALTER TABLE character_voices ALTER COLUMN target_voice_strategy SET NOT NULL")
     )
 
     if "voice_summary" in cols:
@@ -95,14 +90,8 @@ def downgrade() -> None:
         "character_voices",
         sa.Column("voice_summary", sa.Text(), nullable=True),
     )
-    op.execute(
-        sa.text(
-            "UPDATE character_voices SET voice_summary = source_voice_observation"
-        )
-    )
-    op.execute(
-        sa.text("ALTER TABLE character_voices ALTER COLUMN voice_summary SET NOT NULL")
-    )
+    op.execute(sa.text("UPDATE character_voices SET voice_summary = source_voice_observation"))
+    op.execute(sa.text("ALTER TABLE character_voices ALTER COLUMN voice_summary SET NOT NULL"))
     if "source_voice_observation" in cols:
         op.drop_column("character_voices", "source_voice_observation")
     if "target_voice_strategy" in cols:

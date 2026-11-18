@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
+
 from alembic import op
 
 if TYPE_CHECKING:
@@ -24,9 +25,7 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     op.add_column("books", sa.Column("author", sa.String(length=500), nullable=True))
-    op.add_column(
-        "books", sa.Column("manuscript_language", sa.String(length=64), nullable=True)
-    )
+    op.add_column("books", sa.Column("manuscript_language", sa.String(length=64), nullable=True))
     op.add_column("books", sa.Column("language_style_note", sa.Text(), nullable=True))
     op.add_column("books", sa.Column("metadata_model", sa.String(length=128), nullable=True))
 
@@ -36,4 +35,3 @@ def downgrade() -> None:
     op.drop_column("books", "language_style_note")
     op.drop_column("books", "manuscript_language")
     op.drop_column("books", "author")
-

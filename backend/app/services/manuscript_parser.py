@@ -69,6 +69,7 @@ def _chapter_marker_pattern(source_language: str) -> re.Pattern[str]:
     keywords = _CHAPTER_MARKERS_BY_LANGUAGE.get(source_language.lower(), []) + _EN_CHAPTER_MARKERS
     return re.compile(rf"^\s*({'|'.join(keywords)})", re.IGNORECASE)
 
+
 @cache
 def chapter_number_pattern() -> re.Pattern[str]:
     """A numbered chapter line in any language listed above ("Rozdział 4", "Kapitel IV").

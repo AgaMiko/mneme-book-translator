@@ -12,7 +12,7 @@ This repo is a working Docker stack: upload a `.docx`, parse it into chapters an
 
 ## Two ways to use Mneme
 
-You can run Mneme as the app in this repo, or use it as a Claude Code skill. Both follow the same workflow and the same translation rules, so pick the one that suits how you want to pay and work.
+You can run Mneme as the app in this repo, or use it as a Claude Code skill, [translate-books-better](https://github.com/AgaMiko/translate-books-better), which lives in its own repository. Both follow the same workflow and the same translation rules, so pick the one that suits how you want to pay and work.
 
 |  | The app | The Claude Code skill |
 | --- | --- | --- |
@@ -87,35 +87,15 @@ Uploads use Polish unless the API call sets `source_language`.
 
 ## Translate with Claude Code
 
-You can also translate a book with Claude Code alone, without running the app. Claude Code does the translation itself, so you need no Docker or database, and no API keys of your own: it runs on your Claude plan (or on an Anthropic API key, if that is how you sign in to Claude Code). The [`mneme-translate`](skills/mneme-translate/SKILL.md) skill follows the same workflow and the same prompt rules as the app:
+You can also translate a book with Claude Code alone, without running the app. The [`translate-books-better`](https://github.com/AgaMiko/translate-books-better) skill follows the same workflow and the same translation rules as the app, for any pair of languages, and for non-fiction as well as fiction. Claude Code does the translation itself, so you need no Docker or database, and no API keys of your own. Everything is kept in plain files in a folder you choose, so you can stop at any point, edit any file, and continue later.
 
-1. split the manuscript (`.docx`, `.md` or `.txt`) into chapters and fragments of about 1,200 words;
-2. build a glossary of names, places and invented words, with one agreed English form each, then **stop for your review**;
-3. write a voice brief for each character who speaks, then **stop for your review**;
-4. find special passages (verse, letters that hide a message, plot wordplay);
-5. translate fragment by fragment, with the glossary, the briefs of the characters in the scene and the neighbouring text;
-6. check the result (leftover source-language letters, dialogue punctuation, glossary use, style numbers, special passages);
-7. export the whole book or chosen chapters to Markdown, and to DOCX and EPUB when [pandoc](https://pandoc.org) is installed.
-
-Everything is kept in plain files in a folder you choose (`glossary.md`, `voices/`, `translation/chapter-NN.md`, `mneme.json` for progress), so you can stop at any point, edit any file, and continue later.
-
-**Install as a plugin** (in Claude Code):
-
-```
-/plugin marketplace add AgaMiko/mneme-book-translator
-/plugin install mneme@mneme
-```
-
-**Or copy the skill** into your skills folder:
+Install it with:
 
 ```bash
-git clone https://github.com/AgaMiko/mneme-book-translator
-cp -r mneme-book-translator/skills/mneme-translate ~/.claude/skills/
+npx skills add AgaMiko/translate-books-better
 ```
 
-**Use it.** Start Claude Code in the folder with your manuscript and ask, for example, "Translate my-novel.docx from Polish into English". As a plugin the skill is `/mneme:mneme-translate`; as a copied skill it is `/mneme-translate`. To continue a run, open Claude Code in the book folder and ask it to continue the translation.
-
-The helper script ([`scripts/mneme.py`](skills/mneme-translate/scripts/mneme.py)) needs Python 3.10 or later. With [`uv`](https://docs.astral.sh/uv/) it installs `python-docx` by itself; with plain Python, run `pip install python-docx` to read `.docx` files. A whole novel uses a large share of a Claude Code plan's limits: Claude reads the book about three times (glossary, voices, translation) and writes it once. Try it on one or two chapters first ("translate chapters 1–2").
+Then start Claude Code in the folder with your manuscript and run `/translate-books-better`, or just ask, for example, "Translate my-novel.docx from Polish into English". See the [skill's README](https://github.com/AgaMiko/translate-books-better#readme) for the plugin install, the steps and the supported languages.
 
 ## Quickstart
 
@@ -202,8 +182,6 @@ mneme-book-translator/
 │   ├── package.json
 │   └── Dockerfile
 ├── docs/                    # design notes (Step 5/6 translation pipeline)
-├── skills/mneme-translate/  # Claude Code skill: SKILL.md, references/, scripts/mneme.py
-├── .claude-plugin/          # plugin and marketplace manifests for the skill
 ├── data/uploads/            # bind-mounted upload storage (gitignored)
 ├── docker-compose.yml
 └── justfile

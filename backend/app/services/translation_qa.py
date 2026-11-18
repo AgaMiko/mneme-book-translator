@@ -2,7 +2,7 @@
 
 Two kinds:
 
-- **Style metrics** (port of ``translations/zaplataczka/style_metrics.py``):
+- **Style metrics** (port of the manual run's ``style_metrics.py``):
   share of narration sentences starting with She/He, ellipses and em dashes
   per 1,000 words, stock-phrase hits. Targets come from the polish brief.
   These are measured, not enforced: the polish prompt receives them, and the

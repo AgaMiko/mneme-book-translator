@@ -101,7 +101,13 @@ Then start Claude Code in the folder with your manuscript and run `/translate-bo
 
 You need: Docker, Docker Compose, and (optionally) [`just`](https://github.com/casey/just).
 
-Create a local `.env` with your API keys. Gemini is used for metadata, glossary and voice extraction; OpenAI for translation (by default):
+Copy the example file and add your API keys. Gemini is used for metadata, glossary and voice extraction; OpenAI for translation (by default):
+
+```bash
+cp .env.example .env
+```
+
+The settings in `.env`:
 
 ```bash
 GEMINI_API_KEY=...
@@ -138,6 +144,8 @@ Then open:
 
 - Frontend → <http://localhost:5177>
 - API docs → <http://localhost:8000/docs>
+
+Mneme is made to run on your own machine. The API has no login, so do not expose its ports to the internet.
 
 ## Architecture overview
 

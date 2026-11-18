@@ -4,7 +4,7 @@ Status: design written 2026-10-20. Built 2026-10-21: fragments, the translate ch
 
 **Change to section 3 after testing:** the default is now one step: Sol translates straight into the final text. See "Model and pipeline tests" at the end.
 
-This doc turns the manual translation of *Zaplataczka* (→ *The Weaveress*, ~102k Polish words, 2026-10-19) into an app pipeline. The manual run used parallel agents with a shared glossary and brief, then a line-edit pass and a polish pass. Its working files are in `translations/zaplataczka/` (untracked, in the main checkout): `BRIEF.md`, `POLISH_BRIEF.md`, `glossary.md`, `terms/batch_*.md`, `AUTHOR_QUERIES.md`, `style_metrics.py`, `build_pdf.py`, plus `pass1/`, `v2_lineedit/`, `en/` and `out/`. Every design choice below points back either to code that exists today or to something that went wrong, or worked, in that run.
+This doc turns the manual translation of *Zaplataczka* (→ *The Weaveress*, ~102k Polish words, 2026-10-19) into an app pipeline. The manual run used parallel agents with a shared glossary and brief, then a line-edit pass and a polish pass. Its working files are private book material and are not in this repository; this doc refers to them by name: `BRIEF.md`, `POLISH_BRIEF.md`, `glossary.md`, `terms/batch_*.md`, `AUTHOR_QUERIES.md`, `style_metrics.py`, `build_pdf.py`, plus `pass1/`, `v2_lineedit/`, `en/` and `out/`. Every design choice below points back either to code that exists today or to something that went wrong, or worked, in that run.
 
 Contents
 

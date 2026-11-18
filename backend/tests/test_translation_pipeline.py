@@ -514,7 +514,9 @@ def test_find_terms_matches_case_forms_and_respects_capitals() -> None:
     assert ("rada", "Rada") in hits
     assert ("dar", "Dar Widzenia") in hits
     assert ("hania", "Hanna") in hits
-    assert all(word not in {w for _, w in hits} for word in ("splątany", "Radość", "Vynmor", "Zapadła"))
+    assert all(
+        word not in {w for _, w in hits} for word in ("splątany", "Radość", "Vynmor", "Zapadła")
+    )
 
 
 def test_translation_needs_glossary_and_voices() -> None:

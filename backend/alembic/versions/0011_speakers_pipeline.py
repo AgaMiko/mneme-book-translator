@@ -23,8 +23,9 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import sqlalchemy as sa
-from alembic import op
 from sqlalchemy.dialects import postgresql
+
+from alembic import op
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -50,9 +51,7 @@ def upgrade() -> None:
             nullable=False,
         ),
         sa.ForeignKeyConstraint(["book_id"], ["books.id"], ondelete="CASCADE"),
-        sa.ForeignKeyConstraint(
-            ["glossary_entry_id"], ["glossary_entries.id"], ondelete="CASCADE"
-        ),
+        sa.ForeignKeyConstraint(["glossary_entry_id"], ["glossary_entries.id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint(
             "book_id",
@@ -83,9 +82,7 @@ def upgrade() -> None:
             nullable=False,
             server_default="[]",
         ),
-        sa.Column(
-            "last_window_number", sa.Integer(), nullable=False, server_default="0"
-        ),
+        sa.Column("last_window_number", sa.Integer(), nullable=False, server_default="0"),
         sa.Column(
             "updated_at",
             sa.DateTime(timezone=True),
@@ -116,15 +113,11 @@ def upgrade() -> None:
     )
     op.add_column(
         "books",
-        sa.Column(
-            "speakers_extraction_windows_total", sa.Integer(), nullable=True
-        ),
+        sa.Column("speakers_extraction_windows_total", sa.Integer(), nullable=True),
     )
     op.add_column(
         "books",
-        sa.Column(
-            "speakers_extraction_windows_completed", sa.Integer(), nullable=True
-        ),
+        sa.Column("speakers_extraction_windows_completed", sa.Integer(), nullable=True),
     )
     op.add_column(
         "books",
@@ -141,8 +134,6 @@ def downgrade() -> None:
 
     op.drop_table("speaker_notepads")
 
-    op.drop_index(
-        "ix_window_speakers_book_character", table_name="window_speakers"
-    )
+    op.drop_index("ix_window_speakers_book_character", table_name="window_speakers")
     op.drop_index("ix_window_speakers_book_window", table_name="window_speakers")
     op.drop_table("window_speakers")

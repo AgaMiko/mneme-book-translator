@@ -41,6 +41,8 @@ ignore = ["E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "app/api/**/*.py" = ["B008"]
+# Migrations are generated files: keep their imports and docstrings as written.
+"alembic/**/*.py" = ["TC003", "RUF002"]
 
 [tool.ruff.format]
 quote-style = "double"

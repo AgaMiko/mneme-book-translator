@@ -3,7 +3,7 @@
 Paired with ``../models/translate_fragment_model.py``.
 
 The rules come from the manual translation of *Zaplataczka*
-(``translations/zaplataczka/BRIEF.md`` and ``POLISH_BRIEF.md``) and from the
+(its translation brief and polish brief, which are not in this repo) and from the
 calibration prompt (``translate_passage_prompt.py``), with the changes listed
 in ``docs/step5-translation-pipeline.md`` §4:
 

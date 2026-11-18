@@ -1,7 +1,7 @@
 """Export the translated book as PDF, EPUB or DOCX.
 
-The book is assembled from the database (not from Markdown files, as
-``translations/zaplataczka/build_pdf.py`` did): for every chapter, the
+The book is assembled from the database (not from Markdown files, as the
+script of the manual run did): for every chapter, the
 chosen stage's text of each fragment, in order. A fragment without that
 stage falls back to the latest earlier stage (polish → line edit →
 faithful); a fragment with no translation at all becomes a visible
@@ -41,7 +41,6 @@ from sqlalchemy.orm import selectinload
 from app.models.book import Book, Chapter
 from app.models.translation import (
     TRANSLATION_STAGES,
-    FragmentRendition,
     TranslationFragment,
 )
 from app.services.narration_pov import CHAPTER_LINE, SCENE_BREAK

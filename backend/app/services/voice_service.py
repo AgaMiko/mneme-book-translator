@@ -1499,7 +1499,9 @@ async def regenerate_flagged_voices(
                         )
                         .order_by(CharacterVoice.created_at.asc())
                     )
-                ).scalars().all()
+                )
+                .scalars()
+                .all()
             )
             if not flagged:
                 return
